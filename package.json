@@ -1,0 +1,33 @@
+{
+  "name": "nagisa",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Nagisa — a small Japanese island where people gather. Real-time multiplayer 3D web world.",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build:shared": "npm run build -w @nagisa/shared",
+    "build:server": "npm run build -w @nagisa/server",
+    "build:client": "npm run build -w @nagisa/client",
+    "build": "npm run build:shared && npm run build:server && npm run build:client",
+    "dev": "node scripts/dev.mjs",
+    "dev:server": "npm run dev -w @nagisa/server",
+    "dev:client": "npm run dev -w @nagisa/client",
+    "start": "npm run start -w @nagisa/server",
+    "test": "npm run test -w @nagisa/server && npm run test:world && npm run test:ui",
+    "test:world": "node scripts/world-smoke.mjs",
+    "test:ui": "node scripts/ui-smoke.mjs",
+    "test:e2e": "node scripts/e2e.mjs",
+    "test:all": "npm run test && npm run test:e2e",
+    "typecheck": "npm run typecheck -w @nagisa/shared && npm run typecheck -w @nagisa/server && npm run typecheck -w @nagisa/client"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
+  }
+}

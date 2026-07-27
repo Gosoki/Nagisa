@@ -1,0 +1,60 @@
+# Nagisa — single-node deployment.
+#
+# Enough to run the island for a real audience on one machine. For multi-node, see
+# docs/OPERATIONS.md § Scaling: rooms are sharded in-process today, and the document
+# describes exactly what has to change to shard them across processes.
+
+services:
+  nagisa:
+    build: .
+    image: nagisa:latest
+    restart: unless-stopped
+    ports:
+      - '8787:8787'
+    environment:
+      # --- Core ---
+      PORT: '8787'
+      HOST: '0.0.0.0'
+      LOG_LEVEL: 'info'
+
+      # --- Capacity ---
+      # Players per room shard. Above ~150 the per-tick delta starts to dominate
+      # bandwidth on mobile connections; add rooms rather than raising this.
+      ROOM_CAPACITY: '120'
+      ROOM_COUNT: '2'
+
+      # --- Persistence ---
+      # Activities, announcements and check-in records survive a restart.
+      PERSIST_PATH: '/data/nagisa.json'
+
+      # --- Static client ---
+      STATIC_DIR: '/app/apps/client/dist'
+
+      # --- Administration ---
+      # Connect with ?admin=<token> to receive Role.Admin. CHANGE THIS before exposing
+      # the service; anyone holding it can announce island-wide and remove players.
+      ADMIN_TOKEN: '${NAGISA_ADMIN_TOKEN:?set NAGISA_ADMIN_TOKEN in your environment or .env}'
+
+      # Secret used to sign session resume tokens. Rotating it invalidates every
+      # outstanding session, which is the intended way to force everyone to reconnect.
+      SESSION_SECRET: '${NAGISA_SESSION_SECRET:?set NAGISA_SESSION_SECRET}'
+
+    volumes:
+      - nagisa-data:/data
+
+    # The island is not memory-hungry — one room of 120 players is a few MB of state —
+    # but capping it means a leak shows up as a restart rather than as a dead host.
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  nagisa-data:

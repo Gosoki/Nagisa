@@ -1,0 +1,27 @@
+{
+  "name": "@nagisa/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nagisa client: Three.js island, character controller, netcode and the Svelte overlay.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json --threshold error"
+  },
+  "dependencies": {
+    "@nagisa/shared": "*",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "@tsconfig/svelte": "^5.0.4",
+    "@types/three": "^0.170.0",
+    "jsdom": "^29.1.1",
+    "svelte": "^5.19.0",
+    "svelte-check": "^4.1.4",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.7"
+  }
+}

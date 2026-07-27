@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, shrink-to-fit=no, minimal-ui, viewport-fit=cover"
+    />
+    <title>Nagisa</title>
+    <meta name="description" content="It's a small island, but everyone has to be somewhere." />
+
+    <meta property="og:title" content="Nagisa" />
+    <meta property="og:description" content="It's a small island, but everyone has to be somewhere." />
+    <meta property="og:type" content="website" />
+
+    <!--
+      Critical boot styles only. Everything else arrives with the app bundle.
+      The background matches the loader's paper tone so there is no flash between the
+      HTML painting and the canvas appearing.
+    -->
+    <style>
+      html {
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background-color: #f6f2ea;
+        touch-action: none;
+        overscroll-behavior: none;
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+      }
+      #app {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+      }
+      /* The canvas sits under the whole overlay and never receives pointer styling. */
+      canvas {
+        display: block;
+        touch-action: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

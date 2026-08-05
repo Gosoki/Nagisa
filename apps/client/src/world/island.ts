@@ -3,43 +3,63 @@
  * ===========
  *
  * Assembles everything that is *not* a player: the terrain mesh, the sea, the sky, the
- * hand-placed landmarks, the scattered vegetation and the promenade's lanterns.
+ * hand-placed landmarks, the roadside lanterns and the scattered ground detail.
  *
  * ### Build order matters
+ *
  * The terrain is meshed in a worker first, because it is the long pole and because the
  * loading screen's progress is dominated by it. Landmarks and scatter follow on the main
- * thread in small batches, yielding between them, so the browser stays responsive and
- * the loader keeps animating instead of freezing at 60%.
+ * thread in small batches, yielding between them, so the browser stays responsive and the
+ * loader keeps animating instead of freezing at 60%.
+ *
+ * ### Placing a landmark
+ *
+ * Almost every prop is dropped at `heightAt(x, z)` — the terrain field is the single
+ * source of truth for where the ground is, so nothing is ever hand-placed in Y. The
+ * exception is the **waterfront kinds** (piers, boats, breakwaters and the two sea torii),
+ * which are placed at `y = 0` instead: those props are authored with their piles and hulls
+ * running well below their origin, so they meet the seabed at whatever depth the
+ * bathymetry happens to be. Dropping a pier at terrain height would bury it.
  *
  * ### Culling
+ *
  * Landmarks are grouped into **zone buckets**. Each bucket has a bounding sphere and is
  * shown or hidden as a unit based on distance to the camera. This is coarser than
  * per-object frustum culling but very much cheaper: one distance test hides the entire
- * harbour when you are up at the lighthouse, rather than Three.js testing forty objects
- * every frame. Three's own frustum culling still runs on whatever remains visible.
+ * south harbour when you are up at the lighthouse, rather than three.js testing forty
+ * objects every frame. Three's own frustum culling still runs on whatever remains visible.
  */
 
 import * as THREE from 'three';
 import {
+  COAST_PATH,
   LANDMARKS,
-  PROMENADE_HALF_WIDTH,
+  PATHS,
   ZONES,
   heightAt,
-  promenadeAt,
-  promenadeLength,
+  pathAt,
+  pathLength,
   type Landmark,
+  type LandmarkKind,
   type ZoneId,
 } from '@nagisa/shared';
 import type { QualitySettings } from '../engine/quality.js';
+import { inkDepthMaterial } from '../engine/ink/ink-material.js';
 import { terrainMaterial } from './materials.js';
 import { Ocean } from './ocean.js';
 import { Sky } from './sky.js';
 import { Scatter, disposeGroup } from './scatter.js';
-import { createLandmark, stoneLantern } from './props/index.js';
+import { createLandmark, postLantern, stoneLantern } from './props/index.js';
 import { buildTerrain, type TerrainBuildResult } from './terrain.worker.js';
 
 /** Progress callback used to drive the loading screen. */
 export type ProgressFn = (value: number, label: string) => void;
+
+/**
+ * Landmark kinds that float on the water rather than standing on the ground. See the
+ * module header for why they are placed differently.
+ */
+const WATERFRONT_KINDS: ReadonlySet<LandmarkKind> = new Set<LandmarkKind>(['pier', 'boat', 'breakwater']);
 
 /**
  * A group of props that is shown or hidden together.
@@ -48,7 +68,7 @@ export type ProgressFn = (value: number, label: string) => void;
  * semantically — the harbour's props are all near each other by definition.
  */
 interface Bucket {
-  zone: ZoneId | 'promenade';
+  zone: ZoneId | 'roadside';
   group: THREE.Group;
   center: THREE.Vector3;
   radius: number;
@@ -64,7 +84,7 @@ export class Island {
   private readonly buckets: Bucket[] = [];
 
   /** Statistics reported to the debug readout after the build. */
-  buildStats = { terrainMs: 0, landmarks: 0, scatterInstances: 0, drawCalls: 0 };
+  buildStats = { terrainMs: 0, landmarks: 0, scatterInstances: 0, roadsideProps: 0 };
 
   constructor(private readonly quality: QualitySettings) {
     this.group.name = 'island';
@@ -89,10 +109,10 @@ export class Island {
     onProgress(0.55, 'Raising the buildings');
     await this.buildLandmarks();
 
-    onProgress(0.75, 'Hanging the lanterns');
-    await this.buildPromenadeLanterns();
+    onProgress(0.8, 'Hanging the lanterns');
+    await this.buildRoadside();
 
-    onProgress(0.85, 'Planting the hillsides');
+    onProgress(0.9, 'Settling the ground');
     await this.buildScatter();
 
     onProgress(1, 'Ready');
@@ -153,7 +173,7 @@ export class Island {
     this.terrainMesh.name = 'terrain';
     this.terrainMesh.receiveShadow = this.quality.shadows;
     // The terrain does not cast: it would double the shadow-map cost to produce
-    // self-shadowing that the toon ramp mostly hides anyway.
+    // self-shadowing that the flat shading mostly hides anyway.
     this.terrainMesh.castShadow = false;
     // One mesh spanning the whole island — culling it can only ever be wrong.
     this.terrainMesh.frustumCulled = false;
@@ -186,8 +206,8 @@ export class Island {
       bucket.add(object);
 
       built++;
-      // Yield every eight props so the loader can paint. Building forty buildings in one
-      // synchronous burst freezes the tab for long enough to be noticed.
+      // Yield every eight props so the loader can paint. Building a hundred buildings in
+      // one synchronous burst freezes the tab for long enough to be noticed.
       if (built % 8 === 0) await nextFrame();
     }
 
@@ -195,7 +215,7 @@ export class Island {
     for (const [zone, group] of byZone) this.registerBucket(zone as ZoneId, group);
   }
 
-  /** Build one landmark and place it on the terrain. */
+  /** Build one landmark and place it on the terrain (or on the water). */
   private instantiate(landmark: Landmark): THREE.Object3D | null {
     let object: THREE.Group;
     try {
@@ -207,65 +227,79 @@ export class Island {
     }
 
     object.name = landmark.id;
-    // Props are authored with their origin at the base centre, so dropping them onto the
-    // terrain is a single height lookup.
-    object.position.set(landmark.x, heightAt(landmark.x, landmark.z), landmark.z);
+    const floats = WATERFRONT_KINDS.has(landmark.kind) || landmark.opts?.inWater === true;
+    const y = floats ? 0 : heightAt(landmark.x, landmark.z);
+    object.position.set(landmark.x, y, landmark.z);
     object.rotation.y = landmark.rot;
     if (landmark.scale && landmark.scale !== 1) object.scale.setScalar(landmark.scale);
 
-    if (this.quality.shadows) {
-      object.traverse((child) => {
-        if (child instanceof THREE.Mesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-        }
-      });
-    }
+    this.prepareForRendering(object);
     return object;
   }
 
   /**
-   * Line the promenade with stone lanterns.
+   * Give every mesh in a prop what the renderer needs from it.
    *
-   * Placed by arc length rather than by hand, so the spacing stays even however the path
-   * is re-routed. They alternate sides, which reads as intentional without needing a
-   * second row.
+   * `customDepthMaterial` is the important one: the ink materials are custom
+   * `ShaderMaterial`s, and three cannot render an arbitrary shader into a shadow map. One
+   * shared depth material assigned here is what makes the whole island cast shadows.
    */
-  private async buildPromenadeLanterns(): Promise<void> {
-    const group = new THREE.Group();
-    group.name = 'promenade-lanterns';
-
-    const total = promenadeLength();
-    const spacing = this.quality.tier === 'low' ? 46 : 28;
-    const count = Math.floor(total / spacing);
-
-    for (let i = 0; i < count; i++) {
-      const s = i * spacing;
-      const { x, z, tx, tz } = promenadeAt(s);
-      // Offset perpendicular to the path, alternating sides.
-      const side = i % 2 === 0 ? 1 : -1;
-      const offset = PROMENADE_HALF_WIDTH + 1.1;
-      const px = x - tz * offset * side;
-      const pz = z + tx * offset * side;
-
-      // Promenade lanterns are deliberately identical — a matched run of tōrō along a
-      // path is the real-world convention, and variation here would read as sloppiness.
-      const lantern = stoneLantern();
-      lantern.position.set(px, heightAt(px, pz), pz);
-      lantern.rotation.y = Math.atan2(tx, tz);
-      lantern.scale.setScalar(0.8);
+  private prepareForRendering(object: THREE.Object3D): void {
+    const depth = inkDepthMaterial();
+    object.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
       if (this.quality.shadows) {
-        lantern.traverse((child) => {
-          if (child instanceof THREE.Mesh) child.castShadow = true;
-        });
+        child.castShadow = true;
+        child.receiveShadow = true;
+        child.customDepthMaterial = depth;
       }
-      group.add(lantern);
+    });
+  }
 
-      if (i % 12 === 0) await nextFrame();
+  /**
+   * Line the roads with lanterns.
+   *
+   * Placed by arc length rather than by hand, so the spacing stays even however a road is
+   * re-routed. The coast road gets stone tōrō — a matched run of them is the real-world
+   * convention and variation there would read as sloppiness — while the three inland lanes
+   * get timber post lanterns, which are what a working lane would actually have.
+   */
+  private async buildRoadside(): Promise<void> {
+    const group = new THREE.Group();
+    group.name = 'roadside';
+
+    const spacing = this.quality.tier === 'low' ? 52 : 32;
+    let count = 0;
+
+    for (const path of PATHS) {
+      const total = pathLength(path.id);
+      const isCoast = path.id === COAST_PATH.id;
+      const steps = Math.floor(total / spacing);
+
+      for (let i = 0; i < steps; i++) {
+        const s = i * spacing;
+        const { x, z, tx, tz } = pathAt(path.id, s);
+        // Offset perpendicular to the road, alternating sides.
+        const side = i % 2 === 0 ? 1 : -1;
+        const offset = path.halfWidth + 1.3;
+        const px = x - tz * offset * side;
+        const pz = z + tx * offset * side;
+
+        const prop = isCoast ? stoneLantern({ height: 2.1 }) : postLantern({ height: 3.0 });
+        prop.position.set(px, heightAt(px, pz), pz);
+        prop.rotation.y = Math.atan2(tx, tz);
+        if (isCoast) prop.scale.setScalar(0.85);
+        this.prepareForRendering(prop);
+        group.add(prop);
+        count++;
+
+        if (count % 12 === 0) await nextFrame();
+      }
     }
 
+    this.buildStats.roadsideProps = count;
     this.group.add(group);
-    this.registerBucket('promenade', group);
+    this.registerBucket('roadside', group);
   }
 
   // -------------------------------------------------------------------------
@@ -286,7 +320,7 @@ export class Island {
   // -------------------------------------------------------------------------
 
   /** Compute a bucket's bounds once, at build time. */
-  private registerBucket(zone: ZoneId | 'promenade', group: THREE.Group): void {
+  private registerBucket(zone: ZoneId | 'roadside', group: THREE.Group): void {
     const box = new THREE.Box3().setFromObject(group);
     const center = box.getCenter(new THREE.Vector3());
     const radius = box.getSize(new THREE.Vector3()).length() * 0.5;
@@ -296,13 +330,13 @@ export class Island {
   /**
    * Show or hide prop buckets by distance.
    *
-   * The promenade bucket is exempt: its lanterns run the whole way round the island, so
-   * its bounding sphere covers everything and a distance test on it is meaningless.
+   * The roadside bucket is exempt: its lanterns run the whole way round the island, so its
+   * bounding sphere covers everything and a distance test on it is meaningless.
    */
   updateCulling(cameraPosition: THREE.Vector3): void {
     const limit = this.quality.drawDistance;
     for (const bucket of this.buckets) {
-      if (bucket.zone === 'promenade') continue;
+      if (bucket.zone === 'roadside') continue;
       const distance = bucket.center.distanceTo(cameraPosition) - bucket.radius;
       const visible = distance < limit;
       if (bucket.group.visible !== visible) bucket.group.visible = visible;
@@ -310,8 +344,8 @@ export class Island {
   }
 
   /** Per-frame update for the animated parts of the island. */
-  update(elapsed: number, serverTime: number, focus: THREE.Vector3): void {
-    this.sky.update(serverTime, focus);
+  update(elapsed: number, serverTime: number, focus: THREE.Vector3, dt = 0): void {
+    this.sky.update(serverTime, focus, dt);
     this.ocean.update(elapsed, this.sky.current.night);
     this.updateCulling(focus);
     this.animateLighthouse(elapsed);
@@ -326,9 +360,9 @@ export class Island {
   private lampCache: THREE.Object3D | null | undefined;
   private animateLighthouse(elapsed: number): void {
     if (this.lampCache === undefined) {
-      this.lampCache = this.group.getObjectByName('lighthouse-main')?.getObjectByName('lamp') ?? null;
+      this.lampCache = this.group.getObjectByName('lh-tower')?.getObjectByName('lamp') ?? null;
     }
-    if (this.lampCache) this.lampCache.rotation.y = elapsed * 0.55;
+    if (this.lampCache) this.lampCache.rotation.y = elapsed * 0.5;
   }
 
   dispose(): void {
@@ -346,7 +380,7 @@ function nearestZone(x: number, z: number): ZoneId {
   let best: ZoneId = 'plaza';
   let bestDistance = Infinity;
   for (const zone of ZONES) {
-    if (zone.id === 'promenade') continue;
+    if (zone.id === 'coast') continue; // The fallback zone has no meaningful anchor.
     const d = Math.hypot(x - zone.x, z - zone.z);
     if (d < bestDistance) {
       bestDistance = d;

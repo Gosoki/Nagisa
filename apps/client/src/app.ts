@@ -278,7 +278,7 @@ export class App {
       this.remote.update(dt, this.renderer.camera.position);
 
       const serverTime = this.connection?.serverNow() ?? Date.now();
-      this.island.update(this.elapsed, serverTime, this.local.position);
+      this.island.update(this.elapsed, serverTime, this.local.position, dt);
       this.renderer.setBloomStrength(this.island.sky.bloomStrength());
 
       this.updateNameTags();

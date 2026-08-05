@@ -43,13 +43,13 @@ interface FramingSpec {
 const FRAMINGS: Record<Framing, FramingSpec> = {
   // The everyday view: close enough to read your own character, wide enough that the
   // island is the subject.
-  default: { distance: 7.2, height: 2.6, targetHeight: 1.25, fov: 50 },
+  default: { distance: 10.5, height: 3.4, targetHeight: 1.3, fov: 50 },
   // Lookouts and the cape. Pulls back and flattens out to show the horizon.
-  wide: { distance: 11.5, height: 3.6, targetHeight: 1.5, fov: 56 },
+  wide: { distance: 16.0, height: 5.0, targetHeight: 1.6, fov: 56 },
   // Interiors, the teahouse, dense crowds. Tightens so the camera stops fighting walls.
-  close: { distance: 4.6, height: 1.9, targetHeight: 1.15, fov: 46 },
+  close: { distance: 6.8, height: 2.4, targetHeight: 1.2, fov: 46 },
   // Held during an activity's opening moments. Long lens, low, deliberate.
-  cinematic: { distance: 9.0, height: 1.8, targetHeight: 1.3, fov: 38 },
+  cinematic: { distance: 13.0, height: 2.4, targetHeight: 1.35, fov: 38 },
 };
 
 /** Pitch limits, radians. Stops short of straight down and of the horizon flipping. */

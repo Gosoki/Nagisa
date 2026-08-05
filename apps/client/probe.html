@@ -1,0 +1,62 @@
+<!doctype html>
+<!--
+  Render probe — a development page, not part of the shipped product.
+
+  Boots the real island, the real materials and the real ink pass with no interface, no
+  netcode and no input, then parks the camera at a named viewpoint. It exists so the art
+  direction can be reviewed as pictures rather than as code: `tools/shot.mjs` drives this
+  page in a headless browser and writes PNGs.
+
+  Query parameters:
+    ?view=plaza        one of the viewpoints in src/probe/probe.ts
+    ?time=0.42         normalised time of day, 0–1 (0.5 = noon)
+    ?tier=high         quality tier
+    ?ink=0             disable the contour pass, to compare against flat shading
+
+  It is a separate Vite entry point, so `vite build` emits it alongside index.html; that
+  is deliberate — a probe that only works in dev is a probe that rots.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nagisa — render probe</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #dfe8e4;
+        overflow: hidden;
+      }
+      #probe {
+        position: fixed;
+        inset: 0;
+      }
+      #probe canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #readout {
+        /* Top-right, not bottom-left: the subject of most viewpoints is centre-low, and a
+           panel over it makes the thing being reviewed unreadable. */
+        position: fixed;
+        right: 10px;
+        top: 10px;
+        font: 12px/1.5 ui-monospace, monospace;
+        color: #26221e;
+        background: rgba(246, 242, 234, 0.82);
+        padding: 6px 9px;
+        border-radius: 6px;
+        white-space: pre;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="probe"></div>
+    <div id="readout">booting…</div>
+    <script type="module" src="/src/probe/probe.ts"></script>
+  </body>
+</html>

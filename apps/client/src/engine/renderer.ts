@@ -2,33 +2,44 @@
  * Render pipeline.
  * ================
  *
- * Owns the WebGL context, the camera, the post chain and the frame loop. Everything
- * else in the client is a subscriber: the scene director, the character controller and
- * the netcode all receive their update calls from here, in a fixed order, so frame
- * behaviour is reproducible.
+ * Owns the WebGL context, the camera, the ink pass and the frame loop. Everything else in
+ * the client is a subscriber: the scene director, the character controller and the netcode
+ * all receive their update calls from here, in a fixed order, so frame behaviour is
+ * reproducible.
  *
  * ### Loop structure
- * A **fixed-step accumulator** drives simulation (character physics, interpolation
- * clocks) at a constant 60 Hz regardless of display rate, while rendering happens once
- * per animation frame. Without this, a 144 Hz monitor and a 30 fps phone would run the
+ *
+ * A **fixed-step accumulator** drives simulation (character physics, interpolation clocks)
+ * at a constant 60 Hz regardless of display rate, while rendering happens once per
+ * animation frame. Without this, a 144 Hz monitor and a 30 fps phone would run the
  * character controller at different speeds — the classic browser-game bug where movement
  * is faster on better hardware.
  *
- * ### Post-processing
- * Deliberately minimal: tone mapping plus a restrained bloom. The reference product's
- * atmosphere comes from its lighting and materials, not from screen-space effects, and
- * every pass added here is a full-resolution read/write that mobile GPUs pay for in
- * bandwidth. On the `low` tier the composer is skipped entirely and we render straight
- * to the canvas.
+ * ### Rendering
+ *
+ * The world is drawn through {@link InkPass}: a multiple-render-target geometry pass
+ * followed by one fullscreen composite that detects contours, draws them in ink, grades
+ * the result and lays paper grain over it. There is no `EffectComposer` chain — the ink
+ * pass *is* the post chain, and stacking three.js's passes behind it would mean an extra
+ * full-resolution read/write per effect for a look that is already finished.
+ *
+ * Tone mapping and output colour space are handled inside the composite shader rather than
+ * by `WebGLRenderer`, because the geometry buffer is a linear half-float target that the
+ * renderer never presents directly. See the display-space section of `ink-pass.ts`.
+ *
+ * ### The WebGL2 requirement
+ *
+ * Multiple render targets need WebGL2. Every browser that can run this world has had it
+ * for years, but if the context comes back WebGL1 the pipeline falls back to rendering the
+ * scene straight to the canvas: flat shading, no contours, still playable. That is a
+ * degradation, not a second art direction, and `hasInk` says which one is running.
  */
 
 import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { OCEAN_RADIUS, SCENE_COLORS } from '@nagisa/shared';
 import { AdaptiveResolution, type QualitySettings } from './quality.js';
+import { DEFAULT_INK_SETTINGS, InkPass } from './ink/ink-pass.js';
+import { setInkCamera } from './ink/ink-material.js';
 
 /** A subscriber to the frame loop. Lower `order` runs first. */
 export interface FrameSubscriber {
@@ -57,8 +68,7 @@ export class Renderer {
   readonly camera: THREE.PerspectiveCamera;
   readonly canvas: HTMLCanvasElement;
 
-  private composer: EffectComposer | null = null;
-  private bloomPass: UnrealBloomPass | null = null;
+  private ink: InkPass | null = null;
   private readonly adaptive: AdaptiveResolution;
   private readonly settings: QualitySettings;
 
@@ -99,10 +109,11 @@ export class Renderer {
 
     this.renderer.setPixelRatio(this.adaptive.value);
     this.renderer.setSize(container.clientWidth, container.clientHeight, false);
-    // ACES filmic keeps the bright sky and the sunlit sand from clipping to white while
-    // leaving the toon ramp's midtones where the material author put them.
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    // Tone mapping and the linear→sRGB conversion happen in the ink composite, which is
+    // the pass that actually reaches the canvas. Leaving three's own tone mapping on would
+    // apply the curve twice: once when the geometry pass writes the half-float buffer and
+    // again when the composite presents it.
+    this.renderer.toneMapping = THREE.NoToneMapping;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     if (settings.shadows) {
@@ -114,9 +125,9 @@ export class Renderer {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(SCENE_COLORS.skyHorizon);
-    // Exponential fog matched to the horizon colour: the island's far shore dissolves
-    // into haze instead of ending at a hard draw-distance edge.
-    this.scene.fog = new THREE.FogExp2(SCENE_COLORS.fog, 0.0016);
+    // Fog is applied inside the ink material rather than by three: the geometry pass has
+    // to write the *unfogged* depth and normal into the info buffer while writing the
+    // fogged colour, and three's fog chunk would have no way to know the difference.
 
     this.camera = new THREE.PerspectiveCamera(
       50,
@@ -126,7 +137,8 @@ export class Renderer {
     );
     this.camera.position.set(0, 12, 24);
 
-    if (settings.postProcessing) this.buildComposer();
+    setInkCamera(this.camera.near, this.camera.far);
+    this.buildInkPass();
 
     this.observeResize(container);
     this.observeVisibility();
@@ -143,31 +155,48 @@ export class Renderer {
   }
 
   // -------------------------------------------------------------------------
-  // Post-processing
+  // The ink pass
   // -------------------------------------------------------------------------
 
-  private buildComposer(): void {
+  private buildInkPass(): void {
+    if (!this.renderer.capabilities.isWebGL2) {
+      console.warn('[render] WebGL2 unavailable — contours disabled, rendering flat');
+      return;
+    }
     const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
-    this.composer = new EffectComposer(this.renderer);
-    this.composer.setSize(size.x, size.y);
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
-
-    // Bloom exists for exactly three things: the lighthouse lamp, lantern flames and
-    // sun glitter on the water. The threshold is high so nothing else blooms — a low
-    // threshold turns the whole toon-shaded island into a soft mess.
-    this.bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(size.x, size.y),
-      /* strength  */ 0.32,
-      /* radius    */ 0.55,
-      /* threshold */ 0.86,
-    );
-    this.composer.addPass(this.bloomPass);
-    this.composer.addPass(new OutputPass());
+    // Line weight is a quality setting: a thicker line on a low-resolution buffer keeps
+    // the drawing legible where a hairline would break up into dashes.
+    const settings = {
+      ...DEFAULT_INK_SETTINGS,
+      thickness: this.settings.tier === 'low' ? 1.25 : 1.0,
+      paper: this.settings.postProcessing ? DEFAULT_INK_SETTINGS.paper : 0.2,
+    };
+    this.ink = new InkPass(this.renderer, size.x, size.y, settings);
+    this.ink.setCameraPlanes(this.camera.near, this.camera.far);
   }
 
-  /** Adjust bloom with the day cycle — lamps matter at dusk, not at noon. */
+  /** True when the contour pipeline is running (i.e. WebGL2 was available). */
+  get hasInk(): boolean {
+    return this.ink !== null;
+  }
+
+  /** Show one contour detector's raw contribution. See `InkPass.setDebug`. */
+  setInkDebug(mode: 'off' | 'all' | 'depth' | 'normal' | 'id' | 'rawDepth' | 'rawNormal'): void {
+    this.ink?.setDebug(mode);
+  }
+
+  /** Runtime access to the ink uniforms, for the settings panel and the day cycle. */
+  get inkUniforms(): Record<string, THREE.IUniform> | null {
+    return this.ink?.uniforms ?? null;
+  }
+
+  /**
+   * Adjust the warmth of the grade with the day cycle. Kept under the old name so the
+   * app's per-frame call site does not need to know what the post chain is made of.
+   */
   setBloomStrength(strength: number): void {
-    if (this.bloomPass) this.bloomPass.strength = strength;
+    const uniforms = this.ink?.uniforms;
+    if (uniforms) uniforms.uWarmth.value = 0.35 + strength * 0.8;
   }
 
   // -------------------------------------------------------------------------
@@ -228,7 +257,7 @@ export class Renderer {
     const alpha = this.accumulator / FIXED_DT;
     for (const sub of this.subscribers) sub.update?.(dt, alpha);
 
-    if (this.composer) this.composer.render(dt);
+    if (this.ink) this.ink.render(this.scene, this.camera);
     else this.renderer.render(this.scene, this.camera);
 
     this.trackPerformance(frameMs);
@@ -247,7 +276,7 @@ export class Renderer {
     if (next !== null) {
       this.renderer.setPixelRatio(next);
       const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
-      this.composer?.setSize(size.x, size.y);
+      this.ink?.setSize(size.x, size.y);
     }
   }
 
@@ -267,7 +296,7 @@ export class Renderer {
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(w, h, false);
       const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
-      this.composer?.setSize(size.x, size.y);
+      this.ink?.setSize(size.x, size.y);
       // A resize changes the pixel cost per frame, so let the controller re-converge.
       this.adaptive.unsettle();
     };
@@ -293,7 +322,7 @@ export class Renderer {
   /** Release the GL context and every GPU resource. Called on full app teardown. */
   dispose(): void {
     this.stop();
-    this.composer?.dispose();
+    this.ink?.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
     this.canvas.remove();

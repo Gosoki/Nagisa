@@ -2,7 +2,7 @@
   "name": "nagisa",
   "private": true,
   "version": "0.1.0",
-  "description": "Nagisa — a small Japanese island where people gather. Real-time multiplayer 3D web world.",
+  "description": "Nagisa \u2014 a small Japanese island where people gather. Real-time multiplayer 3D web world.",
   "type": "module",
   "workspaces": [
     "packages/*",
@@ -24,10 +24,16 @@
     "test:world": "node scripts/world-smoke.mjs",
     "test:ui": "node scripts/ui-smoke.mjs",
     "test:e2e": "node scripts/e2e.mjs",
-    "test:all": "npm run test && npm run test:e2e",
-    "typecheck": "npm run typecheck -w @nagisa/shared && npm run typecheck -w @nagisa/server && npm run typecheck -w @nagisa/client"
+    "test:all": "npm run test && npm run test:e2e && npm run test:app",
+    "typecheck": "npm run typecheck -w @nagisa/shared && npm run typecheck -w @nagisa/server && npm run typecheck -w @nagisa/client",
+    "test:app": "node tools/app-smoke.mjs",
+    "shots": "node tools/shot.mjs",
+    "map": "node scripts/world-map.mjs"
   },
   "allowScripts": {
     "esbuild@0.25.12": true
+  },
+  "devDependencies": {
+    "playwright-core": "^1.62.1"
   }
 }

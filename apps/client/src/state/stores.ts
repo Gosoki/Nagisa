@@ -102,7 +102,7 @@ export const self: Writable<SelfState> = writable({
   activity: null,
   mode: null,
   checkedIn: false,
-  zone: 'harbor',
+  zone: 'south-harbor',
   seated: false,
 });
 

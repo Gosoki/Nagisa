@@ -1,5 +1,10 @@
 node_modules/
 dist/
 .smoke-*/
+.uismoke-*/
 *.log
 .env
+
+# Development render output (tools/shot.mjs, tools/app-smoke.mjs, scripts/world-map.mjs)
+shots/
+*.png

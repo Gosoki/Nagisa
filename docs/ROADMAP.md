@@ -9,11 +9,12 @@ Everything below is implemented, typechecked and covered by an automated test.
 ### World
 - One Japanese island, ~340 × 300 m, generated entirely from code.
 - Ten zones: harbour, main plaza, notice board, old street, teahouse, shrine path,
-  lookout, lighthouse cape, sunset beach, and an 802 m seaside promenade looping the coast.
+  summit, lighthouse cape, sunset beach, north and south harbours, and a 1 289 m coast
+  road looping the island with three graded lanes climbing to the summit.
 - 40 hand-placed landmarks (6 336 triangles total) — piers, boats, warehouses, torii,
   machiya, minka, a teahouse, a shrine hall, a lighthouse, stages, gates, rails, a notice
   board — from a procedural prop library covering all 16 landmark kinds.
-- 5 880 instanced scattered props across 37 draw calls: pines, maples, bamboo, shrubs,
+- 18 567 instanced scattered props across 4 draw calls: boulders, grass tufts, driftwood,
   grass and rocks, placed by rejection sampling against the terrain.
 - Custom sea shader with baked bathymetry driving depth colour and shoreline foam.
 - Sky dome and a three-light rig on a 90-minute day/night cycle, synchronised to server

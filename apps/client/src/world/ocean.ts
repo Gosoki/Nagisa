@@ -20,11 +20,22 @@
  * Geometry is a **polar grid** with cubic radial spacing: dense where the player is and
  * where waves are visible, sparse out at the horizon where nothing is happening. A
  * uniform grid of the same visual quality would be about forty times the vertex count.
+ *
+ * ### Why the sea draws its own lines
+ *
+ * The screen-space contour pass (`engine/ink/ink-pass.ts`) is told to ignore water: the
+ * sea writes 0 into the outline mask. Left switched on it would trace the entire
+ * coastline as a single hard cut-out edge, which reads as a sticker rather than as a
+ * shore. What a person drawing this would put down instead is a *foam line* that thickens
+ * in the shallows and a scatter of short horizontal wave strokes — so the shader draws
+ * those itself, at the exact contours of the bathymetry, where they belong.
  */
 
 import * as THREE from 'three';
 import { ISLAND_EXTENT, OCEAN_RADIUS, SCENE_COLORS, heightAt } from '@nagisa/shared';
 import type { QualitySettings } from '../engine/quality.js';
+import { DEPTH_CODEC, NORMAL_CODEC, PAPER_NOISE } from '../engine/ink/glsl.js';
+import { inkLighting } from '../engine/ink/ink-material.js';
 
 /** Resolution of the baked bathymetry texture. 256² covers the island at ~2 m per texel. */
 const BATHY_RES = 256;
@@ -91,20 +102,24 @@ function buildOceanGeometry(rings: number, sectors: number): THREE.BufferGeometr
     }
   }
 
-  // Fan from the centre to ring 1.
+  // Winding is counter-clockwise **seen from above**, so the surface normal points +Y and
+  // the sea is front-facing to a camera standing on the island. Getting this backwards
+  // does not produce a dark sea or a flipped sea: it back-face culls every triangle, the
+  // water vanishes completely, and what you see instead is the seabed and the underside of
+  // the sky dome — which reads as "the ocean shader is broken" and sends you debugging the
+  // wrong file entirely.
   for (let s = 0; s < sectors; s++) {
     const a = 1 + s;
     const b = 1 + ((s + 1) % sectors);
-    indices.push(0, a, b);
+    indices.push(0, b, a);
   }
-  // Quads between successive rings.
   for (let r = 0; r < rings - 1; r++) {
     const base = 1 + r * sectors;
     const next = base + sectors;
     for (let s = 0; s < sectors; s++) {
       const s2 = (s + 1) % sectors;
-      indices.push(base + s, next + s, base + s2);
-      indices.push(base + s2, next + s, next + s2);
+      indices.push(base + s, base + s2, next + s);
+      indices.push(base + s2, next + s2, next + s);
     }
   }
 
@@ -117,90 +132,142 @@ function buildOceanGeometry(rings: number, sectors: number): THREE.BufferGeometr
 }
 
 const VERTEX_SHADER = /* glsl */ `
-  uniform float uTime;
-  uniform float uWaveEnabled;
+precision highp float;
 
-  varying vec2 vUv;
-  varying vec3 vWorldPos;
-  varying float vWave;
+uniform float uTime;
+uniform float uWaveEnabled;
 
-  /**
-   * Two crossed sine trains at different scales and speeds. Not a Gerstner solver —
-   * at this camera distance the difference is invisible and the cost is not.
-   */
-  float waveHeight(vec2 p, float t) {
-    float w = sin(p.x * 0.055 + t * 0.9) * 0.34;
-    w += sin(p.y * 0.041 - t * 0.7) * 0.28;
-    w += sin((p.x + p.y) * 0.017 + t * 0.45) * 0.5;
-    return w;
-  }
+out vec2 vUv;
+out vec3 vWorldPos;
+out vec3 vViewPos;
+out float vWave;
 
-  void main() {
-    vUv = uv;
-    vec3 pos = position;
+/**
+ * Two crossed sine trains at different scales and speeds. Not a Gerstner solver —
+ * at this camera distance the difference is invisible and the cost is not.
+ */
+float waveHeight(vec2 p, float t) {
+  float w = sin(p.x * 0.055 + t * 0.9) * 0.34;
+  w += sin(p.y * 0.041 - t * 0.7) * 0.28;
+  w += sin((p.x + p.y) * 0.017 + t * 0.45) * 0.5;
+  return w;
+}
 
-    // Waves are damped with distance so the horizon stays a clean flat line — a
-    // rippling horizon reads as a bug, not as sea.
-    float dist = length(pos.xz);
-    float damp = 1.0 - smoothstep(120.0, 900.0, dist);
+void main() {
+  vUv = uv;
+  vec3 pos = position;
 
-    vWave = waveHeight(pos.xz, uTime) * damp * uWaveEnabled;
-    pos.y += vWave;
+  // Waves are damped with distance so the horizon stays a clean flat line — a
+  // rippling horizon reads as a bug, not as sea.
+  float dist = length(pos.xz);
+  float damp = 1.0 - smoothstep(120.0, 900.0, dist);
 
-    vec4 world = modelMatrix * vec4(pos, 1.0);
-    vWorldPos = world.xyz;
-    gl_Position = projectionMatrix * viewMatrix * world;
-  }
+  vWave = waveHeight(pos.xz, uTime) * damp * uWaveEnabled;
+  pos.y += vWave;
+
+  vec4 world = modelMatrix * vec4(pos, 1.0);
+  vWorldPos = world.xyz;
+  vec4 viewPos = viewMatrix * world;
+  vViewPos = viewPos.xyz;
+  gl_Position = projectionMatrix * viewPos;
+}
 `;
 
 const FRAGMENT_SHADER = /* glsl */ `
-  uniform sampler2D uBathymetry;
-  uniform vec3 uShallow;
-  uniform vec3 uDeep;
-  uniform vec3 uFoam;
-  uniform vec3 uFogColor;
-  uniform float uFogDensity;
-  uniform float uTime;
-  uniform float uNight;
+precision highp float;
 
-  varying vec2 vUv;
-  varying vec3 vWorldPos;
-  varying float vWave;
+uniform sampler2D uBathymetry;
+uniform vec3 uShallow;
+uniform vec3 uMid;
+uniform vec3 uDeep;
+uniform vec3 uFoam;
+uniform vec3 uInk;
+uniform vec3 uFogColor;
+uniform float uFogDensity;
+uniform float uTime;
+uniform float uNight;
+uniform float uDepthScale;
 
-  void main() {
-    // Depth, 0 at the waterline → 1 at 24 m. Outside the baked area the clamp returns
-    // the edge texel, which is deep ocean.
-    float depth = texture2D(uBathymetry, vUv).r;
+in vec2 vUv;
+in vec3 vWorldPos;
+in vec3 vViewPos;
+in float vWave;
 
-    // Base colour: a fast ramp from shallow to deep, so the turquoise shelf hugs the
-    // shore rather than washing across the whole bay.
-    vec3 color = mix(uShallow, uDeep, smoothstep(0.02, 0.34, depth));
+layout(location = 0) out vec4 gColor;
+layout(location = 1) out vec4 gInfo;
 
-    // Shoreline foam. Two bands: a hard one right at the waterline and a soft one just
-    // outside it, modulated by a travelling wave so the surf breathes instead of sitting
-    // as a static outline.
-    float surge = sin(uTime * 1.6 + vWorldPos.x * 0.06 + vWorldPos.z * 0.05) * 0.5 + 0.5;
-    float edge = 1.0 - smoothstep(0.0, 0.055 + surge * 0.03, depth);
-    float wash = (1.0 - smoothstep(0.0, 0.16, depth)) * 0.35 * surge;
-    float foam = clamp(edge + wash, 0.0, 1.0);
-    color = mix(color, uFoam, foam * 0.9);
+${NORMAL_CODEC}
+${DEPTH_CODEC}
+${PAPER_NOISE}
 
-    // Wave crests catch the light; troughs go a shade deeper. Cheap specular substitute
-    // that suits the flat, illustrative look far better than a real highlight would.
-    color += vWave * 0.06;
+void main() {
+  // Depth, 0 at the waterline → 1 at 24 m. Outside the baked area the clamp returns
+  // the edge texel, which is deep ocean.
+  float depth = texture(uBathymetry, vUv).r;
 
-    // Night tint, driven by the day cycle.
-    color = mix(color, color * vec3(0.34, 0.42, 0.62), uNight);
+  // --- Flat bands, not a gradient ----------------------------------------------------
+  // Three discrete tones with only a couple of percent of blend between them. A smooth
+  // depth ramp is what a renderer does; stepped tones are what a painter does, and the
+  // steps double as the sea's own depth contours.
+  vec3 color = uShallow;
+  color = mix(color, uMid, smoothstep(0.06, 0.10, depth));
+  // Deliberately partial: open water keeps most of its mid teal rather than falling all
+  // the way to the deep tone. A sea that goes slate at the horizon reads as weather, and
+  // the whole point of this palette is a bright, flat, drawn ocean.
+  color = mix(color, uDeep, smoothstep(0.34, 0.55, depth) * 0.55);
 
-    // Match the scene's exponential-squared fog so the sea and the land dissolve into
-    // the same haze at the same rate.
-    float d = length(vWorldPos - cameraPosition);
-    float fogFactor = 1.0 - exp(-uFogDensity * uFogDensity * d * d);
-    color = mix(color, uFogColor, clamp(fogFactor, 0.0, 1.0));
+  // --- Shore foam --------------------------------------------------------------------
+  // A hard band right at the waterline plus a softer wash outside it, both modulated by a
+  // travelling surge so the surf breathes instead of sitting as a static outline.
+  // The bathymetry stores depth/24, so these thresholds are in *metres of water*: the
+  // hard band covers the first ~0.35 m and the wash reaches ~1.4 m. Generous numbers here
+  // do not make prettier surf, they make a sheltered harbour render as solid white.
+  float surge = sin(uTime * 1.6 + vWorldPos.x * 0.06 + vWorldPos.z * 0.05) * 0.5 + 0.5;
+  float edge = 1.0 - smoothstep(0.0, 0.015 + surge * 0.009, depth);
+  float wash = (1.0 - smoothstep(0.0, 0.058, depth)) * 0.4 * surge;
+  float foam = clamp(edge + wash, 0.0, 1.0);
+  color = mix(color, uFoam, foam * 0.92);
 
-    gl_FragColor = vec4(color, 1.0);
-    #include <colorspace_fragment>
+  // The drawn line just outside the foam: where the wash ends, a pen stroke follows it.
+  float foamEdge = smoothstep(0.045, 0.062, depth) * (1.0 - smoothstep(0.062, 0.085, depth));
+  color = mix(color, uInk, foamEdge * 0.32);
+
+  // --- Wave strokes ------------------------------------------------------------------
+  // Short horizontal dashes lying on the surface, in world space so they belong to the
+  // water rather than to the screen, thinning out with depth and distance. This is the
+  // detail that makes a flat teal plane read as drawn sea.
+  float strokeFade = smoothstep(0.02, 0.12, depth) * (1.0 - smoothstep(140.0, 420.0, length(vViewPos)));
+  if (strokeFade > 0.002) {
+    vec2 p = vWorldPos.xz * 0.35;
+    p.x += uTime * 0.25 + inkValueNoise(p * 0.35) * 2.0;
+    // Rows of dashes: sin() across the row makes the line, and a hashed gap along it
+    // breaks the line into strokes.
+    float rows = sin(p.y * 2.2 + sin(p.x * 0.3) * 1.4);
+    float row = smoothstep(0.9, 0.998, rows);
+    float gaps = step(0.42, inkValueNoise(vec2(floor(p.x * 0.8), floor(p.y * 0.35 + 0.5)) * 1.7));
+    color = mix(color, uInk, row * gaps * strokeFade * 0.11);
   }
+
+  // Wave crests catch the light; troughs go a shade deeper. Cheap specular substitute
+  // that suits the flat, illustrative look far better than a real highlight would.
+  color += vWave * 0.05;
+
+  // Night tint, driven by the day cycle.
+  color = mix(color, color * vec3(0.36, 0.44, 0.64), uNight);
+
+  // Paper tooth, matching the land.
+  color *= 1.0 + paperGrain(gl_FragCoord.xy) * 0.045;
+
+  // Match the scene's exponential-squared fog so the sea and the land dissolve into
+  // the same haze at the same rate.
+  float d = length(vViewPos);
+  float fogFactor = 1.0 - exp(-uFogDensity * uFogDensity * d * d);
+  color = mix(color, uFogColor, clamp(fogFactor, 0.0, 1.0));
+
+  // Material id 9 (MAT_ID.water); outline mask 0 — see the module header.
+  gColor = vec4(color, 9.0 / 15.0);
+  gInfo = vec4(encodeLinearDepth(vViewPos.z, uDepthScale), encodeNormalSpheremap(vec3(0.0, 0.0, 1.0)), 0.0);
+}
 `;
 
 /**
@@ -221,6 +288,7 @@ export class Ocean {
     const sectors = quality.tier === 'low' ? 64 : 128;
 
     this.material = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3,
       vertexShader: VERTEX_SHADER,
       fragmentShader: FRAGMENT_SHADER,
       uniforms: {
@@ -228,11 +296,16 @@ export class Ocean {
         uWaveEnabled: { value: quality.animatedWater ? 1 : 0 },
         uBathymetry: { value: this.bathymetry },
         uShallow: { value: new THREE.Color(SCENE_COLORS.waterShallow) },
+        uMid: { value: new THREE.Color(SCENE_COLORS.waterMid) },
         uDeep: { value: new THREE.Color(SCENE_COLORS.waterDeep) },
         uFoam: { value: new THREE.Color(SCENE_COLORS.waterFoam) },
-        uFogColor: { value: new THREE.Color(SCENE_COLORS.fog) },
-        uFogDensity: { value: 0.0016 },
+        uInk: { value: new THREE.Color(SCENE_COLORS.ink) },
         uNight: { value: 0 },
+        // Fog and the depth scale are shared with the ink materials so the sea and the
+        // land dissolve at exactly the same rate and encode depth onto the same scale.
+        uFogColor: inkLighting.uFogColor,
+        uFogDensity: inkLighting.uFogDensity,
+        uDepthScale: inkLighting.uDepthScale,
       },
     });
 

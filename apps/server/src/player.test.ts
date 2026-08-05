@@ -8,8 +8,41 @@ import assert from 'node:assert/strict';
 import { AnimState, isWalkable, heightAt } from '@nagisa/shared';
 import { Player } from './player.js';
 
-/** A known-walkable spot on the harbour quay, independent of `spawnPoint`'s random index. */
-const START: [number, number, number] = [-92, heightAt(-92, 96), 96];
+/**
+ * A known-walkable spot on the south harbour quay, independent of `spawnPoint`'s random
+ * index. The quay is a flattening pad, so this stays walkable across terrain retuning.
+ */
+const START: [number, number, number] = [16, heightAt(16, 192), 192];
+
+/**
+ * Find a walkable point with an unwalkable point roughly `gap` metres away.
+ *
+ * **Derived, not hard-coded.** The obvious way to test "a move onto unwalkable terrain is
+ * rejected" is to paste in two coordinates found by hand. Those coordinates are a hidden
+ * dependency on the exact shape of the island: retune the coast noise by a few per cent
+ * and the test fails for a reason that has nothing to do with the movement validator.
+ * Searching for a qualifying pair costs a few milliseconds and makes the test say what it
+ * actually means — "somewhere on this island there is an edge, and walking off it is
+ * rejected".
+ */
+function findWalkableEdge(gap = 13): { start: [number, number, number]; target: [number, number, number] } {
+  for (let ring = 40; ring < 300; ring += 7) {
+    for (let i = 0; i < 64; i++) {
+      const angle = (i / 64) * Math.PI * 2;
+      const x = Math.cos(angle) * ring;
+      const z = Math.sin(angle) * ring;
+      if (!isWalkable(x, z)) continue;
+      for (let j = 0; j < 16; j++) {
+        const a2 = (j / 16) * Math.PI * 2;
+        const tx = x + Math.cos(a2) * gap;
+        const tz = z + Math.sin(a2) * gap;
+        if (isWalkable(tx, tz)) continue;
+        return { start: [x, heightAt(x, z), z], target: [tx, heightAt(x, z), tz] };
+      }
+    }
+  }
+  throw new Error('no walkable/unwalkable pair found — the terrain has no edges, which cannot be right');
+}
 
 function makePlayer(pos: [number, number, number] = START): Player {
   return new Player('p1', 'Test', { outfit: 0, skin: 0, accessory: 0 }, 0, { pos, yaw: 0 });
@@ -52,13 +85,10 @@ test('a move that exceeds the horizontal speed budget is rejected with a speed c
 });
 
 test('a move onto unwalkable terrain within the speed budget is rejected with a bounds correction', () => {
-  // Two points near the lighthouse cape cliff edge: 13m apart (well within the ~14m/2s
-  // budget), the first walkable, the second not — found by scanning terrain.ts's
-  // isWalkable/heightAt directly (see task notes). This exercises the *terrain* half of
-  // validation, as distinct from the NaN/Infinity shape check above.
-  const start: [number, number, number] = [107.85889527835963, 0, -93.45481322062508];
-  start[1] = heightAt(start[0], start[2]);
-  const target: [number, number, number] = [107.85889527835965, start[1], -106.45481322062508];
+  // A pair 13 m apart (well within the ~14 m/2 s budget), the first walkable and the
+  // second not. This exercises the *terrain* half of validation, as distinct from the
+  // NaN/Infinity shape check above.
+  const { start, target } = findWalkableEdge(13);
   assert.equal(isWalkable(start[0], start[2]), true, 'test fixture precondition: start must be walkable');
   assert.equal(isWalkable(target[0], target[2]), false, 'test fixture precondition: target must be unwalkable');
 
@@ -84,14 +114,14 @@ test('out-of-order (replayed/stale) sequence numbers are silently ignored', () =
 test('zone is recomputed on an accepted move', () => {
   const player = makePlayer();
   const initialZone = player.zone;
-  assert.equal(initialZone, 'harbor');
-  // Move toward the plaza, far enough (but split across many small accepted moves to
-  // respect the speed budget) to cross into a different zone.
+  assert.equal(initialZone, 'south-harbor');
+  // Move inland, far enough (but split across many small accepted moves to respect the
+  // speed budget) to cross into a different zone.
   let seq = 1;
   let pos = player.pos;
   player.lastMoveAt = Date.now() - 300; // Warm up dt so the very first step isn't budget-starved.
   for (let i = 0; i < 60; i++) {
-    const next: [number, number, number] = [pos[0] + 1.6, pos[1], pos[2] - 1.6];
+    const next: [number, number, number] = [pos[0], pos[1], pos[2] - 2.2];
     const corrected = player.applyMove({ pos: [next[0], heightAt(next[0], next[2]), next[2]], yaw: 0, anim: AnimState.Run, seq: seq++ }, Date.now() + i * 300);
     if (corrected) break; // Terrain may not stay walkable in a straight line; stop at the first correction.
     pos = player.pos;

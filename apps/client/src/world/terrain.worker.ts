@@ -5,28 +5,44 @@
  * Turns the analytic height field in `@nagisa/shared/terrain` into a vertex-coloured
  * mesh, off the main thread.
  *
- * This runs in a worker for one concrete reason: a `high` tier island is a 340 × 340
- * grid, and every vertex costs a `heightAt` call that evaluates fbm noise, walks the
- * promenade polyline and blends nine pads. That is ~115 000 evaluations, which is
- * comfortably enough to drop frames — and it happens exactly when the player is staring
- * at the loading screen forming an opinion about whether this world is worth their time.
+ * This runs in a worker for one concrete reason: a `high` tier island is a 400 × 400 grid,
+ * and every vertex costs a `heightAt` call that evaluates fbm noise, resolves the nearest
+ * path through a spatial index and blends ten terraces. That is ~160 000 evaluations,
+ * which is comfortably enough to drop frames — and it happens exactly when the player is
+ * staring at the loading screen forming an opinion about whether this world is worth their
+ * time.
  *
  * Everything crosses the wire as transferable typed arrays, so handing the result back
  * costs nothing.
  *
- * The worker also computes the **shoreline** as a separate concern (see `foamAt`): the
- * band where land meets water gets a bleached vertex tint, which is what stops the
- * coastline from reading as a hard intersection of two surfaces.
+ * ### Colour is geology, not decoration
+ *
+ * The vertex colours below are the island's only "texture". They are layered in the order
+ * a landscape actually forms — altitude decides the base, slope overrides it because a
+ * steep face is bare rock whatever its height, and the roads override everything because
+ * paving is paving. Getting that order wrong produces grass growing on a cliff, which is
+ * the single most obvious tell that a world is procedural.
  */
 
 import {
   ISLAND_EXTENT,
-  PROMENADE_HALF_WIDTH,
+  PADS,
   heightAt,
+  nearestPath,
   normalAt,
-  promenadeDistance,
   smoothstep,
+  type PathSurface,
 } from '@nagisa/shared';
+
+/**
+ * Terraces that are *paved* rather than grassed or sanded.
+ *
+ * Without this the two harbour quays inherit the sand band their altitude puts them in,
+ * and the busiest built-up places on the island read as beaches with warehouses standing
+ * on them. The plaza and the summit court get the same treatment for the same reason: a
+ * gathering place has a floor.
+ */
+const PAVED_PADS = new Set(['south-harbor', 'north-harbor', 'plaza', 'summit', 'village']);
 
 /** Request sent by the main thread. */
 export interface TerrainBuildRequest {
@@ -50,63 +66,140 @@ export interface TerrainBuildResult {
 // Surface colouring
 // ---------------------------------------------------------------------------
 
-/** Linear RGB triples matching the scene palette. Kept local to avoid a Three import. */
+/**
+ * Palette, as linear RGB triples.
+ *
+ * Kept as local literals rather than imported from the shared tokens because this module
+ * runs in a worker, where pulling in the token package would mean shipping the whole
+ * design system (including the CSS emitter) into a second bundle for the sake of twelve
+ * colours. They are the same values; `world-smoke` has no way to check that, so the pairs
+ * are listed together here with their token names for review.
+ */
 const C = {
-  sandWet: [0.78, 0.71, 0.58],
-  sand: [0.894, 0.835, 0.718],
-  grass: [0.49, 0.604, 0.369],
-  grassDry: [0.639, 0.671, 0.416],
-  rock: [0.545, 0.514, 0.471],
-  cliff: [0.435, 0.416, 0.384],
-  path: [0.792, 0.749, 0.663],
-  seabed: [0.34, 0.38, 0.36],
+  /** SCENE_COLORS.sand, wetted */
+  sandWet: [0.78, 0.73, 0.62],
+  /** SCENE_COLORS.sand */
+  sand: [0.902, 0.863, 0.761],
+  /** SCENE_COLORS.grass */
+  grass: [0.533, 0.627, 0.416],
+  /** a cooler grass for hollows, so the hillsides are not one flat wash */
+  grassCool: [0.451, 0.588, 0.427],
+  /** SCENE_COLORS.grassDry — the upland above the treeline */
+  grassDry: [0.663, 0.671, 0.486],
+  /** SCENE_COLORS.rock */
+  rock: [0.69, 0.655, 0.58],
+  /** SCENE_COLORS.cliff */
+  cliff: [0.557, 0.533, 0.478],
+  /** the bare summit */
+  scree: [0.62, 0.6, 0.557],
+  /** SCENE_COLORS.paving — the coast road and the terraces */
+  paving: [0.792, 0.757, 0.686],
+  /** a cooler paving tone, patched into the above so a quay is not one flat sheet */
+  pavingCool: [0.729, 0.714, 0.667],
+  /** SCENE_COLORS.path — the gravel lanes */
+  gravel: [0.871, 0.824, 0.714],
+  /** boardwalk timber */
+  boardwalk: [0.588, 0.494, 0.376],
+  /** the seabed, visible through shallow water */
+  seabed: [0.4, 0.44, 0.42],
 } as const;
 
 type RGB = readonly [number, number, number] | number[];
 
 function mix(a: RGB, b: RGB, t: number, out: number[]): number[] {
-  out[0] = a[0] + (b[0] - a[0]) * t;
-  out[1] = a[1] + (b[1] - a[1]) * t;
-  out[2] = a[2] + (b[2] - a[2]) * t;
+  const u = t < 0 ? 0 : t > 1 ? 1 : t;
+  out[0] = a[0] + (b[0] - a[0]) * u;
+  out[1] = a[1] + (b[1] - a[1]) * u;
+  out[2] = a[2] + (b[2] - a[2]) * u;
   return out;
 }
 
-/**
- * Vertex colour for a point on the surface.
- *
- * The ordering encodes the island's material logic, and each step overrides the last:
- *
- * 1. altitude decides the base (seabed → wet sand → sand → grass → dry upland grass);
- * 2. **slope** overrides it, because a steep face is bare rock whatever its height —
- *    this is what gives the north cliffs their character without any extra geometry;
- * 3. the **promenade** overrides everything, because paving is paving.
- */
+/** Deterministic hash used for the patchy colour variation. Matches terrain.ts's. */
+function hash2(ix: number, iy: number): number {
+  let h = Math.imul(ix, 0x27d4eb2d) ^ Math.imul(iy, 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 15), 0x2545f491);
+  h ^= h >>> 13;
+  return (h >>> 0) / 4294967296;
+}
+
+/** Smooth, low-frequency variation in [0, 1). One octave is enough at this scale. */
+function patch(x: number, z: number, scale: number): number {
+  const fx = x * scale;
+  const fz = z * scale;
+  const ix = Math.floor(fx);
+  const iz = Math.floor(fz);
+  const tx = fx - ix;
+  const tz = fz - iz;
+  const sx = tx * tx * (3 - 2 * tx);
+  const sz = tz * tz * (3 - 2 * tz);
+  const a = hash2(ix, iz);
+  const b = hash2(ix + 1, iz);
+  const c = hash2(ix, iz + 1);
+  const d = hash2(ix + 1, iz + 1);
+  return (a + (b - a) * sx) * (1 - sz) + (c + (d - c) * sx) * sz;
+}
+
+const SURFACE_COLORS: Record<PathSurface, RGB> = {
+  stone: C.paving,
+  gravel: C.gravel,
+  boardwalk: C.boardwalk,
+};
+
+/** Vertex colour for a point on the surface. See the header for the layering rule. */
 function colorAt(x: number, z: number, h: number, slope: number, out: number[]): number[] {
   // 1 — altitude bands.
   if (h < -0.6) {
-    mix(C.seabed, C.sandWet, smoothstep(-6, -0.6, h), out);
-  } else if (h < 1.6) {
-    mix(C.sandWet, C.sand, smoothstep(-0.6, 1.0, h), out);
-  } else if (h < 5) {
-    mix(C.sand, C.grass, smoothstep(1.6, 4.2, h), out);
-  } else if (h < 34) {
-    mix(C.grass, C.grass, 0, out);
+    mix(C.seabed, C.sandWet, smoothstep(-7, -0.6, h), out);
+  } else if (h < 2.2) {
+    mix(C.sandWet, C.sand, smoothstep(-0.6, 1.4, h), out);
+  } else if (h < 7) {
+    mix(C.sand, C.grass, smoothstep(2.2, 5.6, h), out);
+  } else if (h < 66) {
+    // Broad patches of two greens, so a hillside has weather in it rather than being one
+    // flat fill — the drawn look needs variation at a scale the eye reads as brushwork.
+    mix(C.grass, C.grassCool, patch(x, z, 0.011), out);
+  } else if (h < 82) {
+    const upland: number[] = [0, 0, 0];
+    mix(C.grass, C.grassCool, patch(x, z, 0.011), upland);
+    mix(upland, C.grassDry, smoothstep(66, 80, h), out);
   } else {
-    mix(C.grass, C.grassDry, smoothstep(34, 58, h), out);
+    mix(C.grassDry, C.scree, smoothstep(82, 90, h), out);
   }
 
   // 2 — steep faces are rock regardless of altitude.
-  const rockiness = smoothstep(0.42, 0.72, slope);
+  //
+  // The threshold matters more than it looks. The massif's flanks sit at 30–36° by
+  // construction (see MASSIF_RADIUS in terrain.ts), so a rock threshold anywhere near
+  // 23° turns the entire mountain to bare scree and the island reads as a quarry.
+  const rockiness = smoothstep(0.66, 0.95, slope);
   if (rockiness > 0) {
-    const rockColor = h > 18 ? C.cliff : C.rock;
-    mix(out, rockColor, rockiness, out);
+    mix(out, h > 26 ? C.cliff : C.rock, rockiness, out);
   }
 
-  // 3 — the paved promenade, with a soft shoulder so it beds into the ground.
-  const { dist } = promenadeDistance(x, z);
-  if (dist < PROMENADE_HALF_WIDTH + 2.2 && h > 0.2) {
-    const paved = 1 - smoothstep(PROMENADE_HALF_WIDTH, PROMENADE_HALF_WIDTH + 2.2, dist);
-    mix(out, C.path, paved * 0.92, out);
+  // 3 — paved terraces. Applied before the roads so a lane crossing a quay still reads
+  // as a lane.
+  for (const pad of PADS) {
+    if (!PAVED_PADS.has(pad.id)) continue;
+    const d = Math.hypot(x - pad.x, z - pad.z);
+    if (d > pad.outer) continue;
+    // Cover the pad's flat area *and* most of its blend ring: the quay's edge is where a
+    // harbour stops being a harbour, and leaving that ring sand-coloured puts a beach
+    // between the warehouses and the water.
+    const paved = 1 - smoothstep(pad.inner, pad.outer * 0.86, d);
+    if (paved > 0) {
+      const tone: number[] = [0, 0, 0];
+      mix(C.paving, C.pavingCool, patch(x, z, 0.05), tone);
+      mix(out, tone, paved * 0.94, out);
+    }
+  }
+
+  // 4 — the roads, with a soft shoulder so they bed into the ground rather than sitting
+  // on it as a stripe.
+  const hit = nearestPath(x, z);
+  if (hit.path && h > 0.2) {
+    const edge = hit.path.halfWidth;
+    const paved = 1 - smoothstep(edge, edge + 2.4, hit.dist);
+    if (paved > 0) mix(out, SURFACE_COLORS[hit.path.surface], paved * 0.9, out);
   }
 
   return out;
@@ -195,12 +288,7 @@ if (typeof self !== 'undefined' && typeof (self as unknown as Worker).postMessag
     try {
       const result = buildTerrain(event.data);
       self.postMessage(result, {
-        transfer: [
-          result.positions.buffer,
-          result.normals.buffer,
-          result.colors.buffer,
-          result.indices.buffer,
-        ],
+        transfer: [result.positions.buffer, result.normals.buffer, result.colors.buffer, result.indices.buffer],
       });
     } catch (err) {
       // Surface the failure rather than leaving the main thread waiting forever on a

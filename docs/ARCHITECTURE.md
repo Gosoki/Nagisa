@@ -102,21 +102,27 @@ at the lower one rather than flickering.
 `world/island.ts` assembles the scene in a specific order, yielding to the browser
 between batches so the loader keeps animating:
 
-1. **Terrain** — meshed from `heightAt` in a Web Worker (~115 000 vertex evaluations at
-   the `high` tier). Vertex colours encode the material logic: altitude bands give
-   sand → grass → upland, slope overrides them with rock, and the promenade overrides
-   everything with paving.
-2. **Landmarks** — the ~45 hand-placed buildings and structures from `world.ts`, each
+1. **Terrain** — meshed from `heightAt` in a Web Worker (~160 000 vertex evaluations at
+   the `high` tier). Vertex colours encode the material logic, layered in the order a
+   landscape actually forms: altitude bands give sand → grass → upland, slope overrides
+   them with rock because a steep face is bare rock whatever its height, paved terraces
+   override that, and the roads override everything.
+2. **Landmarks** — the 126 hand-placed buildings and structures from `world.ts`, each
    dropped onto the terrain by a single height lookup and grouped into **zone buckets**.
-3. **Promenade lanterns** — placed by arc length along the path polyline, so they stay
-   evenly spaced however the path is re-routed.
-4. **Scatter** — ~6 000 instanced trees, shrubs, grass and rocks, placed by rejection
-   sampling against the terrain field and packed into `InstancedMesh` per variant per
-   material.
+   Waterfront kinds (piers, boats, breakwaters, sea torii) are placed at sea level
+   instead; see `docs/WORLD.md` §4.
+3. **Roadside props** — 67 lanterns placed by arc length along the four paths, so they
+   stay evenly spaced however a road is re-routed.
+4. **Scatter** — 18 500 instanced boulders, grass tufts and driftwood in 4 draw calls,
+   placed by rejection sampling against the terrain field.
 
-Culling is **bucket-level**: one distance test hides the entire harbour when you are at
-the lighthouse, instead of Three.js frustum-testing forty objects every frame. Three's own
-culling still runs on what remains.
+Culling is **bucket-level**: one distance test hides the entire south harbour when you are
+at the lighthouse, instead of Three.js frustum-testing forty objects every frame. Three's
+own culling still runs on what remains.
+
+The renderer itself is documented separately in [RENDERING.md](RENDERING.md) — the contour
+pass, the material model and the three precision traps it invites are enough material to
+need their own page.
 
 ### 2.4 Characters
 

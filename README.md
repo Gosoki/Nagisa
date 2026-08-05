@@ -28,7 +28,8 @@ dashboard. You load the page, choose a name, and you are ashore.
 
 | | |
 |---|---|
-| **The world** | One hand-designed Japanese island: harbour, lighthouse cape, shrine path, main plaza, old street, teahouse, sunset beach, clifftop lookout, and a seaside promenade that loops the whole coast. Generated entirely from code — the island ships as roughly 40 KB of maths, not as a downloaded mesh. |
+| **The world** | One hand-designed Japanese island, sea on every side, a single mountain at its centre. Two harbours (north and south), a main plaza, an old street, a shrine headland, a lighthouse cape, a teahouse terrace, a sunset beach, a summit shrine, and a coast road that loops the whole island. 126 buildings and structures, all generated from code — the island ships as maths, not as a downloaded mesh. |
+| **The look** | Drawn, not lit. A screen-space contour pass puts a pen line on every silhouette, crease and material boundary; surfaces are flat fills with a hand-authored shadow tone, pen hatching in the shade, and paper grain over the whole frame. See [docs/RENDERING.md](docs/RENDERING.md). |
 | **Multiplayer** | Server-authoritative rooms with real-time position and animation sync, presence, emotes, and shared time of day. Reconnection restores your identity, your role and your place in whatever you had joined. |
 | **Activities** | Several things run concurrently in different zones — each with a lifecycle, a host, a participant roster, an audience, and optional check-in. Switching between them is walking somewhere. |
 | **Announcements** | Hosts announce to their activity or its zone; admins announce island-wide. Announcements arrive as a quiet toast and stay readable on the notice board. |
@@ -40,7 +41,8 @@ dashboard. You load the page, choose a name, and you are ashore.
 
 **Client**
 
-- **Three.js** (r170) — WebGL renderer, toon/cel materials, custom sea and sky shaders.
+- **Three.js** (r170) — WebGL2 renderer, a custom multiple-render-target contour pipeline,
+  and hand-written shaders for every surface, the sea and the sky.
 - **Svelte 5** — the interface overlay, mounted over the canvas. Runes in components,
   plain stores as the engine↔UI boundary.
 - **Vite 6** — dev server and bundler, with `three` split into its own long-lived chunk.
@@ -100,9 +102,26 @@ docker compose up --build
 ### Other commands
 
 ```bash
-npm test             # protocol + server unit tests (node:test)
-npm run typecheck    # all three workspaces
+npm run typecheck    # all three workspaces, including Svelte components
+
+npm test             # server unit tests + world generation + interface (116 checks)
+npm run test:e2e     # two real clients against a real server over a real socket
+npm run test:app     # the whole stack in a browser: two players, entry → world
+npm run test:all     # all of the above
+
+npm run shots        # render twelve viewpoints to PNG (headless, real pipeline)
+npm run map          # render the island to a shaded relief map
 ```
+
+`test`, `test:e2e` and `test:app` check three different things and none of them subsumes
+another. The first two exercise a layer against a stub of its neighbour; `test:app` is the
+only one that fails when the pieces are individually correct and jointly wrong — a store
+default naming a zone that no longer exists, a proxy path that changed, an entry screen
+whose button stopped calling `enterWorld`.
+
+`shots` is how the art direction is reviewed. The failure modes of a stylised renderer are
+pictures, and no type checker or unit test can see them; see
+[docs/RENDERING.md](docs/RENDERING.md) §9.
 
 ---
 
@@ -137,17 +156,18 @@ nagisa/
 │   ├── main.ts               # Entry: mount overlay, boot app, context-loss handling
 │   ├── app.ts                # Composition root — the only file that knows everything
 │   ├── engine/
-│   │   ├── renderer.ts       # GL context, post chain, fixed-step frame loop
+│   │   ├── renderer.ts       # GL context, ink pass, fixed-step frame loop
 │   │   ├── camera-rig.ts     # Third-person follow camera and framing
-│   │   └── quality.ts        # Device tiers + adaptive resolution controller
+│   │   ├── quality.ts        # Device tiers + adaptive resolution controller
+│   │   └── ink/              # The drawn look: MRT material, contour pass, shared GLSL
 │   ├── world/
 │   │   ├── island.ts         # Scene assembly, prop bucketing, distance culling
 │   │   ├── terrain.worker.ts # Meshes the height field off the main thread
 │   │   ├── ocean.ts          # Sea shader + baked bathymetry for shoreline foam
 │   │   ├── sky.ts            # Sky dome, light rig, server-synced day cycle
-│   │   ├── scatter.ts        # Deterministic instanced vegetation
+│   │   ├── scatter.ts        # Deterministic instanced ground detail
 │   │   ├── materials.ts      # The shared, cached material library
-│   │   └── props/            # Procedural buildings, structures and nature
+│   │   └── props/            # geometry → kit → buildings / structures / furniture
 │   ├── character/
 │   │   ├── character.ts      # Procedural rig + procedural animation
 │   │   ├── local-player.ts   # Client-predicted movement against the height field
@@ -159,10 +179,19 @@ nagisa/
 │   ├── input/input.ts        # Keyboard, mouse, touch stick, gamepad → one intent
 │   ├── audio/ambience.ts     # Synthesised per-zone ambience
 │   ├── state/stores.ts       # The engine ↔ interface boundary
+│   ├── probe/probe.ts        # Render probe — the real world, no UI, for screenshots
 │   └── ui/                   # Svelte overlay
 │
 ├── docs/                     # See below
-├── scripts/dev.mjs           # Runs all three workspaces with prefixed output
+├── archive/world-v1/         # The previous world model, kept for reference
+├── scripts/
+│   ├── dev.mjs               # Runs all three workspaces with prefixed output
+│   ├── dev-server.mjs        # Compiles + restarts the realtime server on change
+│   └── world-map.mjs         # Renders the island to a PNG relief map
+├── tools/
+│   ├── shot.mjs              # Twelve viewpoints → PNG, through the real pipeline
+│   ├── app-smoke.mjs         # Whole stack, two players, end to end
+│   └── pixel-probe.mjs       # Live material uniforms from a running page
 ├── Dockerfile
 └── docker-compose.yml
 ```
@@ -198,7 +227,9 @@ the server in development and served by it in production.
 |---|---|
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How the whole thing fits together, and why each major decision was made. |
 | [`docs/PROTOCOL.md`](docs/PROTOCOL.md) | The wire protocol: connection, heartbeat, snapshots, deltas, reconnection, every message. |
-| [`docs/WORLD.md`](docs/WORLD.md) | The island: geography, zones, the terrain field, the asset strategy, how to add a place or a building. |
+| [`docs/WORLD.md`](docs/WORLD.md) | The island: geography, zones, the terrain field, the path survey, how to add a place or a building. |
+| [`docs/RENDERING.md`](docs/RENDERING.md) | The ink pipeline: the contour pass, the material model, the four precision traps it invites, and how to review it. |
+| [`archive/world-v1/`](archive/world-v1/README.md) | The previous world model, kept with a table of what changed and why. |
 | [`docs/ACTIVITIES.md`](docs/ACTIVITIES.md) | The multi-activity system, rooms, roles and permissions. |
 | [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) | Quality tiers, adaptive resolution, culling, batching, and the mobile budget. |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Deployment, monitoring, scaling, incident playbooks. |

@@ -52,48 +52,99 @@ export const UI_COLORS = {
   scrim: 'rgba(246, 242, 234, 0.86)',
 } as const;
 
-/** Scene palette. Hex numbers, ready for `new THREE.Color()`. */
+/**
+ * Scene palette. Hex numbers, ready for `new THREE.Color()`.
+ *
+ * ### Why these particular colours
+ *
+ * The world is drawn, not lit. Everything is rendered as a flat fill plus a *named*
+ * shadow tone and an ink contour, so the palette has to carry the whole atmosphere on its
+ * own — there is no physically-based falloff doing the work.
+ *
+ * Three rules, taken from the reference product:
+ *
+ * 1. **Nothing is saturated except the accent.** Greens go through olive rather than
+ *    emerald, greys are warm, the sea is desaturated teal. A single vermilion is the only
+ *    pure hue on the island, and it appears on torii and almost nothing else.
+ * 2. **Shadows are hue-shifted, not darkened.** `*Shadow` entries are cooler and slightly
+ *    violet, never the base colour multiplied down. This is the single biggest difference
+ *    between "cel-shaded 3D" and "a painting". They are authored in pairs, right next to
+ *    each other, so drift is visible in review.
+ *
+ *    They are also *shallow*: a shadow tone sits around 70–80% of its base's luminance,
+ *    not 50%. The world is high-key — light masses with dark line work — and the contour
+ *    pass is what draws the form. Deep shadow tones fight it: every wall facing away from
+ *    the sun turns into a black slab, the pen lines vanish inside it, and the result reads
+ *    as an unlit 3D model rather than as a drawing. If a surface looks flat, the fix is a
+ *    material id (a line), never a darker shadow.
+ * 3. **Ink is a warm near-black slate, never #000.** Pure black contours read as vector
+ *    art; `#373f42` reads as a pen.
+ */
 export const SCENE_COLORS = {
-  /** Sky gradient, horizon → zenith. */
-  skyHorizon: 0xf2e6d4,
-  skyZenith: 0x8fb8d4,
+  /** Sky gradient, horizon → zenith. Pale and high-key so the island reads dark against it. */
+  skyHorizon: 0xeef0e6,
+  skyZenith: 0x9dc5cb,
+  /** Flat card the sea and sky meet on when fog takes over. */
+  skyHaze: 0xdfe8e4,
 
-  /** Sun and its bounce, driving the two-tone toon ramp. */
-  sunLight: 0xfff2dc,
-  ambientLight: 0xa8c0d0,
-  /** Fill from below: light bouncing off the sea. */
-  bounceLight: 0x6f98ac,
+  /** Key light, its shadow tone, and the fill bouncing up off the water. */
+  sunLight: 0xfff4e0,
+  skyFill: 0xa9c6cd,
+  bounceLight: 0x86aab0,
 
-  /** Water: shallow at the shore, deep offshore. */
-  waterShallow: 0x74b3bd,
-  waterDeep: 0x2c5f7a,
-  waterFoam: 0xf4f8f6,
+  /** The single ink colour every contour in the world is drawn with. */
+  ink: 0x373f42,
 
-  /** Ground. */
-  sand: 0xe4d5b7,
-  grass: 0x7d9a5e,
-  grassDry: 0xa3ab6a,
-  rock: 0x8b8378,
-  cliff: 0x6f6a62,
-  path: 0xcabfa9,
-  paving: 0xd6cdb9,
+  /** Water: flat teal, a deeper offshore tone, and the drawn foam line. */
+  waterShallow: 0x74bdb2,
+  waterMid: 0x4e9e9c,
+  waterDeep: 0x336f7d,
+  waterFoam: 0xf6faf5,
+
+  /** Ground, each with its paired shadow tone. */
+  sand: 0xe6dcc2,
+  sandShadow: 0xcac4b2,
+  grass: 0x88a06a,
+  grassShadow: 0x6f8a72,
+  grassDry: 0xa9ab7c,
+  grassDryShadow: 0x8b9270,
+  rock: 0xb0a794,
+  rockShadow: 0x968f83,
+  cliff: 0x8e887a,
+  cliffShadow: 0x777a76,
+  path: 0xded2b6,
+  pathShadow: 0xbdb8a5,
+  paving: 0xd2c9b2,
+  pavingShadow: 0xb4b0a0,
 
   /** Architecture. */
-  woodDark: 0x51392a,
-  woodLight: 0xa57a51,
-  plaster: 0xefe8da,
-  roofTile: 0x4a4f52,
-  roofThatch: 0x9c8358,
+  woodDark: 0x7a6046,
+  woodDarkShadow: 0x5b4c40,
+  woodLight: 0xc0a179,
+  woodLightShadow: 0x94806a,
+  plaster: 0xf4efe4,
+  plasterShadow: 0xd2d1c8,
+  roofTile: 0x808f94,
+  roofTileShadow: 0x63727a,
+  roofThatch: 0xb39a70,
+  roofThatchShadow: 0x8d7d60,
+  roofCopper: 0x8dab9c,
+  roofCopperShadow: 0x6c857c,
+  terracotta: 0xc4663f,
+  terracottaShadow: 0xa25b45,
   vermilion: 0xc4503a,
-  lighthouseWhite: 0xf4f0e6,
+  vermilionShadow: 0x9e4a3b,
+  lighthouseWhite: 0xf4f1e8,
+  lighthouseWhiteShadow: 0xd6d6cf,
+  stone: 0xc7c0b2,
+  stoneShadow: 0xa5a298,
 
-  /** Vegetation. */
-  pine: 0x4d6b48,
-  bamboo: 0x86a05a,
-  maple: 0xb75c3c,
+  /** Paper screens: the warm glow behind shoji after dusk. */
+  shoji: 0xf7efdc,
+  shojiGlow: 0xffd79c,
 
   /** Fog, matched to the horizon so the island dissolves rather than clips. */
-  fog: 0xdfe6e4,
+  fog: 0xdfe8e4,
 } as const;
 
 /**

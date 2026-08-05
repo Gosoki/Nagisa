@@ -201,7 +201,8 @@ are reconnecting in a tight loop, look for `version_mismatch` in the logs.
 They cannot be: slopes steeper than the walkable limit push characters downhill, deep
 water nudges them back toward shore, and there are no invisible walls. If it happens
 anyway, it is a `heightAt` discontinuity — reproduce with `nearestWalkable` at their last
-logged position and check for a pad or promenade edit that created a cliff.
+logged position and check for a pad or path edit that created a cliff. `node scripts/world-map.mjs`
+flags every unwalkable pixel in red, which is usually faster than reading the field by hand.
 
 **"The island looks different for different players."**
 Vegetation scatter is generated client-side from a fixed seed and is never networked.

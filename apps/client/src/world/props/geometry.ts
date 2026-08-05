@@ -358,6 +358,16 @@ export function merge(meshes: readonly THREE.Mesh[]): THREE.BufferGeometry {
     m.updateMatrix();
     let g = m.geometry.clone();
     g.applyMatrix4(m.matrix);
+    // Normalise the attribute set before merging. `mergeGeometries` requires every input
+    // to carry exactly the same attributes, and this library mixes built-in geometries
+    // (which have `uv`) with hand-rolled ones that only have `position` — the roof
+    // barge-boards, for instance. Nothing in the prop library is textured, so `uv` is
+    // dead weight in every case; dropping it makes the two compatible and saves the
+    // memory as a bonus.
+    for (const name of Object.keys(g.attributes)) {
+      if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
+    }
+    if (!g.attributes.normal) g.computeVertexNormals();
     // `mergeGeometries` refuses to mix indexed and non-indexed inputs. The hand-rolled
     // roof geometries above are built non-indexed on purpose (see the comment at the top
     // of the roofs section); built-in geometries like BoxGeometry/CylinderGeometry are

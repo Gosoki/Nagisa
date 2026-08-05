@@ -24,6 +24,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = mkdtempSync(join(root, '.uismoke-'));
+/** Exit status, set inside the try so the `finally` cleanup always gets to run first. */
+let status = 1;
 
 try {
   // Vite compiles `.svelte` files; esbuild alone cannot. Rather than adding a second
@@ -228,7 +230,12 @@ process.exit(failures === 0 ? 0 : 1);
   );
 
   const run = spawnSync('node', [runner], { cwd: root, stdio: 'inherit' });
-  process.exit(run.status ?? 1);
+  // Record the status rather than exiting here. `process.exit()` terminates the process
+  // immediately and **skips `finally`**, so exiting from inside the try block leaked a
+  // `.uismoke-*` scratch directory into the repository root on every single run.
+  status = run.status ?? 1;
 } finally {
   rmSync(outDir, { recursive: true, force: true });
 }
+
+process.exit(status);

@@ -12,12 +12,13 @@ crowd of dozens visible, over cellular data. Everything below exists to hit that
 | Max pixel ratio | 1.0 | 1.5 | 2.0 |
 | Min pixel ratio | 0.6 | 0.75 | 0.9 |
 | Shadows | off | 1024² | 2048² |
-| Terrain grid | 160² (~26 k verts) | 240² (~58 k) | 340² (~116 k) |
-| Scatter density | 35% (~2 100) | 70% (~4 200) | 100% (~6 000) |
+| Terrain grid | 160² (~26 k verts) | 240² (~58 k) | 400² (~160 k) |
+| Scatter instances | ~3 200 | ~9 000 | ~18 500 |
 | Draw distance | 240 m | 400 m | 700 m |
 | Animated water | no | yes | yes |
 | Detailed characters | 12 | 28 | 60 |
-| Post-processing | off | bloom | bloom |
+| Contour pass | on (thicker line) | on | on |
+| Paper grain | reduced | full | full |
 
 Tier is chosen at boot from device memory, core count and pointer coarseness. It sets
 scene **content**, which cannot be changed cheaply mid-session; adaptive resolution then
@@ -62,7 +63,7 @@ buy:
 
 | Technique | Where | Effect |
 |---|---|---|
-| **Instancing** | `scatter.ts` | ~6 000 plants and rocks → ~20 `InstancedMesh` calls. |
+| **Instancing** | `scatter.ts` | 18 500 boulders, tufts and driftwood → 4 `InstancedMesh` calls. |
 | **Geometry merging** | `scatter.ts`, `props/geometry.ts` | Each prototype's meshes are flattened and merged per material before instancing; each building collapses to one mesh per material. |
 | **Shared materials** | `materials.ts` | Cached by key. Material *identity* is what makes merging possible at all. |
 | **Bucket culling** | `island.ts` | Landmarks grouped by zone with one bounding sphere each. One distance test hides the whole harbour from the lighthouse. |
@@ -112,13 +113,13 @@ and in a calm world a visible snap costs more than an invisible delay.
 | Phase | `high` tier |
 |---|---|
 | Terrain meshing (worker) | ~400–700 ms |
-| Landmarks (~45 props) | ~120 ms, yielding every 8 props |
-| Promenade lanterns (~29) | ~40 ms |
+| Landmarks (126 props) | ~300 ms, yielding every 8 props |
+| Roadside lanterns (67) | ~70 ms |
 | Scatter placement + merge | ~350 ms |
 
 Two things keep this from feeling like a freeze:
 
-- **Terrain meshes in a Web Worker.** ~116 000 `heightAt` evaluations at the `high` tier
+- **Terrain meshes in a Web Worker.** ~160 000 `heightAt` evaluations at the `high` tier
   is comfortably enough to drop frames, and it happens exactly when the player is staring
   at a loading screen forming an opinion about whether this world is worth their time.
 - **Everything else yields.** Landmarks build in batches of eight with a frame between
@@ -139,9 +140,10 @@ There is no art to download.
 - **Hidden tabs skip the whole frame.** A backgrounded tab's rAF is throttled to ~1 Hz;
   rendering that frame is pointless and the huge `dt` would launch the character into
   orbit.
-- **Antialiasing is off.** The toon look tolerates the softness adaptive DPR introduces far
+- **Antialiasing is off.** The drawn look tolerates the softness adaptive DPR introduces far
   better than it tolerates a halved frame rate.
-- **Memory.** No textures beyond a 256² bathymetry bake, a 3-pixel gradient ramp and small
+- **Memory.** No textures beyond a 256² bathymetry bake and the two half-float
+  render targets the contour pass needs (16 bytes per pixel in total), plus small
   per-name label canvases. The scene's GPU footprint is geometry and nothing else.
 
 ---
@@ -152,7 +154,7 @@ The debug readout (toggled in settings) reports FPS, draw calls, triangles, the 
 adaptive pixel ratio and the scatter instance count. Boot logs a one-line build summary:
 
 ```
-[nagisa] island built — terrain 512ms, 45 landmarks, 5983 scattered instances
+[nagisa] island built — terrain 152ms, 126 landmarks, 18447 scattered instances
 ```
 
 Server-side, `GET /metrics` exposes Prometheus text: connections, messages in/out by type,
@@ -170,7 +172,7 @@ In rough order of return on effort:
    bad connections. It costs nothing and fixes most of it.
 2. **Lower `maxDetailedCharacters`.** Crowd animation is the largest per-frame CPU cost at
    high population.
-3. **Reduce `terrainResolution`.** Quadratic, and the toon shading hides a surprising
+3. **Reduce `terrainResolution`.** Quadratic, and the flat shading hides a surprising
    amount of tessellation loss.
 4. **Drop `scatterDensity`.** Cheap and visually costly — do this after the terrain.
 5. **Turn off shadows.** The single most expensive feature, but the island loses a lot of

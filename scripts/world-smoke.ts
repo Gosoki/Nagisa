@@ -30,7 +30,7 @@ import {
 } from '@nagisa/shared';
 import { buildTerrain } from '../apps/client/src/world/terrain.worker.js';
 import { Scatter } from '../apps/client/src/world/scatter.js';
-import { createLandmark } from '../apps/client/src/world/props/index.js';
+import { createLandmark, knownLandmarkKinds } from '../apps/client/src/world/props/index.js';
 import { Character } from '../apps/client/src/character/character.js';
 import { QUALITY_PRESETS } from '../apps/client/src/engine/quality.js';
 
@@ -99,10 +99,12 @@ console.log('\nWorld layout');
 // ---------------------------------------------------------------------------
 
 {
-  const misplaced = ZONES.filter((z) => z.id !== 'promenade' && zoneAt(z.x, z.z) !== z.id);
+  // `coast` is the catch-all fallback: its radius covers the world and its anchor is
+  // nominal, so "does the anchor resolve to this zone" is not a meaningful question for it.
+  const misplaced = ZONES.filter((z) => z.id !== 'coast' && zoneAt(z.x, z.z) !== z.id);
   check('every zone anchor resolves to its own zone', misplaced.length === 0, misplaced.map((z) => z.id));
 
-  const unwalkable = ZONES.filter((z) => z.id !== 'promenade' && !isWalkable(z.x, z.z));
+  const unwalkable = ZONES.filter((z) => z.id !== 'coast' && !isWalkable(z.x, z.z));
   check('every zone anchor is walkable', unwalkable.length === 0, unwalkable.map((z) => z.id));
 
   const padMismatch = PADS.filter((p) => Math.abs(heightAt(p.x, p.z) - p.height) > 0.35);
@@ -110,7 +112,7 @@ console.log('\nWorld layout');
     padMismatch.map((p) => ({ id: p.id, want: p.height, got: heightAt(p.x, p.z) })));
 
   const spawns = [0, 1, 2, 3, 4, 5].map((i) => spawnPoint(i));
-  check('all spawn points are in the harbour', spawns.every((s) => zoneAt(s.pos[0], s.pos[2]) === 'harbor'),
+  check('all spawn points are on the south harbour quay', spawns.every((s) => zoneAt(s.pos[0], s.pos[2]) === 'south-harbor'),
     spawns.map((s) => zoneAt(s.pos[0], s.pos[2])));
   check('all spawn points are walkable', spawns.every((s) => isWalkable(s.pos[0], s.pos[2])));
 
@@ -196,11 +198,23 @@ console.log('\nLandmarks');
 
   check(`all ${LANDMARKS.length} landmarks build`, failed.length === 0, failed.slice(0, 5));
   check('no landmark floats above its base', floating === 0, { floating });
-  check('total landmark geometry is within budget', totalTris < 40_000, { totalTris: Math.round(totalTris) });
+  // Budget raised for world model v2: 123 landmarks with stepped tile courses, framed
+  // walls and plank decks, against v1's 48 box-and-wedge props. ~570 triangles per
+  // landmark is the target; the ceiling here is a little over double that so a single
+  // detailed building does not trip it, and well under the point where the island stops
+  // fitting in a mobile vertex budget.
+  check('total landmark geometry is within budget', totalTris < 160_000, { totalTris: Math.round(totalTris) });
   console.log(`      ${LANDMARKS.length} landmarks, ${Math.round(totalTris)} triangles total`);
 
   const unknown = createLandmark('not-a-real-kind' as never);
   check('an unknown landmark kind degrades to an empty group', unknown.children.length === 0);
+
+  // Data and geometry live in different packages and can be edited in either order; this
+  // is what turns "someone added a landmark kind and forgot the builder" from an
+  // invisible missing building into a failed build.
+  const buildable = new Set(knownLandmarkKinds());
+  const missing = [...new Set(LANDMARKS.map((l) => l.kind))].filter((k) => !buildable.has(k));
+  check('every landmark kind used by the world has a builder', missing.length === 0, missing);
 }
 
 // ---------------------------------------------------------------------------
@@ -212,10 +226,13 @@ console.log('\nScatter');
   check('scatter places a substantial number of instances', scatter.instanceCount > 3000, {
     instances: scatter.instanceCount,
   });
-  check('scatter stays within a sane draw-call budget', scatter.drawCalls < 80, {
-    drawCalls: scatter.drawCalls,
+  // One InstancedMesh per species is the whole point of the scatterer: tens of thousands
+  // of objects for a handful of draw calls.
+  const scatterDrawCalls = scatter.group.children.length;
+  check('scatter stays within a sane draw-call budget', scatterDrawCalls > 0 && scatterDrawCalls < 16, {
+    drawCalls: scatterDrawCalls,
   });
-  console.log(`      ${scatter.instanceCount} instances across ${scatter.drawCalls} draw calls`);
+  console.log(`      ${scatter.instanceCount} instances across ${scatterDrawCalls} draw calls`);
 
   // Determinism is the whole reason scatter is never networked: every client must
   // independently produce an identical island.

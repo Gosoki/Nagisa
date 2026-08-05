@@ -490,6 +490,16 @@ export interface ServerWelcome {
   /** Server epoch ms at send time; the client offsets its clock from this. */
   serverTime: number;
   tickHz: number;
+  /**
+   * Which map pack the server is simulating.
+   *
+   * The client refuses to enter a world it did not itself load. Both sides validate player
+   * positions against `heightAt`, so on a mismatch the server's ground is somewhere else
+   * entirely and every player is instantly, permanently out of bounds — a failure that
+   * presents as unexplained teleporting rather than as anything resembling its cause.
+   * Better to say so at the handshake.
+   */
+  mapId: string;
   /** Rooms the client may switch to, for the room picker. */
   rooms: RoomView[];
 }

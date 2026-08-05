@@ -110,7 +110,7 @@ export const DEFAULT_INK_SETTINGS: InkPassSettings = {
   smoothMargin: 0.34,
   wobble: 1.15,
   paper: 0.5,
-  vignette: 0.22,
+  vignette: 0.13,
 };
 
 const COMPOSITE_VERT = /* glsl */ `
@@ -300,12 +300,18 @@ void main() {
   float luma = dot(scene, vec3(0.2126, 0.7152, 0.0722));
   scene = mix(scene, scene * vec3(1.03, 1.0, 0.95), uWarmth * luma);
   scene = mix(scene, scene * vec3(0.94, 0.98, 1.06), uWarmth * (1.0 - luma) * 0.7);
-  scene = clamp((scene - 0.5) * 1.045 + 0.5, 0.0, 1.0);
+  // Contrast pivoted a little below mid-grey. The palette is high-key by design, and a
+  // curve pivoted at 0.5 leaves it *washed* rather than light — the picture needs a
+  // genuine dark end to read as drawn rather than as faded.
+  scene = clamp((scene - 0.46) * 1.16 + 0.46, 0.0, 1.0);
 
-  // Paper over the whole frame, ink included.
-  scene *= 1.0 + grain * 0.09 * uPaper;
+  // Paper over the whole frame, ink included — midtones only, for the same reason the
+  // geometry pass masks its own tooth. See paperGrain in glsl.ts.
+  float paperTone = clamp(dot(scene, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+  scene *= 1.0 + grain * 0.07 * uPaper * (4.0 * paperTone * (1.0 - paperTone));
 
   // A soft vignette, as though the drawing sits on a page rather than filling a screen.
+  // Light: past about 0.15 it stops reading as a page edge and starts reading as a lens.
   vec2 centred = vUv - 0.5;
   float vig = 1.0 - uVignette * dot(centred, centred) * 1.6;
   scene *= vig;

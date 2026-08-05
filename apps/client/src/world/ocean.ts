@@ -40,8 +40,18 @@ import { inkLighting } from '../engine/ink/ink-material.js';
 /** Resolution of the baked bathymetry texture. 256² covers the island at ~2 m per texel. */
 const BATHY_RES = 256;
 
-/** Area covered by the bathymetry bake, metres from origin. Slightly past the terrain. */
-const BATHY_EXTENT = ISLAND_EXTENT + 40;
+/**
+ * Area covered by the bathymetry bake, metres from origin. Slightly past the terrain.
+ *
+ * A function, not a constant, because `ISLAND_EXTENT` is a live binding that changes with
+ * the active map. Captured at module scope it would freeze whichever map happened to be
+ * active when this file was first imported — which is always the *default* one, since
+ * imports are evaluated before any code gets to choose. The result on a smaller map is a
+ * bathymetry texture stretched over the wrong area, so the foam line sits offshore.
+ */
+function bathyExtent(): number {
+  return ISLAND_EXTENT + 40;
+}
 
 /**
  * Bake sea-floor depth into a red-channel texture.
@@ -51,12 +61,13 @@ const BATHY_EXTENT = ISLAND_EXTENT + 40;
  * spends its precision there rather than on the abyss.
  */
 function bakeBathymetry(): THREE.DataTexture {
+  const extent = bathyExtent();
   const data = new Uint8Array(BATHY_RES * BATHY_RES);
-  const step = (BATHY_EXTENT * 2) / (BATHY_RES - 1);
+  const step = (extent * 2) / (BATHY_RES - 1);
   for (let j = 0; j < BATHY_RES; j++) {
-    const z = -BATHY_EXTENT + j * step;
+    const z = -extent + j * step;
     for (let i = 0; i < BATHY_RES; i++) {
-      const x = -BATHY_EXTENT + i * step;
+      const x = -extent + i * step;
       const depth = Math.max(0, -heightAt(x, z));
       data[j * BATHY_RES + i] = Math.min(255, Math.round((depth / 24) * 255));
     }
@@ -80,6 +91,7 @@ function bakeBathymetry(): THREE.DataTexture {
  * to — and the last few rings stretch out to the horizon.
  */
 function buildOceanGeometry(rings: number, sectors: number): THREE.BufferGeometry {
+  const extent = bathyExtent();
   const positions: number[] = [];
   const uvs: number[] = [];
   const indices: number[] = [];
@@ -98,7 +110,7 @@ function buildOceanGeometry(rings: number, sectors: number): THREE.BufferGeometr
       positions.push(x, 0, z);
       // UVs map world space onto the bathymetry texture; outside its extent the clamp
       // gives deep water, which is correct.
-      uvs.push((x + BATHY_EXTENT) / (BATHY_EXTENT * 2), (z + BATHY_EXTENT) / (BATHY_EXTENT * 2));
+      uvs.push((x + extent) / (extent * 2), (z + extent) / (extent * 2));
     }
   }
 

@@ -30,6 +30,23 @@ import * as THREE from 'three';
 import { box, cyl, meshFrom, mulberry32 } from './geometry.js';
 
 /**
+ * Deterministic hash of a 3D position → [0, 1).
+ *
+ * Quantised before hashing so that vertices which *should* be the same point — the shared
+ * corners a non-indexed polyhedron stores several times over — land in the same bucket
+ * despite floating-point noise, and therefore get the same value.
+ */
+function positionHash(x: number, y: number, z: number, seed: number): number {
+  const q = 1e4;
+  let h = Math.imul(Math.round(x * q) ^ 0x27d4eb2d, 0x165667b1);
+  h = Math.imul(h ^ Math.round(y * q), 0x27d4eb2d);
+  h = Math.imul(h ^ Math.round(z * q), 0x85ebca6b);
+  h = Math.imul(h ^ seed, 0x2545f491);
+  h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+
+/**
  * Build-adjust-return in one expression.
  *
  * The roof builders below construct dozens of slabs that each need a rotation applied
@@ -577,19 +594,27 @@ export function boulder(radius: number, material: THREE.Material, seed = 1): THR
   // discontinuity, so a finely subdivided rock arrives as a ball of wireframe rather than
   // as a rock. Twenty large facets give the handful of lines a person would actually draw.
   const geo = new THREE.IcosahedronGeometry(radius, 0);
-  const rng = mulberry32(seed);
   const pos = geo.attributes.position as THREE.BufferAttribute;
   const v = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i);
-    // Displace along the normal (which for a sphere is the position) and squash
-    // vertically, because a rock sitting on the ground is wider than it is tall.
-    v.multiplyScalar(0.82 + rng() * 0.34);
+    // Displacement is a function of **where the vertex is**, not of which vertex it is.
+    //
+    // `IcosahedronGeometry` is non-indexed: every face carries its own three vertices, so
+    // each corner of the solid appears in the buffer three to five times over. Pulling a
+    // fresh random number per vertex therefore moves those copies to different places and
+    // the rock splits open along every edge — which is exactly what it looked like.
+    // Hashing the position instead gives every copy of a shared corner the same answer, so
+    // the faces stay welded while the silhouette still comes out irregular.
+    const jitter = positionHash(v.x, v.y, v.z, seed);
+    v.multiplyScalar(0.8 + jitter * 0.38);
     v.y *= 0.62;
     pos.setXYZ(i, v.x, v.y, v.z);
   }
   geo.computeVertexNormals();
   const mesh = meshFrom(geo, material, 0, radius * 0.42, 0);
-  mesh.rotation.y = rng() * Math.PI * 2;
+  // A whole-object rotation is fine to draw from the seed — it moves every vertex together
+  // and so cannot split anything.
+  mesh.rotation.y = mulberry32(seed)() * Math.PI * 2;
   return mesh;
 }

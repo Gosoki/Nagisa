@@ -58,8 +58,17 @@ import type { Logger } from './logger.js';
 import { metrics } from './metrics.js';
 import type { PersistedActivity } from './persistence.js';
 
-/** All ZoneIds, used to seed a full (all-zeros) zone population record. */
-const ALL_ZONE_IDS: readonly ZoneId[] = ZONES.map((z) => z.id);
+/**
+ * All ZoneIds, used to seed a full (all-zeros) zone population record.
+ *
+ * Read from `ZONES` on each call rather than captured once. `ZONES` is a live binding over
+ * the active map pack, and the map is chosen at boot from `NAGISA_MAP` — snapshotting it at
+ * module scope would bind whichever map happened to be active when this file was first
+ * imported, which depends on module evaluation order rather than on configuration.
+ */
+function allZoneIds(): readonly ZoneId[] {
+  return ZONES.map((z) => z.id);
+}
 
 /**
  * A delta is "quiet" — and therefore safe to drop under backpressure, see
@@ -81,7 +90,7 @@ function isQuietDelta(d: ServerDelta): boolean {
 }
 
 function zonePopulationEqual(a: Record<ZoneId, number>, b: Record<ZoneId, number>): boolean {
-  for (const id of ALL_ZONE_IDS) if (a[id] !== b[id]) return false;
+  for (const id of allZoneIds()) if (a[id] !== b[id]) return false;
   return true;
 }
 
@@ -340,7 +349,7 @@ export class Room {
   // ---------------------------------------------------------------------------------
 
   private computeZonePopulation(): Record<ZoneId, number> {
-    const counts = Object.fromEntries(ALL_ZONE_IDS.map((z) => [z, 0])) as Record<ZoneId, number>;
+    const counts = Object.fromEntries(allZoneIds().map((z) => [z, 0])) as Record<ZoneId, number>;
     for (const player of this.players.values()) {
       // Away players are disconnected — they still occupy a room slot (see `disconnect`)
       // but should not inflate "how many people are physically in this zone right now."

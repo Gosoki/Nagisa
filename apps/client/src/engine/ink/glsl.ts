@@ -103,11 +103,24 @@ float inkValueNoise(vec2 p) {
   );
 }
 
-/** Two octaves of grain, centred on 0. Range roughly [-0.5, 0.5]. */
+/**
+ * Paper tooth. Two octaves, centred on 0, range roughly [-0.5, 0.5].
+ *
+ * ### Frequency is the whole difference between paper and haze
+ *
+ * The first version sampled at 0.42 and 1.31 per pixel — close enough to per-pixel that
+ * the result was white noise, and a large flat surface covered in low-amplitude white
+ * noise does not read as paper. It reads as a grey film laid over the screen, which is
+ * exactly what it was reported as.
+ *
+ * Real paper tooth is *coarse*: the fibres are visible as a texture at a scale of several
+ * pixels, not one. Dropping the frequency by a factor of four gives a grain the eye
+ * resolves as surface rather than integrating into fog.
+ */
 float paperGrain(vec2 fragCoord) {
-  float a = inkValueNoise(fragCoord * 0.42);
-  float b = inkValueNoise(fragCoord * 1.31 + 17.0);
-  return (a * 0.66 + b * 0.34) - 0.5;
+  float a = inkValueNoise(fragCoord * 0.11);
+  float b = inkValueNoise(fragCoord * 0.33 + 17.0);
+  return (a * 0.68 + b * 0.32) - 0.5;
 }
 
 /**

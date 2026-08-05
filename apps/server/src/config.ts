@@ -12,7 +12,7 @@
  * `node dist/index.js` boots a single-room, single-shard island on localhost:8787.
  */
 
-import { PROTOCOL } from '@nagisa/shared';
+import { DEFAULT_MAP_ID, resolveMapId, PROTOCOL } from '@nagisa/shared';
 
 /** Parse an integer env var, falling back to `def` when unset or unparsable. */
 function envInt(name: string, def: number): number {
@@ -67,6 +67,17 @@ export interface Config {
   /** Minimum severity that reaches stdout. Default 'info'. */
   readonly LOG_LEVEL: LogLevel;
   /**
+   * Which map pack to simulate. Default `nagisa-island`; `lantern-atoll` also ships.
+   *
+   * Applied once at boot, before any room is created. Switching maps under a populated
+   * room would leave every player standing on coordinates that no longer describe ground,
+   * so this is deliberately not runtime-reconfigurable: restart the process.
+   *
+   * Clients must load the same map — they pass `?map=` — and the server tells them which
+   * one it chose in the welcome message so a mismatch fails loudly at the handshake.
+   */
+  readonly MAP_ID: string;
+  /**
    * Bearer token that grants {@link import('@nagisa/shared').Role.Admin} when supplied as
    * `?admin=<token>` on the WebSocket upgrade URL. Unset (the default) disables admin
    * grant-by-query entirely — production deployments should set this to a long random
@@ -104,6 +115,7 @@ function buildConfig(): Config {
   const ROOM_CAPACITY = envInt('ROOM_CAPACITY', 120);
   const ROOM_COUNT = envInt('ROOM_COUNT', 1);
   const LOG_LEVEL = envLogLevel('LOG_LEVEL', 'info');
+  const MAP_ID = envStr('NAGISA_MAP', DEFAULT_MAP_ID);
   const ADMIN_TOKEN = envOptStr('ADMIN_TOKEN');
   const STATIC_DIR = envOptStr('STATIC_DIR');
   const PERSIST_PATH = envOptStr('PERSIST_PATH');
@@ -117,6 +129,9 @@ function buildConfig(): Config {
   if (PORT < 1 || PORT > 65535) throw new Error(`PORT out of range: ${PORT}`);
   if (ROOM_CAPACITY < 1) throw new Error(`ROOM_CAPACITY must be >= 1, got ${ROOM_CAPACITY}`);
   if (ROOM_COUNT < 1) throw new Error(`ROOM_COUNT must be >= 1, got ${ROOM_COUNT}`);
+  // Fail at boot, not at the first player's first step. resolveMapId throws with the list of
+  // registered ids, which is the only thing an operator who mistyped one actually wants.
+  resolveMapId(MAP_ID);
 
   return Object.freeze({
     PORT,
@@ -125,6 +140,7 @@ function buildConfig(): Config {
     ROOM_COUNT,
     TICK_HZ: PROTOCOL.TICK_HZ,
     LOG_LEVEL,
+    MAP_ID,
     ADMIN_TOKEN,
     STATIC_DIR,
     PERSIST_PATH,

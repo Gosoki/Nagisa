@@ -15,26 +15,34 @@
  * - **It is editable by anyone.** Moving the shrine 20 m east is a number change here,
  *   not a Blender round-trip.
  *
- * ### The shape: a hexagon around a mountain
+ * ### The island is not in this file
+ *
+ * Where things *are* — the coast's capes and bays, the terraces, the routes, the buildings —
+ * is a {@link MapPack}, and this module reads whichever one is active. See `map/types.ts`
+ * for the split and `maps/nagisa-island.ts` for the shipped world. Everything below is the
+ * machinery that turns a pack into ground: how a terrace is applied, how a route's grade is
+ * surveyed, what counts as walkable. Those are rules, and they are the same on every map.
+ *
+ * ### The shape of the shipped island
  *
  * ```
- *                        北港 North Harbour        (low)
- *                              (0, -74)
- *                            ╱           ╲
- *          灯台岬 Lighthouse                町並み Old Street   ┐
- *             (-64, -37)                      (64, -37)        │ one shelf,
- *                 │        ▲ 山頂 Summit         │             │ and the road
- *                 │          (0, 0)  54 m        │             │ up the mountain
- *          神社 Shrine                     広場 Main Plaza      ┘
- *             (-64, 37)                       (64, 37)
- *                            ╲           ╱
- *                        南港 South Harbour        (low)
- *                              (0, 74)
+ *                     北港 North Harbour  2.4 m
+ *                            (0, -74)
+ *                         ╱            ╲
+ *       灯台岬 Lighthouse                 町並み Old Street  ┐
+ *          (-64, -37) 13 m                  (64, -37) 9 m   │ one shelf,
+ *              │        ▲ 山頂 Summit          │            │ and the road
+ *              │          (0, 0)  26 m         │            │ up the mountain
+ *       神社 Shrine                       広場 Main Plaza    ┘
+ *          (-64, 37) 11 m                   (64, 37) 8 m
+ *                         ╲            ╱
+ *                     南港 South Harbour  2.4 m
+ *                            (0, 74)
  * ```
  *
  * Six places on a hexagon 74 m to a side, and the summit at the centre. Everything is a
- * few seconds from everything else: the whole coast road is 444 m, and the climb from the
- * eastern shelf to the summit is 70 m.
+ * few seconds from everything else: the ring road is 493 m, and the climb from the eastern
+ * shelf to the summit is 86 m — under ten seconds at a run.
  *
  * The heights say what each place is:
  *
@@ -62,6 +70,16 @@
  * Units are metres. `y = 0` is mean sea level. Negative heights are seabed. `-z` is
  * north, `+x` is east — the three.js convention, kept everywhere in this codebase.
  */
+
+import { onMapChange } from './map/registry.js';
+import type { CoastFeature, MapRelief, MapTerrain, Pad, PathSurface, Shelf, Shelter, WorldPath } from './map/types.js';
+// Side effect: registers the built-in packs and activates one, so the bindings below are
+// populated before any consumer reads them.
+import './maps/index.js';
+
+export type { CoastFeature, MapRelief, Pad, PathSurface, Shelf, Shelter, WorldPath };
+export { activeMap, activeMapId, getMap, listMaps, onMapChange, registerMap, setActiveMap } from './map/registry.js';
+export type { MapPack, MapTerrain, MapWorld } from './map/types.js';
 
 // ---------------------------------------------------------------------------
 // Deterministic noise primitives
@@ -154,107 +172,56 @@ export function clamp(v: number, lo: number, hi: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Island dimensions
+// The active map
 // ---------------------------------------------------------------------------
 
+/**
+ * The pack's data, republished as module bindings.
+ *
+ * These are `let`, not `const`, and reassigned by the subscriber below when the map changes.
+ * ES module bindings are *live*: a consumer that wrote `import { PADS } from '@nagisa/shared'`
+ * sees the new array on its very next read, with no subscription of its own and no
+ * indirection at the call site. That property is why the decoupling cost the rest of the
+ * codebase nothing — the thirteen modules that read this data were not touched.
+ *
+ * The one rule it imposes: **do not cache these at module scope elsewhere.** `const MY_PADS =
+ * PADS` in another file snapshots the old map and silently keeps it. Read them where you use
+ * them, or subscribe with {@link onMapChange}.
+ */
+
 /** Extent of the terrain grid the client meshes, metres from origin on each axis. */
-export const ISLAND_EXTENT = 175;
+export let ISLAND_EXTENT = 0;
 
 /** Radius beyond which there is nothing but open water. Used for camera + fog limits. */
-export const OCEAN_RADIUS = 2400;
+export let OCEAN_RADIUS = 0;
 
-/** Mean radius of the coastline, before capes, bays and wobble. */
-const COAST_RADIUS = 122;
-
-/**
- * Distance from the summit to each of the six zones — the hexagon's circumradius, which
- * for a regular hexagon is also its side length. 74 m is the whole design brief in one
- * number: about eight seconds at a run, so a neighbour is never a journey.
- */
-export const HEX_RADIUS = 74;
-
-/** Summit of the central massif. Every other place on the island is described relative to it. */
-export const SUMMIT = { x: 0, z: 0, height: 52 } as const;
+/** Summit of the central massif. Every other place is described relative to it. */
+export let SUMMIT: MapTerrain['summit'] = { x: 0, z: 0, height: 0 };
 
 /**
- * Horizontal reach of the massif — beyond this the ground is coastal shelf.
+ * Terraces, in application order. Later pads win where they overlap, so a small pad may be
+ * cut into a larger one (the notice-board terrace sits inside the plaza).
  *
- * Height and radius are chosen together, not independently. A smoothstep cone's steepest
- * point is its midpoint, where the gradient is `1.5 · height / radius`; at 52 m over
- * 108 m that is 0.72, or 36°, inside {@link MAX_WALKABLE_SLOPE} once the spurs and rock
- * detail have added their share. Raising the peak without widening the base is the
- * quickest way to make the whole mountain unclimbable.
- *
- * The radius also has to reach past the hexagon (74 m) so the mountain's foot *is* the
- * ground the six zones stand on, rather than a cone dropped into the middle of a plain.
+ * `scripts/world-smoke.ts` asserts that `heightAt(pad.x, pad.z) === pad.height`, which is
+ * what catches a pad that has drifted off its zone or been swallowed by a later one.
  */
-const MASSIF_RADIUS = 108;
+export let PADS: readonly Pad[] = [];
+
+/** Every route on the active map. The first is the spine; branches may pin to it. */
+export let PATHS: readonly WorldPath[] = [];
+
+let COAST_RADIUS = 0;
+let MASSIF_RADIUS = 1;
+let CAPES: readonly CoastFeature[] = [];
+let BAYS: readonly CoastFeature[] = [];
+let SHELVES: readonly Shelf[] = [];
+let RELIEF: MapRelief = { rolling: 0, rollingVariation: 0, cliff: 0, detail: 0 };
+let SHELTERS: readonly Shelter[] = [];
+
 
 // ---------------------------------------------------------------------------
 // Island silhouette
 // ---------------------------------------------------------------------------
-
-/**
- * A lobe added to or bitten out of the coastline.
- *
- * `strength` is in mask units, where 1.0 ≈ the whole island radius, so a cape of 0.30
- * pushes the shore out by roughly 30% of `COAST_RADIUS` at its centre. Positive values
- * are handled by {@link CAPES} (land pushed seaward), negative by {@link BAYS} (sea cut
- * inland) — they are separate arrays only because reading them as two lists is clearer
- * than reading one list with signs in it.
- */
-interface CoastFeature {
-  readonly x: number;
-  readonly z: number;
-  /** Radius over which the feature falls off to nothing. */
-  readonly reach: number;
-  readonly strength: number;
-}
-
-/**
- * Headlands. Each one carries something: the lighthouse stands on the north-east cape,
- * the shrine on the west headland, the beach runs off the south-west spit.
- */
-const CAPES: readonly CoastFeature[] = [
-  { x: -104, z: -60, reach: 58, strength: 0.26 }, // north-west: the lighthouse cape
-  { x: -104, z: 60, reach: 54, strength: 0.22 }, // south-west: the shrine headland
-  { x: 104, z: -46, reach: 52, strength: 0.2 }, // east: the old street's shelf
-  { x: 62, z: 104, reach: 50, strength: 0.18 }, // south-east: the beach spit
-] as const;
-
-/**
- * The two harbour bays. Both are deliberately generous — a harbour you cannot see across
- * does not read as a harbour, and boats need somewhere to be.
- */
-const BAYS: readonly CoastFeature[] = [
-  { x: 0, z: 138, reach: 64, strength: 0.44 }, // south bay: the arrival port
-  { x: 0, z: -138, reach: 60, strength: 0.4 }, // north bay: the fishing harbour
-] as const;
-
-/**
- * A broad, gentle rise in the ground — a *shelf* rather than a terrace.
- *
- * Terraces (`PADS`) are flat and local; a shelf is landform. This is what makes the plaza
- * and the old street read as one continuous piece of high ground with the road up the
- * mountain leaving from between them, rather than as two separate platforms with a dip in
- * the middle. Height is added smoothly and the surrounding terrain still shows through, so
- * a shelf never produces the mesa edge a wide pad would.
- */
-interface Shelf {
-  readonly x: number;
-  readonly z: number;
-  readonly reach: number;
-  readonly height: number;
-}
-
-const SHELVES: readonly Shelf[] = [
-  // The eastern shelf, carrying both the plaza and the old street.
-  { x: 70, z: 0, reach: 82, height: 13 },
-  // The western headlands are raised too, but separately: the shrine and the lighthouse
-  // are meant to read as two distinct high places, not one ridge.
-  { x: -70, z: 40, reach: 46, height: 15 },
-  { x: -70, z: -40, reach: 46, height: 17 },
-] as const;
 
 /** Combined shelf contribution at a point. */
 function shelfHeight(x: number, z: number): number {
@@ -341,7 +308,8 @@ function massif(x: number, z: number): number {
   const spur = 0.5 + 0.5 * Math.cos(ang * 6 + warp + r * 0.004);
   // Spurs are invisible at the summit (where everything converges) and strongest halfway
   // down, fading again at the foot so they do not chop up the terraces.
-  const spurWeight = 0.2 * smoothstep(10, 46, r) * (1 - smoothstep(72, MASSIF_RADIUS, r));
+  const spurWeight =
+    0.2 * smoothstep(MASSIF_RADIUS * 0.11, MASSIF_RADIUS * 0.5, r) * (1 - smoothstep(MASSIF_RADIUS * 0.78, MASSIF_RADIUS, r));
   const shaped = profile * (1 - spurWeight + spurWeight * spur);
 
   // 3 — rock detail. Amplitude is the budget left over after the cone and the spurs have
@@ -349,82 +317,13 @@ function massif(x: number, z: number): number {
   const rough = ridge(x * 0.019 + 5.5, z * 0.019 + 2.2, 4) - 0.42;
   const detailMask = smoothstep(0, 0.3, profile) * (1 - smoothstep(0.86, 1, profile));
 
-  return SUMMIT.height * shaped + rough * 6 * detailMask;
+  // Rock detail is a fixed share of the peak: a 3 m dune does not get 6 m of crags.
+  return SUMMIT.height * (shaped + rough * 0.23 * detailMask);
 }
 
 // ---------------------------------------------------------------------------
 // Flattened areas
 // ---------------------------------------------------------------------------
-
-/**
- * A flat pad blended into the terrain. Everything people gather on gets one: an event
- * plaza on a natural slope is unusable, and characters sliding down a shrine courtyard
- * would break the calm instantly.
- *
- * `inner` is fully flat at `height`; between `inner` and `outer` the pad blends back
- * into the natural surface.
- */
-export interface Pad {
-  readonly id: string;
-  readonly x: number;
-  readonly z: number;
-  readonly height: number;
-  readonly inner: number;
-  readonly outer: number;
-}
-
-/**
- * Terraces, in application order. Later pads win where they overlap, so a small pad may
- * be cut into a larger one (the notice-board terrace sits inside the plaza).
- *
- * Keep these in sync with `ZONES` in `world.ts` — the zone centres are anchored to them.
- * `scripts/world-smoke.ts` asserts that `heightAt(pad.x, pad.z) === pad.height`, which is
- * what catches a pad that has drifted off its zone or been swallowed by a later one.
- */
-export const PADS: readonly Pad[] = [
-  // — The hexagon, clockwise from the south ——————————————————————————
-  //
-  // The six zones sit on the vertices of a regular hexagon of circumradius HEX_RADIUS.
-  // Their heights are the design: two harbours at sea level, two high places, and two that
-  // adjoin on the eastern shelf.
-  //
-  // Terraces must not overlap unless the nesting is deliberate — they are applied in order
-  // and a later one wins, so a big pad whose `outer` reaches a small one downhill will
-  // quietly drag it to the wrong height. At 74 m apart with `outer` at 34, the six have
-  // 6 m of clearance between their blends.
-
-  // Inner radii are sized by **what stands on them**, not by eye. A building is placed at
-  // a single height sample, so any variation across its footprint puts one corner in the
-  // air; the fix is for the whole footprint to be inside the terrace's flat part.
-  // `tools/flatness.mjs` measures that directly and `world-smoke` fails the build on it.
-  //
-  // The ceiling on how wide these can get is the gap to the next terrace: two pads need
-  // `heightDifference / walkableGradient` of clear ground between their flat parts, and
-  // the hexagon gives 74 m of centre-to-centre to spend. The tightest pair is the north
-  // harbour and the lighthouse cape — 22.6 m apart in height, so 27 m of that 74 has to
-  // stay as slope.
-
-  /** The arrival port. Barely above the water, so the boats read as boats. */
-  { id: 'south-harbor', x: 0, z: 74, height: 2.4, inner: 21, outer: 35 },
-  /** The main plaza, on the eastern shelf. */
-  { id: 'plaza', x: 64, z: 37, height: 15.0, inner: 25, outer: 37 },
-  /** The old street, sharing that shelf — see SHELVES for why there is no dip between them. */
-  { id: 'village', x: 64, z: -37, height: 17.0, inner: 25, outer: 37 },
-  /** Sunset beach, on the sand east of the south quay. */
-  { id: 'beach', x: 46, z: 92, height: 1.6, inner: 16, outer: 28 },
-  /** The working fishing harbour. */
-  { id: 'north-harbor', x: 0, z: -74, height: 2.4, inner: 20, outer: 33 },
-  /** Lighthouse cape: a flat clifftop, deliberately exposed and the higher of the two. */
-  { id: 'lighthouse', x: -64, z: -37, height: 25.0, inner: 19, outer: 33 },
-  /** The shrine, on its own headland. */
-  { id: 'shrine', x: -64, z: 37, height: 22.0, inner: 22, outer: 35 },
-
-  // — Inland ————————————————————————————————————————————————————————
-  /** Notice-board terrace, one step up from the plaza floor. The one deliberate nesting. */
-  { id: 'noticeboard', x: 48, z: 22, height: 15.8, inner: 8, outer: 15 },
-  /** The summit court: a small flat terrace at the true peak, around the inner shrine. */
-  { id: 'summit', x: SUMMIT.x, z: SUMMIT.z, height: SUMMIT.height, inner: 12, outer: 30 },
-] as const;
 
 /** Lookup used by `world.ts` and by spawn placement. */
 export function padById(id: string): Pad | undefined {
@@ -435,140 +334,15 @@ export function padById(id: string): Pad | undefined {
 // Paths
 // ---------------------------------------------------------------------------
 
-/** How a path is surfaced. Drives terrain vertex colour and the prop scatterer. */
-export type PathSurface = 'stone' | 'gravel' | 'boardwalk';
-
-/**
- * A walking route carved into the terrain.
- *
- * Paths do two jobs. Physically they hold a gentle grade across ground that would
- * otherwise be too steep to walk, which is what makes a 96 m mountain climbable without
- * any stair geometry. Visually they are the island's circulation diagram: if you can see
- * where a path goes, you know where you can go, and you never need a minimap.
- */
-export interface WorldPath {
-  readonly id: 'coast' | 'shrine-ascent' | 'south-approach' | 'east-lane';
-  readonly name: string;
-  /** Waypoints, in order, as [x, z]. */
-  readonly points: readonly (readonly [number, number])[];
-  /** Half-width of the walkable surface, metres. */
-  readonly halfWidth: number;
-  /** Distance beyond `halfWidth` over which the carve blends back to natural ground. */
-  readonly shoulder: number;
-  /** How strongly the path flattens what is under it, 0–1. */
-  readonly carve: number;
-  readonly surface: PathSurface;
-}
-
-/**
- * Every route on the island.
- *
- * The coast road is the spine: it touches all six inhabited places and closes into a
- * loop, so walking in one direction eventually brings you back. The three lanes climb
- * inland off it — one up the west ridge from the shrine, one up the southern shoulder
- * from the plaza, one along the eastern shelf linking the old street to the teahouse.
- */
-export const PATHS: readonly WorldPath[] = [
-  {
-    id: 'coast',
-    name: 'Ring Road',
-    halfWidth: 3.4,
-    shoulder: 6,
-    carve: 0.95,
-    surface: 'stone',
-    // Mid-points sit at radius 82 rather than on the hexagon's 74, so each leg is ~86 m
-    // instead of 74. That extra twelve metres is not decoration: the north harbour to
-    // lighthouse cape leg climbs 23 m, and over a straight 74 m that is a 32% grade —
-    // past what the survey will hold with both ends pinned to their terraces.
-    points: [
-      [0, 74], // south harbour
-      [41, 71],
-      [64, 37], // plaza
-      [82, 0],
-      [64, -37], // old street
-      [41, -71],
-      [0, -74], // north harbour
-      [-41, -71],
-      [-64, -37], // lighthouse cape
-      [-82, 0],
-      [-64, 37], // shrine
-      [-41, 71],
-      [0, 74],
-    ],
-  },
-  {
-    id: 'south-approach',
-    name: 'Summit Road',
-    halfWidth: 3.2,
-    shoulder: 5.5,
-    carve: 0.95,
-    surface: 'stone',
-    points: [
-      // Leaves the ring from between the plaza and the old street — the point of putting
-      // those two on one shelf is that the mountain road starts where they meet.
-      //
-      // Then it switchbacks. The summit is 33 m above the shelf and only 82 m from it in a
-      // straight line; taken directly that is a 40% grade, and the survey would answer by
-      // lifting the whole road clear of the ground it is supposed to be cut into. Four
-      // turns stretch it to ~140 m and about 24%.
-      [82, 0],
-      [62, -16],
-      [44, -24],
-      [28, -16],
-      [20, 0],
-      [28, 16],
-      [16, 24],
-      [4, 14],
-      [0, 0], // summit
-    ],
-  },
-  {
-    id: 'shrine-ascent',
-    name: 'Shrine Path',
-    halfWidth: 2.6,
-    shoulder: 5,
-    carve: 0.94,
-    surface: 'gravel',
-    points: [
-      [-64, 37], // shrine courtyard
-      [-50, 32],
-      // One switchback: the west flank is the steepest side of the massif, and at this
-      // scale a single doubling-back is enough to hold the grade.
-      [-38, 36],
-      [-30, 22],
-      [-20, 24],
-      [-10, 12],
-      [0, 0], // summit
-    ],
-  },
-  {
-    id: 'east-lane',
-    name: 'Harbour Lane',
-    halfWidth: 2.8,
-    shoulder: 5,
-    carve: 0.94,
-    surface: 'gravel',
-    points: [
-      // A short cut across the middle of the island, from the south harbour up past the
-      // notice board to the plaza. The one route that does not follow the ring.
-      [0, 74],
-      [20, 60],
-      [40, 44],
-      [48, 22], // notice-board terrace
-      [64, 37], // plaza
-    ],
-  },
-] as const;
-
 /** The coast road, by name, for callers that mean *that* path specifically. */
-export const COAST_PATH: WorldPath = PATHS[0];
+export let COAST_PATH: WorldPath;
 
 /**
  * Backwards-compatible alias for the v1 name. The half-width of the coast road is what
  * the prop scatterer and the terrain colourer used to key off, and keeping the constant
  * saves touching every call site for a rename that carries no information.
  */
-export const PROMENADE_HALF_WIDTH = COAST_PATH.halfWidth;
+export let PROMENADE_HALF_WIDTH = 0;
 
 // --- Path spatial index ------------------------------------------------------------
 //
@@ -597,8 +371,8 @@ interface Segment {
 /** Grid cell size, metres. Comfortably larger than the widest path influence. */
 const PATH_CELL = 32;
 /** Grid half-extent in cells, sized to cover the meshed area with room to spare. */
-const PATH_GRID_HALF = Math.ceil((ISLAND_EXTENT + PATH_CELL) / PATH_CELL);
-const PATH_GRID_SIZE = PATH_GRID_HALF * 2 + 1;
+let PATH_GRID_HALF = 1;
+let PATH_GRID_SIZE = 3;
 
 let pathGrid: (Segment[] | undefined)[] | null = null;
 const pathLengths = new Map<string, number>();
@@ -1013,8 +787,11 @@ function naturalHeight(x: number, z: number): number {
   // takes over, so the mountain's own profile is not riding on top of a second, unrelated
   // band of noise — without this the true summit ends up wherever the noise happens to
   // peak rather than where SUMMIT says it is.
-  const rollingWeight = 1 - smoothstep(5, 28, mountain);
-  const rolling = (3.5 + (fbm(x * 0.013 + 2.1, z * 0.013 + 9.4, 5) - 0.42) * 15) * rollingWeight;
+  // Thresholds are fractions of the peak, not metres: "the massif has taken over" happens
+  // at a fifth of the way up whatever the summit height is.
+  const rollingWeight = 1 - smoothstep(SUMMIT.height * 0.19, SUMMIT.height * 1.08, mountain);
+  const rolling =
+    (RELIEF.rolling + (fbm(x * 0.013 + 2.1, z * 0.013 + 9.4, 5) - 0.42) * RELIEF.rollingVariation) * rollingWeight;
 
   // Named landform: the eastern shelf and the two western headlands. See SHELVES.
   const shelf = rolling + shelfHeight(x, z) * rollingWeight;
@@ -1032,13 +809,17 @@ function naturalHeight(x: number, z: number): number {
   const coastal = smoothstep(0.015, 0.26, mask) * (1 - smoothstep(0.24, 0.52, mask));
   const ang2 = Math.atan2(z, x);
   const cliffiness = clamp(fbm(Math.cos(ang2) * 1.8 + 41.2, Math.sin(ang2) * 1.8 + 13.9, 3) * 2.1 - 0.5, 0, 1);
-  const shelterSouthBay = 1 - smoothstep(84, 34, Math.hypot(x, z - 128));
-  const shelterNorthBay = 1 - smoothstep(80, 32, Math.hypot(x, z + 128));
-  const shelterBeach = 1 - smoothstep(70, 26, Math.hypot(x - 62, z - 100));
-  const cliff = coastal * 16 * cliffiness * shelterSouthBay * shelterNorthBay * shelterBeach;
+  // Which shores stay gentle is the pack's business — these used to be three hard-coded
+  // circles around Nagisa Island's own harbours, which is fine right up until the code is
+  // asked about a different island.
+  let sheltered = 1;
+  for (const s of SHELTERS) {
+    sheltered *= 1 - smoothstep(s.reach, s.reach * 0.4, Math.hypot(x - s.x, z - s.z));
+  }
+  const cliff = coastal * RELIEF.cliff * cliffiness * sheltered;
 
   // Fine surface detail, kept small so the walkable slope stays comfortable.
-  const detail = (fbm(x * 0.062 + 17.0, z * 0.062 + 31.0, 3) - 0.5) * 1.8;
+  const detail = (fbm(x * 0.062 + 17.0, z * 0.062 + 31.0, 3) - 0.5) * RELIEF.detail;
 
   return inland * (shelf + cliff + mountain) + detail * inland + mask * 2.5;
 }
@@ -1173,3 +954,47 @@ export function nearestWalkable(x: number, z: number, maxRadius = 40): [number, 
   const plaza = padById('plaza')!;
   return [plaza.x, plaza.z];
 }
+
+// ---------------------------------------------------------------------------
+// Binding to the active map
+// ---------------------------------------------------------------------------
+
+/**
+ * Rebind to a pack and drop everything derived from the previous one.
+ *
+ * The caches cleared here are not optional niceties — a stale path profile would put the
+ * road at the old map's heights, and a stale segment index would report a route that is not
+ * there — so this runs synchronously inside `setActiveMap`, before it returns to its caller.
+ *
+ * **This subscription is the last statement in the file, and must stay there.**
+ * {@link onMapChange} invokes its listener immediately when a map is already active, and
+ * every binding and cache it touches is declared above. Registering it any earlier reaches
+ * them in the temporal dead zone, and the failure is a `TypeError` at import time.
+ */
+onMapChange((pack) => {
+
+  const t = pack.terrain;
+  ISLAND_EXTENT = t.extent;
+  OCEAN_RADIUS = t.oceanRadius;
+  SUMMIT = t.summit;
+  PADS = t.pads;
+  PATHS = t.paths;
+  COAST_RADIUS = t.coastRadius;
+  MASSIF_RADIUS = t.massifRadius;
+  CAPES = t.capes;
+  BAYS = t.bays;
+  SHELVES = t.shelves;
+  RELIEF = t.relief;
+  SHELTERS = t.shelters;
+
+  COAST_PATH = t.paths[0];
+  PROMENADE_HALF_WIDTH = COAST_PATH?.halfWidth ?? 0;
+
+  // The segment index is sized from the map's extent, so its dimensions move too.
+  PATH_GRID_HALF = Math.ceil((ISLAND_EXTENT + PATH_CELL) / PATH_CELL);
+  PATH_GRID_SIZE = PATH_GRID_HALF * 2 + 1;
+  pathGrid = null;
+  pathLengths.clear();
+  pathProfiles.clear();
+  profilesUnderConstruction.clear();
+});

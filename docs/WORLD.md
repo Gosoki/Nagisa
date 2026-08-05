@@ -23,7 +23,7 @@ plaza, the answer is "I'm nearly there" rather than "I'll set off".
         灯台岬 Lighthouse                    町並み Old Street  ┐
            (−64, −37)  25 m                    (64, −37) 17 m  │ one shelf,
                │           ▲ 山頂 Summit            │           │ and the road
-               │             (0, 0)  52 m           │           │ up the mountain
+               │             (0, 0)  26 m           │           │ up the mountain
         神社 Shrine                           広場 Main Plaza   ┘
            (−64, 37)  22 m                     (64, 37)  15 m
                               ╲          ╱
@@ -55,7 +55,7 @@ this codebase including in every coordinate in this document.
 | North Harbour | 北港 | venue | ✓ | (0, −74) | 2.4 m | The working fishery. Funaya boat houses, net racks, an Ebisu torii offshore. |
 | Lighthouse Cape | 灯台岬 | venue | ✓ | (−64, −37) | 25 m | Exposed clifftop. The lamp turns day and night. |
 | Shrine | 神社 | venue | ✓ | (−64, 37) | 22 m | The western headland. Three torii along the approach, komainu, temizuya, the hall. |
-| Summit | 山頂 | scenic | | (0, 0) | 52 m | The inner shrine and a railing. The camera widens automatically. |
+| Summit | 山頂 | scenic | | (0, 0) | 26 m | The inner shrine and a railing. The camera widens automatically. |
 | Ring Road | 渚道 | transit | | fallback | — | Catches anyone not inside a named place. |
 
 Zone membership resolves as **smallest containing zone wins**, so the notice board (r=11)

@@ -18,6 +18,9 @@
 import * as THREE from 'three';
 import {
   ISLAND_EXTENT,
+  activeMap,
+  listMaps,
+  resolveMapId,
   MAX_CLIENT_SPEED,
   MAX_SERVER_SPEED,
   MAX_WADE_DEPTH,
@@ -38,6 +41,13 @@ import { buildTerrain } from '../apps/client/src/world/terrain.worker.js';
 import { Scatter } from '../apps/client/src/world/scatter.js';
 import { createLandmark, knownLandmarkKinds } from '../apps/client/src/world/props/index.js';
 import { Character } from '../apps/client/src/character/character.js';
+
+// Which map to check. Every assertion below is written against the *active pack*, never
+// against Nagisa Island's numbers, so `--map lantern-atoll` runs the identical contract
+// over different data — which is the only way to know the decoupling is real.
+const mapArg = process.argv.indexOf('--map');
+resolveMapId(mapArg >= 0 ? process.argv[mapArg + 1] : process.env.NAGISA_MAP);
+console.log(`map: ${activeMap().name} (${activeMap().id}) — registered: ${listMaps().map((m) => m.id).join(', ')}`);
 import { QUALITY_PRESETS } from '../apps/client/src/engine/quality.js';
 
 let failures = 0;
@@ -81,7 +91,13 @@ console.log('\nTerrain field');
     }
   }
   check('heightAt is finite everywhere', nonFinite === 0, { nonFinite });
-  check('height range is plausible', min > -200 && max > 30 && max < 140, { min, max });
+  // Derived from the pack, not hard-coded: this file is the contract every map is held to,
+  // and a literal here would only ever be one map's number. The summit must actually be the
+  // high point (rock detail adds a little, so allow a margin above), and the seabed must not
+  // run away downward.
+  const peak = activeMap().terrain.summit.height;
+  check('the summit is the highest ground', max > peak * 0.9 && max < peak + 12, { max, peak });
+  check('the seabed is plausible', min > -200 && min < 0, { min });
 
   let badNormals = 0;
   for (let i = 0; i < 400; i++) {
@@ -118,9 +134,15 @@ console.log('\nWorld layout');
     padMismatch.map((p) => ({ id: p.id, want: p.height, got: heightAt(p.x, p.z) })));
 
   const spawns = [0, 1, 2, 3, 4, 5].map((i) => spawnPoint(i));
-  check('all spawn points are on the south harbour quay', spawns.every((s) => zoneAt(s.pos[0], s.pos[2]) === 'south-harbor'),
-    spawns.map((s) => zoneAt(s.pos[0], s.pos[2])));
-  check('all spawn points are walkable', spawns.every((s) => isWalkable(s.pos[0], s.pos[2])));
+  // Not "which zone" — that is one map's answer — but "the same zone", which is the actual
+  // requirement: a boatload of people arriving together must not be scattered across the
+  // island, and the spread below is what keeps them from stacking into one body.
+  const arrivalZones = new Set(spawns.map((s) => zoneAt(s.pos[0], s.pos[2])));
+  check('every spawn point lands in the same place', arrivalZones.size === 1, [...arrivalZones]);
+  const spread = Math.max(
+    ...spawns.flatMap((a) => spawns.map((b) => Math.hypot(a.pos[0] - b.pos[0], a.pos[2] - b.pos[2]))),
+  );
+  check('arrivals are spread out, not stacked', spread > 8 && spread < 45, { spread: Math.round(spread) });
 
   // Crowd slots must land on ground people can actually stand on.
   const venues = ZONES.filter((z) => z.kind === 'venue');

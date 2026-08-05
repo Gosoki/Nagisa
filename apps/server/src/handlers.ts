@@ -30,6 +30,7 @@ import {
   ErrorCode,
   PROTOCOL,
   Role,
+  activeMapId,
   getInteractable,
   interactablePosition,
   spawnPoint,
@@ -166,6 +167,7 @@ export function handleHello(
           room: room.toView(),
           serverTime: Date.now(),
           tickHz: PROTOCOL.TICK_HZ,
+          mapId: activeMapId() ?? '',
           rooms: deps.rooms.listViews(),
         });
         session.send(room.buildSnapshot());
@@ -191,6 +193,7 @@ export function handleHello(
     room: room.toView(),
     serverTime: Date.now(),
     tickHz: PROTOCOL.TICK_HZ,
+    mapId: activeMapId() ?? '',
     rooms: deps.rooms.listViews(),
   });
   session.send(room.buildSnapshot());

@@ -15,6 +15,9 @@
  * - `tokens`   — the shared palette, type scale and motion curves.
  */
 
+export * from './map/types.js';
+export * from './map/registry.js';
+export * from './maps/index.js';
 export * from './protocol.js';
 export * from './terrain.js';
 export * from './movement.js';

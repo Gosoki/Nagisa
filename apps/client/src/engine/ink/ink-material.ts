@@ -275,8 +275,8 @@ void main() {
     // Sky above, sea below. Kept low: in a drawn world the shadow *colour* carries the
     // shade, and a generous ambient lift flattens every fill toward the same pale value.
     float up = N.y * 0.5 + 0.5;
-    lit += uSkyColor * uAmbient * 0.22 * up;
-    lit += uBounceColor * uAmbient * 0.14 * (1.0 - up);
+    lit += uSkyColor * uAmbient * 0.17 * up;
+    lit += uBounceColor * uAmbient * 0.10 * (1.0 - up);
 
     // Rim: a thin lift where the surface turns away from the eye, which reads as the
     // light wrapping round a form the way a painter draws it.
@@ -300,7 +300,13 @@ void main() {
 
   // Paper tooth over everything, including unlit surfaces — it is the medium, not a
   // property of the material.
-  lit *= 1.0 + paperGrain(gl_FragCoord.xy) * 0.055;
+  //
+  // Weighted toward the midtones. Real tooth shows where a wash is thin and disappears
+  // into both the darkest and lightest passages; applying it flat is what turns it from a
+  // texture into a veil over the whole picture.
+  float tone = clamp(dot(lit, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+  float toothMask = 4.0 * tone * (1.0 - tone);
+  lit *= 1.0 + paperGrain(gl_FragCoord.xy) * 0.05 * toothMask;
 
   // Exponential-squared fog, matched to the sky so the far shore dissolves.
   float dist = length(vViewPosition);

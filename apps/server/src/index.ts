@@ -206,7 +206,7 @@ async function main(): Promise<void> {
 
   await new Promise<void>((resolve) => httpServer.listen(CONFIG.PORT, CONFIG.HOST, resolve));
   ready = true;
-  log.info('boot_complete', { host: CONFIG.HOST, port: CONFIG.PORT, wsPath: WS_PATH });
+  log.info('boot_complete', { host: CONFIG.HOST, port: CONFIG.PORT, wsPath: WS_PATH, map: CONFIG.MAP_ID });
 
   // --- Graceful shutdown -------------------------------------------------------------
   let shuttingDown = false;

@@ -34,208 +34,49 @@
  * running into each other.
  */
 
+import { onMapChange } from './map/registry.js';
+import type {
+  ActivityTemplate,
+  Interactable,
+  Landmark,
+  LandmarkKind,
+  Zone,
+  ZoneId,
+  ZoneKind,
+} from './map/types.js';
 import { PADS, heightAt, nearestWalkable, padById } from './terrain.js';
 
-/**
- * Zone identifiers. Union rather than enum so they serialise as readable strings.
- *
- * These strings appear in the wire protocol (`zonePopulation`, activity records,
- * announcement scopes) and in persisted state, so renaming one is a protocol change.
- */
-export type ZoneId =
-  | 'south-harbor'
-  | 'north-harbor'
-  | 'plaza'
-  | 'noticeboard'
-  | 'village'
-  | 'teahouse'
-  | 'shrine'
-  | 'summit'
-  | 'lighthouse'
-  | 'beach'
-  | 'coast';
-
-/** What a zone is *for*. Drives UI affordances and server-side validation. */
-export type ZoneKind =
-  /** Can host activities. Gets a stage anchor and audience space. */
-  | 'venue'
-  /** Somewhere to be, not somewhere to perform. Bench seating, quiet ambience. */
-  | 'rest'
-  /** Announcements are read here; the notice board's physical home. */
-  | 'notice'
-  /** A view. Camera widens, ambience thins out. */
-  | 'scenic'
-  /** Connective tissue between places. */
-  | 'transit';
-
-export interface Zone {
-  readonly id: ZoneId;
-  /** English display name, shown as you enter. */
-  readonly name: string;
-  /** Japanese name, shown smaller beneath. Flavour, never load-bearing. */
-  readonly nameJa: string;
-  readonly kind: ZoneKind;
-  /** Anchor point on the ground plane. Y comes from the terrain field. */
-  readonly x: number;
-  readonly z: number;
-  /** Players within this radius of the anchor are counted as "in" the zone. */
-  readonly radius: number;
-  /**
-   * Where a performer/host stands, relative to the anchor. Venues only. The client puts
-   * the stage geometry here and the server pins hosts to it during a live activity.
-   */
-  readonly stage?: { readonly dx: number; readonly dz: number; readonly facing: number };
-  /** Suggested audience capacity. Advisory: informs activity defaults, not enforced here. */
-  readonly softCapacity: number;
-  /** Ambience loop played while inside. Keys map to files in the client audio manifest. */
-  readonly ambience: 'waves' | 'harbor' | 'town' | 'forest' | 'wind' | 'shrine';
-  /**
-   * One sentence shown when the zone is first entered. Reference-product register:
-   * observational, unhurried, never instructional.
-   */
-  readonly caption: string;
-}
+export type { ActivityTemplate, Interactable, Landmark, LandmarkKind, Zone, ZoneId, ZoneKind };
 
 /**
- * Every named place on the island.
+ * The active pack's inhabited half, republished as live module bindings.
  *
- * Anchors are aligned with the flattening pads in `terrain.ts` — a venue whose anchor
- * drifts off its pad will end up on a slope, and `world-smoke` fails the build if one
- * does. `coast` is the exception: it is the fallback, and its anchor is nominal.
+ * Same mechanism and same rule as `terrain.ts`: `let` plus a subscriber, so the fifteen
+ * modules that import `ZONES` or `LANDMARKS` need no changes and no subscription — but must
+ * not snapshot them into their own module-scope constants.
  */
-export const ZONES: readonly Zone[] = [
-  {
-    id: 'south-harbor',
-    name: 'South Harbour',
-    nameJa: '南港',
-    kind: 'venue',
-    x: 0,
-    z: 74,
-    radius: 32,
-    stage: { dx: -9, dz: -6, facing: Math.PI * 0.1 },
-    softCapacity: 60,
-    ambience: 'harbor',
-    caption: 'The ferry ties up here. Everyone arrives at the south quay.',
-  },
-  {
-    id: 'plaza',
-    name: 'Main Plaza',
-    nameJa: '広場',
-    kind: 'venue',
-    x: 64,
-    z: 37,
-    radius: 32,
-    stage: { dx: 4, dz: -12, facing: 0 },
-    softCapacity: 140,
-    ambience: 'town',
-    caption: 'The middle of things, on the eastern shelf. Something is usually about to start.',
-  },
-  {
-    id: 'noticeboard',
-    name: 'Notice Board',
-    nameJa: '掲示板',
-    kind: 'notice',
-    x: 48,
-    z: 22,
-    radius: 11,
-    softCapacity: 20,
-    ambience: 'town',
-    caption: 'Paper slips, pinned and re-pinned. Today’s word is here.',
-  },
-  {
-    id: 'village',
-    name: 'Old Street',
-    nameJa: '町並み',
-    kind: 'transit',
-    x: 64,
-    z: -37,
-    radius: 32,
-    softCapacity: 50,
-    ambience: 'town',
-    caption: 'Wooden fronts, low eaves, a cat that has never moved.',
-  },
-  {
-    id: 'north-harbor',
-    name: 'North Harbour',
-    nameJa: '北港',
-    kind: 'venue',
-    x: 0,
-    z: -74,
-    radius: 30,
-    stage: { dx: 9, dz: 5, facing: -Math.PI * 0.35 },
-    softCapacity: 40,
-    ambience: 'harbor',
-    caption: 'Nets, ice, and boats that go out before anyone is awake.',
-  },
-  {
-    id: 'lighthouse',
-    name: 'Lighthouse Cape',
-    nameJa: '灯台岬',
-    kind: 'venue',
-    x: -64,
-    z: -37,
-    radius: 30,
-    stage: { dx: 10, dz: 9, facing: Math.PI * 0.7 },
-    softCapacity: 50,
-    ambience: 'wind',
-    caption: 'The lamp turns whether anyone is watching or not.',
-  },
-  {
-    id: 'shrine',
-    name: 'Shrine',
-    nameJa: '神社',
-    kind: 'venue',
-    x: -64,
-    z: 37,
-    radius: 32,
-    stage: { dx: 8, dz: -6, facing: Math.PI * 0.4 },
-    softCapacity: 70,
-    ambience: 'shrine',
-    caption: 'Torii, one after another, on the headland above the water.',
-  },
-  {
-    id: 'summit',
-    name: 'Summit',
-    nameJa: '山頂',
-    kind: 'scenic',
-    x: 0,
-    z: 0,
-    radius: 26,
-    softCapacity: 30,
-    ambience: 'wind',
-    caption: 'From up here the whole island fits between your hands.',
-  },
-  {
-    id: 'beach',
-    name: 'Sunset Beach',
-    nameJa: '浜',
-    kind: 'venue',
-    x: 46,
-    z: 92,
-    radius: 22,
-    stage: { dx: -2, dz: -4, facing: -Math.PI * 0.75 },
-    softCapacity: 60,
-    ambience: 'waves',
-    caption: 'Flat sand, shallow water, and the long light.',
-  },
-  {
-    id: 'coast',
-    name: 'Ring Road',
-    nameJa: '渚道',
-    kind: 'transit',
-    x: 0,
-    z: 0,
-    radius: 9999, // Fallback zone: matched last, catches anyone not inside a named place.
-    softCapacity: 999,
-    ambience: 'waves',
-    caption: 'The road follows the water the whole way round.',
-  },
-] as const;
 
-/** Zones that may host activities. The server rejects activities anywhere else. */
-export const VENUE_ZONES: readonly ZoneId[] = ZONES.filter((z) => z.kind === 'venue').map((z) => z.id);
+/** Every named place on the active map. */
+export let ZONES: readonly Zone[] = [];
 
-const ZONE_INDEX = new Map<ZoneId, Zone>(ZONES.map((z) => [z.id, z]));
+/** Every building and prop the client places. */
+export let LANDMARKS: readonly Landmark[] = [];
+
+/** Everything a player can walk up to and use. */
+export let INTERACTABLES: readonly Interactable[] = [];
+
+/** The kinds of thing that can be scheduled here. */
+export let ACTIVITY_TEMPLATES: readonly ActivityTemplate[] = [];
+
+/** Arrival points, as [x, z]. {@link spawnPoint} snaps each to walkable ground. */
+export let SPAWN_POINTS: readonly (readonly [number, number])[] = [];
+
+/** Zone reported for a position inside none of the others. */
+let FALLBACK_ZONE: ZoneId = 'coast';
+
+export let VENUE_ZONES: readonly ZoneId[] = [];
+
+let ZONE_INDEX = new Map<ZoneId, Zone>();
 
 export function getZone(id: ZoneId): Zone | undefined {
   return ZONE_INDEX.get(id);
@@ -247,9 +88,9 @@ export function isVenue(id: ZoneId): boolean {
 
 /**
  * Zones ordered tightest-first, so {@link zoneAt} can return the most specific match.
- * Computed once; `ZONES` is frozen data.
+ * Rebuilt on every map change; within one map, `ZONES` is frozen data.
  */
-const ZONES_BY_SPECIFICITY: readonly Zone[] = [...ZONES].sort((a, b) => a.radius - b.radius);
+let ZONES_BY_SPECIFICITY: readonly Zone[] = [];
 
 /**
  * Which zone a world position belongs to.
@@ -266,7 +107,7 @@ export function zoneAt(x: number, z: number): ZoneId {
   for (const zone of ZONES_BY_SPECIFICITY) {
     if (Math.hypot(x - zone.x, z - zone.z) <= zone.radius) return zone.id;
   }
-  return 'coast';
+  return FALLBACK_ZONE;
 }
 
 /** World-space stage position of a venue, with terrain height applied. */
@@ -282,22 +123,6 @@ export function stagePosition(id: ZoneId): { x: number; y: number; z: number; fa
 // Arrival
 // ---------------------------------------------------------------------------
 
-/**
- * Where new visitors appear.
- *
- * All of them are on the south harbour quay, facing inland: you arrive by water, and the
- * walk up to the plaza is the island introducing itself. Several points, spread along the
- * quay, so a crowd arriving together does not stack into one body.
- */
-export const SPAWN_POINTS: readonly (readonly [number, number])[] = [
-  [-6, 80],
-  [6, 80],
-  [-11, 74],
-  [11, 74],
-  [0, 84],
-  [0, 68],
-] as const;
-
 /** A spawn position with terrain height and a facing that looks toward the island. */
 export function spawnPoint(index: number): { pos: [number, number, number]; yaw: number } {
   const [sx, sz] = SPAWN_POINTS[index % SPAWN_POINTS.length];
@@ -311,40 +136,6 @@ export function spawnPoint(index: number): { pos: [number, number, number]; yaw:
 // Interactables
 // ---------------------------------------------------------------------------
 
-/** Something a player can walk up to and use. Deliberately few, deliberately small. */
-export interface Interactable {
-  readonly id: string;
-  readonly zone: ZoneId;
-  /** Offset from the zone anchor. */
-  readonly dx: number;
-  readonly dz: number;
-  /** How close you must be for the prompt to appear, metres. */
-  readonly range: number;
-  readonly kind: 'use' | 'sit';
-  /** Verb shown in the prompt, e.g. "Read". Kept to one word wherever possible. */
-  readonly label: string;
-  /**
-   * What the server does when it is used. `none` is a purely client-side flourish
-   * (sitting down, ringing a bell) that is still broadcast so others can see it.
-   */
-  readonly effect: 'none' | 'read_announcements' | 'checkin_nearby';
-}
-
-export const INTERACTABLES: readonly Interactable[] = [
-  { id: 'notice-board', zone: 'noticeboard', dx: 0, dz: -4, range: 4.5, kind: 'use', label: 'Read', effect: 'read_announcements' },
-  { id: 'plaza-post', zone: 'plaza', dx: -13, dz: 7, range: 3.5, kind: 'use', label: 'Check in', effect: 'checkin_nearby' },
-  { id: 'shrine-bell', zone: 'shrine', dx: 3, dz: -8, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
-  { id: 'summit-bell', zone: 'summit', dx: 8, dz: 5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
-  { id: 'south-harbor-bell', zone: 'south-harbor', dx: 10, dz: 4, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
-  { id: 'north-harbor-bell', zone: 'north-harbor', dx: -9, dz: -4, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
-  { id: 'lighthouse-door', zone: 'lighthouse', dx: 0, dz: 3, range: 4, kind: 'use', label: 'Look', effect: 'none' },
-  { id: 'summit-rail', zone: 'summit', dx: -2, dz: 11, range: 5, kind: 'use', label: 'Look', effect: 'none' },
-  { id: 'teahouse-mat-a', zone: 'plaza', dx: 14, dz: 9, range: 2.5, kind: 'sit', label: 'Sit', effect: 'none' },
-  { id: 'teahouse-mat-b', zone: 'plaza', dx: 17, dz: 11, range: 2.5, kind: 'sit', label: 'Sit', effect: 'none' },
-  { id: 'beach-log', zone: 'beach', dx: 5, dz: 7, range: 3, kind: 'sit', label: 'Sit', effect: 'none' },
-  { id: 'plaza-bench', zone: 'plaza', dx: 13, dz: 8, range: 3, kind: 'sit', label: 'Sit', effect: 'none' },
-] as const;
-
 /** World-space position of an interactable, terrain height applied. */
 export function interactablePosition(it: Interactable): { x: number; y: number; z: number } {
   const zone = getZone(it.zone)!;
@@ -353,7 +144,7 @@ export function interactablePosition(it: Interactable): { x: number; y: number; 
   return { x, y: heightAt(x, z), z };
 }
 
-const INTERACTABLE_INDEX = new Map<string, Interactable>(INTERACTABLES.map((i) => [i.id, i]));
+let INTERACTABLE_INDEX = new Map<string, Interactable>();
 
 export function getInteractable(id: string): Interactable | undefined {
   return INTERACTABLE_INDEX.get(id);
@@ -363,306 +154,15 @@ export function getInteractable(id: string): Interactable | undefined {
 // Landmarks
 // ---------------------------------------------------------------------------
 
-/**
- * Generators available in the client's prop library. Adding a kind here without adding
- * the matching builder in `apps/client/src/world/props/` produces a landmark the island
- * silently skips (and `world-smoke` fails on), which is the intended failure mode: data
- * and code can be edited in either order.
- */
-export type LandmarkKind =
-  // — Waterfront ——————————————————————————————————————————————
-  | 'pier'
-  | 'boat'
-  | 'breakwater'
-  | 'boathouse'
-  | 'net-rack'
-  | 'sea-wall'
-  | 'beach-hut'
-  // — Buildings ————————————————————————————————————————————————
-  | 'warehouse'
-  | 'machiya'
-  | 'minka'
-  | 'bathhouse'
-  | 'teahouse'
-  | 'market-stall'
-  | 'keepers-house'
-  // — Sacred ————————————————————————————————————————————————————
-  | 'torii'
-  | 'shrine-hall'
-  | 'temizuya'
-  | 'komainu'
-  | 'bell-tower'
-  // — Civic ————————————————————————————————————————————————————
-  | 'stage'
-  | 'notice-board'
-  | 'gate'
-  | 'well'
-  | 'banner'
-  | 'lighthouse'
-  // — Furniture ————————————————————————————————————————————————
-  | 'stone-lantern'
-  | 'post-lantern'
-  | 'bench'
-  | 'rail'
-  | 'steps'
-  | 'summit-marker'
-  | 'rock';
-
-/**
- * Fixed set-pieces the client builds. The server does not care about these, but they
- * live here so the world's contents are described in one place and so the client's scene
- * assembly is data-driven rather than a wall of hard-coded coordinates.
- *
- * `y` is always resolved from the terrain field at build time — never authored. A prop
- * whose base should sit *below* the terrain (a pier deck standing over water, a boat
- * floating) says so with `seaLevel: true` in `opts` and is placed at y = 0 instead.
- */
-export interface Landmark {
-  readonly id: string;
-  readonly kind: LandmarkKind;
-  readonly x: number;
-  readonly z: number;
-  /** Yaw in radians. */
-  readonly rot: number;
-  /** Uniform scale multiplier. 1 = the generator's natural size. */
-  readonly scale?: number;
-  /** Free-form generator options, e.g. roof colour index or building width. */
-  readonly opts?: Readonly<Record<string, number | string | boolean>>;
-}
-
-/**
- * Hand-placed landmarks — every building on Nagisa.
- *
- * Grouped by zone, and within a zone roughly in the order you would meet them walking in.
- * The coast road's lanterns, mile-posts and railings are *not* here: those are placed by
- * arc length along the path at build time, because spacing them by hand would be busywork
- * that goes stale the moment the road is re-routed.
- */
-export const LANDMARKS: readonly Landmark[] = [
-  // ═══ South Harbour (0, 74) — the arrival port ═══════════════════════════
-  // Waterfront props run out along +z into the bay; the quay buildings sit behind them,
-  // all inside the terrace's flat inner radius so nothing stands on a slope.
-  { id: 'sh-torii-sea', kind: 'torii', x: 0, z: 112, rot: 0.05, scale: 1.7, opts: { inWater: true } },
-  { id: 'sh-pier-main', kind: 'pier', x: 0, z: 88, rot: 0, opts: { length: 30, width: 7, lamps: true } },
-  { id: 'sh-pier-west', kind: 'pier', x: -20, z: 82, rot: Math.PI * 0.4, opts: { length: 18, width: 4.5 } },
-  { id: 'sh-breakwater', kind: 'breakwater', x: 34, z: 98, rot: -0.55, opts: { length: 40, beacon: true } },
-  { id: 'sh-boat-1', kind: 'boat', x: 16, z: 98, rot: 0.3, opts: { style: 'ferry', scale: 1.25 } },
-  { id: 'sh-boat-2', kind: 'boat', x: -12, z: 96, rot: -0.7 },
-  { id: 'sh-seawall', kind: 'sea-wall', x: 19, z: 80, rot: -0.4, opts: { length: 22 } },
-  { id: 'sh-warehouse-1', kind: 'warehouse', x: 11, z: 68, rot: -0.25, opts: { w: 12, d: 9, floors: 2 } },
-  { id: 'sh-warehouse-2', kind: 'warehouse', x: -11, z: 68, rot: 0.2, opts: { w: 10, d: 8 } },
-  { id: 'sh-office', kind: 'machiya', x: 1, z: 62, rot: Math.PI, opts: { w: 10, d: 10, floors: 2, sign: true } },
-  { id: 'sh-stall-1', kind: 'market-stall', x: -8, z: 76, rot: 0.1, opts: { cloth: 1 } },
-  { id: 'sh-stall-2', kind: 'market-stall', x: -2, z: 78, rot: 0.1, opts: { cloth: 2 } },
-  { id: 'sh-stall-3', kind: 'market-stall', x: 4, z: 79, rot: 0.1, opts: { cloth: 0 } },
-  { id: 'sh-stage', kind: 'stage', x: -9, z: 68, rot: Math.PI * 0.1, opts: { w: 12, d: 9 } },
-  { id: 'sh-bell', kind: 'bell-tower', x: 10, z: 78, rot: 0, scale: 0.8 },
-  { id: 'sh-lantern-1', kind: 'post-lantern', x: -5, z: 70, rot: 0 },
-  { id: 'sh-lantern-2', kind: 'post-lantern', x: 9, z: 70, rot: 0 },
-  { id: 'sh-banner-1', kind: 'banner', x: -14, z: 78, rot: 0.2 },
-  { id: 'sh-banner-2', kind: 'banner', x: 14, z: 72, rot: -0.3 },
-  { id: 'sh-rock-1', kind: 'rock', x: -26, z: 92, rot: 1.1, scale: 1.3 },
-
-  // ═══ Sunset Beach (46, 92) — the sand east of the quay ══════════════════
-  { id: 'bh-hut-1', kind: 'beach-hut', x: 40, z: 86, rot: -0.7, opts: { w: 7, d: 5.5 } },
-  { id: 'bh-hut-2', kind: 'beach-hut', x: 54, z: 88, rot: 0.4, opts: { w: 6, d: 5 } },
-  { id: 'bh-stage', kind: 'stage', x: 44, z: 88, rot: -Math.PI * 0.75, opts: { w: 11, d: 8 } },
-  { id: 'bh-bench-1', kind: 'bench', x: 51, z: 99, rot: 1.0 },
-  { id: 'bh-boat-1', kind: 'boat', x: 58, z: 102, rot: 1.8, scale: 0.75 },
-  { id: 'bh-rock-1', kind: 'rock', x: 64, z: 92, rot: 0.7, scale: 1.5 },
-  { id: 'bh-lantern-1', kind: 'post-lantern', x: 38, z: 96, rot: 0 },
-
-  // ═══ Main Plaza (64, 37) — the civic centre ═════════════════════════════
-  { id: 'pl-stage', kind: 'stage', x: 68, z: 25, rot: 0, opts: { w: 16, d: 11, roof: true, tiers: true } },
-  { id: 'pl-gate-s', kind: 'gate', x: 66, z: 54, rot: 0.05, scale: 1.1 },
-  { id: 'pl-gate-w', kind: 'gate', x: 48, z: 40, rot: Math.PI * 0.5 },
-  { id: 'pl-well', kind: 'well', x: 76, z: 44, rot: 0.3 },
-  { id: 'pl-lantern-1', kind: 'stone-lantern', x: 58, z: 27, rot: 0.3 },
-  { id: 'pl-lantern-2', kind: 'stone-lantern', x: 75, z: 28, rot: -0.3 },
-  { id: 'pl-lantern-3', kind: 'stone-lantern', x: 53, z: 48, rot: 0.1 },
-  { id: 'pl-lantern-4', kind: 'stone-lantern', x: 75, z: 48, rot: -0.1 },
-  { id: 'pl-bench-1', kind: 'bench', x: 77, z: 45, rot: -0.6 },
-  { id: 'pl-bench-2', kind: 'bench', x: 51, z: 45, rot: 0.6 },
-  { id: 'pl-banner-1', kind: 'banner', x: 58, z: 52, rot: 0 },
-  { id: 'pl-banner-2', kind: 'banner', x: 71, z: 52, rot: 0 },
-  // The teahouse: a v2 zone kept as a building, on the quiet side of the plaza.
-  { id: 'pl-teahouse', kind: 'teahouse', x: 79, z: 34, rot: Math.PI * 0.55, opts: { w: 11, d: 8.5, veranda: true } },
-  { id: 'pl-minka', kind: 'minka', x: 50, z: 20, rot: -0.5, opts: { w: 11, d: 9 } },
-
-  // — Notice-board terrace (48, 22), one step up from the plaza ————————
-  { id: 'nb-board', kind: 'notice-board', x: 48, z: 18, rot: 0.1, scale: 1.4 },
-  { id: 'nb-lantern-1', kind: 'stone-lantern', x: 42, z: 24, rot: 0 },
-  { id: 'nb-bench-1', kind: 'bench', x: 53, z: 25, rot: -0.4 },
-
-  // ═══ Old Street (64, -37) — two rows facing each other ══════════════════
-  { id: 'ov-machiya-1', kind: 'machiya', x: 54, z: -48, rot: Math.PI * 0.5, opts: { w: 8, d: 10, floors: 2, sign: true } },
-  { id: 'ov-machiya-2', kind: 'machiya', x: 54, z: -37, rot: Math.PI * 0.5, opts: { w: 8, d: 10, floors: 2 } },
-  { id: 'ov-machiya-3', kind: 'machiya', x: 54, z: -26, rot: Math.PI * 0.5, opts: { w: 8, d: 10, floors: 1, sign: true } },
-  { id: 'ov-machiya-4', kind: 'machiya', x: 75, z: -48, rot: -Math.PI * 0.5, opts: { w: 8, d: 10, floors: 2 } },
-  { id: 'ov-machiya-5', kind: 'machiya', x: 75, z: -37, rot: -Math.PI * 0.5, opts: { w: 8, d: 10, floors: 1, sign: true } },
-  { id: 'ov-machiya-6', kind: 'machiya', x: 75, z: -26, rot: -Math.PI * 0.5, opts: { w: 8, d: 10, floors: 2 } },
-  { id: 'ov-bathhouse', kind: 'bathhouse', x: 64, z: -53, rot: Math.PI, opts: { w: 13, d: 10 } },
-  { id: 'ov-warehouse', kind: 'warehouse', x: 76, z: -22, rot: -0.3, opts: { w: 10, d: 8 } },
-  { id: 'ov-gate-s', kind: 'gate', x: 64, z: -22, rot: 0 },
-  { id: 'ov-gate-n', kind: 'gate', x: 64, z: -57, rot: Math.PI },
-  { id: 'ov-well', kind: 'well', x: 64, z: -37, rot: 0 },
-  { id: 'ov-lantern-1', kind: 'post-lantern', x: 60, z: -44, rot: 0 },
-  { id: 'ov-lantern-2', kind: 'post-lantern', x: 69, z: -37, rot: 0 },
-  { id: 'ov-lantern-3', kind: 'post-lantern', x: 60, z: -30, rot: 0 },
-  { id: 'ov-bench-1', kind: 'bench', x: 69, z: -44, rot: -1.4 },
-
-  // ═══ North Harbour (0, -74) — the working fishery ═══════════════════════
-  { id: 'nh-torii-sea', kind: 'torii', x: 0, z: -110, rot: 0.1, scale: 1.4, opts: { inWater: true } },
-  { id: 'nh-pier-e', kind: 'pier', x: 8, z: -86, rot: Math.PI, opts: { length: 20, width: 5 } },
-  { id: 'nh-pier-w', kind: 'pier', x: -16, z: -84, rot: Math.PI * 1.1, opts: { length: 16, width: 4.5 } },
-  { id: 'nh-boathouse-1', kind: 'boathouse', x: -24, z: -74, rot: Math.PI * 0.85, opts: { w: 7, d: 10 } },
-  { id: 'nh-boathouse-2', kind: 'boathouse', x: -27, z: -62, rot: Math.PI * 0.7, opts: { w: 6.5, d: 9 } },
-  { id: 'nh-shed', kind: 'warehouse', x: 10, z: -66, rot: 0.35, opts: { w: 10, d: 8 } },
-  { id: 'nh-minka', kind: 'minka', x: -6, z: -60, rot: 0.15, opts: { w: 10, d: 8 } },
-  { id: 'nh-netrack-1', kind: 'net-rack', x: 4, z: -78, rot: 0.3 },
-  { id: 'nh-netrack-2', kind: 'net-rack', x: -3, z: -81, rot: 0.3 },
-  { id: 'nh-boat-1', kind: 'boat', x: -8, z: -94, rot: 0.2, scale: 0.85 },
-  { id: 'nh-boat-2', kind: 'boat', x: 16, z: -96, rot: -0.4, scale: 0.8 },
-  { id: 'nh-seawall', kind: 'sea-wall', x: 18, z: -78, rot: 1.2, opts: { length: 18 } },
-  { id: 'nh-bell', kind: 'bell-tower', x: -9, z: -78, rot: 0.2, scale: 0.75 },
-  { id: 'nh-stage', kind: 'stage', x: 9, z: -69, rot: -Math.PI * 0.35, opts: { w: 11, d: 8 } },
-  { id: 'nh-rock-1', kind: 'rock', x: -32, z: -88, rot: 1.4, scale: 1.4 },
-
-  // ═══ Lighthouse Cape (-64, -37) — the exposed high cape ═════════════════
-  { id: 'lh-tower', kind: 'lighthouse', x: -64, z: -37, rot: 0, scale: 0.92 },
-  { id: 'lh-keepers', kind: 'keepers-house', x: -53, z: -28, rot: -0.7, opts: { w: 10, d: 7.5 } },
-  { id: 'lh-store', kind: 'warehouse', x: -74, z: -28, rot: 0.5, opts: { w: 8, d: 6.5 } },
-  { id: 'lh-rail', kind: 'rail', x: -64, z: -46, rot: 0.15, opts: { length: 16 } },
-  { id: 'lh-bench-1', kind: 'bench', x: -74, z: -45, rot: 0.3 },
-  { id: 'lh-lantern-1', kind: 'post-lantern', x: -55, z: -42, rot: 0 },
-  { id: 'lh-rock-1', kind: 'rock', x: -78, z: -52, rot: 0.8, scale: 1.7 },
-  { id: 'lh-rock-2', kind: 'rock', x: -50, z: -50, rot: 2.4, scale: 1.2 },
-
-  // ═══ Shrine (-64, 37) — the western headland ════════════════════════════
-  // The approach runs east→west along the sando: three torii, then the hall.
-  { id: 'sr-torii-1', kind: 'torii', x: -46, z: 34, rot: Math.PI * 0.5, scale: 1.35 },
-  { id: 'sr-torii-2', kind: 'torii', x: -54, z: 35, rot: Math.PI * 0.5, scale: 1.25 },
-  { id: 'sr-torii-3', kind: 'torii', x: -60, z: 36, rot: Math.PI * 0.5, scale: 1.15 },
-  { id: 'sr-komainu-l', kind: 'komainu', x: -66, z: 30, rot: Math.PI * 0.5, opts: { side: 1 } },
-  { id: 'sr-komainu-r', kind: 'komainu', x: -66, z: 44, rot: Math.PI * 0.5, opts: { side: -1 } },
-  { id: 'sr-temizuya', kind: 'temizuya', x: -62, z: 47, rot: -0.4 },
-  { id: 'sr-hall', kind: 'shrine-hall', x: -78, z: 37, rot: Math.PI * 0.5, opts: { w: 12, d: 10, honden: true } },
-  { id: 'sr-bell', kind: 'bell-tower', x: -61, z: 29, rot: 0 },
-  { id: 'sr-lantern-1', kind: 'stone-lantern', x: -72, z: 29, rot: 0, scale: 1.15 },
-  { id: 'sr-lantern-2', kind: 'stone-lantern', x: -72, z: 45, rot: 0, scale: 1.15 },
-  { id: 'sr-lantern-3', kind: 'stone-lantern', x: -54, z: 29, rot: 0 },
-  { id: 'sr-lantern-4', kind: 'stone-lantern', x: -54, z: 45, rot: 0 },
-  { id: 'sr-rock-1', kind: 'rock', x: -86, z: 48, rot: 0.5, scale: 1.5 },
-  { id: 'sr-rock-2', kind: 'rock', x: -84, z: 24, rot: 2.1, scale: 1.2 },
-
-  // ═══ Summit (0, 0) — the inner shrine, at the top of everything ═════════
-  { id: 'su-torii', kind: 'torii', x: 0, z: 9, rot: 0, scale: 1.2 },
-  { id: 'su-hall', kind: 'shrine-hall', x: 0, z: -9, rot: 0, opts: { w: 9, d: 7.5, honden: true, small: true } },
-  { id: 'su-bell', kind: 'bell-tower', x: 8, z: 5, rot: -0.4, scale: 0.85 },
-  { id: 'su-marker', kind: 'summit-marker', x: -7, z: -3, rot: 0.2 },
-  { id: 'su-rail', kind: 'rail', x: -3, z: 6, rot: 0.1, opts: { length: 8 } },
-  { id: 'su-lantern-1', kind: 'stone-lantern', x: -7, z: -8, rot: 0 },
-  { id: 'su-lantern-2', kind: 'stone-lantern', x: 7, z: -8, rot: 0 },
-  { id: 'su-bench-1', kind: 'bench', x: -11, z: 3, rot: 0.4 },
-  { id: 'su-bench-2', kind: 'bench', x: 9, z: 3, rot: -0.4 },
-  { id: 'su-rock-1', kind: 'rock', x: 14, z: -12, rot: 1.2, scale: 1.2 },
-  { id: 'su-rock-2', kind: 'rock', x: -14, z: -13, rot: 0.3, scale: 1.4 },
-] as const;
-
 // ---------------------------------------------------------------------------
 // Activity templates
 // ---------------------------------------------------------------------------
 
-/**
- * The kinds of thing that happen on Nagisa.
- *
- * Templates exist so that a host does not fill in a form: they pick "Lantern Walk", the
- * server knows the venue, the shape and the defaults. This is the difference between a
- * calm product and an events dashboard.
- */
-export interface ActivityTemplate {
-  readonly id: string;
-  readonly title: string;
-  readonly blurb: string;
-  /** Venue it is normally held at. A host with admin rights may override. */
-  readonly zone: ZoneId;
-  /** Default run length, minutes. */
-  readonly durationMin: number;
-  /** 0 = uncapped. */
-  readonly capacity: number;
-  readonly checkinEnabled: boolean;
-  /**
-   * What participants physically do. The client uses this to choose crowd formation and
-   * default animation: `gather` mills about, `seated` sits, `procession` follows the host.
-   */
-  readonly formation: 'gather' | 'seated' | 'procession';
-}
-
-export const ACTIVITY_TEMPLATES: readonly ActivityTemplate[] = [
-  {
-    id: 'morning-assembly',
-    title: 'Morning Assembly',
-    blurb: 'Everyone on the island, in one place, briefly.',
-    zone: 'plaza',
-    durationMin: 15,
-    capacity: 0,
-    checkinEnabled: true,
-    formation: 'gather',
-  },
-  {
-    id: 'lantern-walk',
-    title: 'Lantern Walk',
-    blurb: 'Up the shrine path, one lantern each.',
-    zone: 'shrine',
-    durationMin: 20,
-    capacity: 60,
-    checkinEnabled: true,
-    formation: 'procession',
-  },
-  {
-    id: 'harbor-market',
-    title: 'Harbour Market',
-    blurb: 'Stalls on the south quay until the light goes.',
-    zone: 'south-harbor',
-    durationMin: 45,
-    capacity: 0,
-    checkinEnabled: false,
-    formation: 'gather',
-  },
-  {
-    id: 'beach-concert',
-    title: 'Beach Concert',
-    blurb: 'Sit on the sand. Someone is playing.',
-    zone: 'beach',
-    durationMin: 30,
-    capacity: 70,
-    checkinEnabled: true,
-    formation: 'seated',
-  },
-  {
-    id: 'lamp-lighting',
-    title: 'Lamp Lighting',
-    blurb: 'The cape at dusk, when the lamp comes round.',
-    zone: 'lighthouse',
-    durationMin: 10,
-    capacity: 50,
-    checkinEnabled: true,
-    formation: 'gather',
-  },
-  {
-    id: 'morning-catch',
-    title: 'Morning Catch',
-    blurb: 'The north boats come back in. Everyone helps.',
-    zone: 'north-harbor',
-    durationMin: 25,
-    capacity: 40,
-    checkinEnabled: true,
-    formation: 'gather',
-  },
-] as const;
+/** Rebuilt on every map change, alongside the bindings at the top of the file. */
+let TEMPLATE_INDEX = new Map<string, ActivityTemplate>();
 
 export function getTemplate(id: string): ActivityTemplate | undefined {
-  return ACTIVITY_TEMPLATES.find((t) => t.id === id);
+  return TEMPLATE_INDEX.get(id);
 }
 
 // ---------------------------------------------------------------------------
@@ -715,3 +215,29 @@ export function zonePad(id: ZoneId) {
 export function zonedPads() {
   return PADS.filter((pad) => ZONE_INDEX.has(pad.id as ZoneId));
 }
+
+// ---------------------------------------------------------------------------
+// Binding to the active map
+// ---------------------------------------------------------------------------
+
+/**
+ * Republish the active pack's world data and rebuild every lookup keyed to it.
+ *
+ * Last statement in the file for the same reason as its twin in `terrain.ts`: the listener
+ * runs the moment it is registered, so everything it assigns must already be initialised.
+ */
+onMapChange((pack) => {
+  const w = pack.world;
+  ZONES = w.zones;
+  LANDMARKS = w.landmarks;
+  INTERACTABLES = w.interactables;
+  ACTIVITY_TEMPLATES = w.activityTemplates;
+  SPAWN_POINTS = w.spawnPoints;
+  FALLBACK_ZONE = w.fallbackZone;
+
+  VENUE_ZONES = w.zones.filter((z) => z.kind === 'venue').map((z) => z.id);
+  ZONE_INDEX = new Map(w.zones.map((z) => [z.id, z]));
+  ZONES_BY_SPECIFICITY = [...w.zones].sort((a, b) => a.radius - b.radius);
+  TEMPLATE_INDEX = new Map(w.activityTemplates.map((t) => [t.id, t]));
+  INTERACTABLE_INDEX = new Map(w.interactables.map((i) => [i.id, i]));
+});

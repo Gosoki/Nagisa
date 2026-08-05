@@ -36,6 +36,9 @@ const tier = flag('tier', 'high');
 const ink = flag('ink', '1');
 const debug = flag('debug', '');
 const inkDebug = flag('inkdebug', '');
+// Which map pack to render. The probe passes it straight through to the client, which
+// activates it before building anything — see \`main.ts\`.
+const map = flag('map', '');
 const width = Number(flag('width', '1280'));
 const height = Number(flag('height', '760'));
 
@@ -106,7 +109,7 @@ try {
 
   for (const view of targets) {
     problems.length = 0;
-    const url = `http://localhost:${port}/probe.html?view=${view}&time=${time}&tier=${tier}&ink=${ink}&debug=${debug}&inkdebug=${inkDebug}`;
+    const url = `http://localhost:${port}/probe.html?view=${view}&time=${time}&tier=${tier}&ink=${ink}&debug=${debug}&inkdebug=${inkDebug}&map=${map}`;
     await page.goto(url, { waitUntil: 'load' });
     try {
       // SwiftShader builds the island slowly — the terrain mesh alone is 160k height

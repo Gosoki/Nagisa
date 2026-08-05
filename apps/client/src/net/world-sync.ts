@@ -23,6 +23,7 @@
 
 import * as THREE from 'three';
 import {
+  activeMapId,
   AnimState,
   PROTOCOL,
   Role,
@@ -127,6 +128,14 @@ export class WorldSync {
   private onMessage = (msg: ServerMessage): void => {
     switch (msg.t) {
       case 'welcome':
+        // The server names the world it is simulating. Both sides validate movement against
+        // `heightAt`, so if we loaded a different pack its ground is somewhere else entirely
+        // and every position we send is rejected — which presents as constant teleporting,
+        // with nothing in either log to connect it to the cause. Say it plainly instead.
+        if (msg.mapId && msg.mapId !== activeMapId()) {
+          notify(`This room is on "${msg.mapId}" — reload with ?map=${msg.mapId}`, 'warn', 60_000);
+          console.error(`[nagisa] map mismatch: client "${activeMapId()}", server "${msg.mapId}"`);
+        }
         self.update((s) => ({ ...s, id: msg.self }));
         room.set(msg.room);
         rooms.set(msg.rooms);

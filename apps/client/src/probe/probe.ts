@@ -21,7 +21,7 @@
  */
 
 import * as THREE from 'three';
-import { SUMMIT, ZONES, heightAt, type ZoneId } from '@nagisa/shared';
+import { ISLAND_EXTENT, SUMMIT, ZONES, activeMap, heightAt, resolveMapId, type ZoneId } from '@nagisa/shared';
 import { Renderer } from '../engine/renderer.js';
 import { settingsFor, type QualityTier } from '../engine/quality.js';
 import { Island } from '../world/island.js';
@@ -41,11 +41,16 @@ interface Viewpoint {
   fov?: number;
 }
 
+/**
+ * Every eye height below is authored against Nagisa Island's terraces — a camera 4 m above
+ * the plaza is 12 m up, because the plaza is at 8. When the island's relief was halved these
+ * all moved with it; a viewpoint left at the old height ends up in the sky, or buried.
+ */
 const VIEWPOINTS: Record<string, Viewpoint> = {
   /** The whole island from the south-east, high up. The silhouette test. */
-  island: { eye: [210, 170, 240], target: [0, 18, 0], fov: 42 },
+  island: { eye: [190, 140, 215], target: [0, 10, 0], fov: 42 },
   /** Arrival: standing at the end of the ferry pier looking up at the island. */
-  arrival: { eye: [0, 5, 104], target: [4, 26, 24], fov: 55 },
+  arrival: { eye: [0, 5, 104], target: [4, 14, 24], fov: 55 },
   /**
    * The default third-person framing, on the quay. Matches `CameraRig`'s `default` spec
    * (10.5 m back, 3.4 m up) so anything that only shows up at the angle players actually
@@ -55,17 +60,17 @@ const VIEWPOINTS: Record<string, Viewpoint> = {
   /** The south quay at eye level — warehouses, stalls, boats. */
   quay: { eye: [-20, 7, 88], target: [6, 4, 68], fov: 55 },
   /** The plaza stage from the audience's position. */
-  plaza: { eye: [64, 19.5, 49], target: [68, 17.5, 26], fov: 50 },
+  plaza: { eye: [64, 12.5, 49], target: [68, 10, 26], fov: 50 },
   /** The Old Street, looking down the row of townhouses. */
-  street: { eye: [64, 22, -12], target: [64, 19, -48], fov: 55 },
+  street: { eye: [64, 13.5, -12], target: [64, 11, -48], fov: 55 },
   /** The shrine approach, through the torii. */
-  shrine: { eye: [-36, 26, 34], target: [-78, 25, 38], fov: 50 },
+  shrine: { eye: [-36, 15, 34], target: [-78, 13.5, 38], fov: 50 },
   /** The summit court, looking back down at the island. */
-  summit: { eye: [17, 51, 15], target: [0, 47.5, -3], fov: 55 },
+  summit: { eye: [17, 30, 15], target: [0, 26, -3], fov: 55 },
   /** The lighthouse cape against the sky. */
-  lighthouse: { eye: [-44, 30, -54], target: [-64, 32, -37], fov: 50 },
+  lighthouse: { eye: [-44, 18, -54], target: [-64, 20, -37], fov: 50 },
   /** The teahouse on the plaza's quiet side. */
-  teahouse: { eye: [66, 20, 30], target: [79, 17.5, 34], fov: 52 },
+  teahouse: { eye: [66, 13, 30], target: [79, 10.5, 34], fov: 52 },
   /** The north fishing harbour, from the quay approach looking out over the bay. */
   north: { eye: [20, 10, -50], target: [-16, 3, -82], fov: 55 },
   /** Sunset beach, low and level with the water. */
@@ -74,10 +79,14 @@ const VIEWPOINTS: Record<string, Viewpoint> = {
    * A close look at one character, for reviewing the rig. Framed on the plaza — the world
    * origin is the summit, and a camera at eye height there is buried inside the terrain.
    */
-  figure: { eye: [66.6, 16.5, 43.2], target: [64, 16, 40], fov: 38 },
+  figure: { eye: [66.6, 9.5, 43.2], target: [64, 9, 40], fov: 38 },
 };
 
 const params = new URLSearchParams(location.search);
+
+// Before anything reads the terrain field. Same rule and same reason as `main.ts`.
+resolveMapId(params.get('map'));
+
 const viewName = params.get('view') ?? 'plaza';
 const tier = (params.get('tier') ?? 'high') as QualityTier;
 const timeOfDay = Number(params.get('time') ?? 0.42);
@@ -117,7 +126,19 @@ async function main(): Promise<void> {
   // A small crowd, so the figure rig and its shadows can be reviewed in context. Placed
   // in front of whichever venue the viewpoint is looking at.
   const crowd: Character[] = [];
-  const view = VIEWPOINTS[viewName] ?? VIEWPOINTS.plaza;
+  // A pack other than Nagisa Island has none of the named viewpoints above — they are that
+  // island's coordinates. Fall back to framing whatever is loaded, from its own extent, so
+  // `--map lantern-atoll` produces a picture of the atoll rather than of empty sea where the
+  // plaza would have been.
+  const view =
+    VIEWPOINTS[viewName] ??
+    (activeMap().id === 'nagisa-island'
+      ? VIEWPOINTS.plaza
+      : {
+          eye: [ISLAND_EXTENT * 1.1, ISLAND_EXTENT * 0.8, ISLAND_EXTENT * 1.25],
+          target: [SUMMIT.x, SUMMIT.height * 0.4, SUMMIT.z],
+          fov: 42,
+        });
   const focusZone = nearestZoneTo(view.target[0], view.target[2]);
   const anchor = ZONES.find((z) => z.id === focusZone) ?? ZONES[0];
   for (let i = 0; i < 9; i++) {

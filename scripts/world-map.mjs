@@ -24,6 +24,11 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const shared = require('../packages/shared/dist/index.js');
+
+// Before the destructuring below. Those bindings are live inside the shared package but
+// *snapshots* here, so the map has to be chosen while they still resolve to the right pack.
+shared.resolveMapId(process.env.NAGISA_MAP);
+
 const {
   heightAt,
   slopeAt,

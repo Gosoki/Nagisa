@@ -8,12 +8,32 @@
  * Kept deliberately thin. Anything that could live in `App` does.
  */
 
+import { activeMap, listMaps, resolveMapId } from '@nagisa/shared';
 import { App } from './app.js';
 import { mountOverlay } from './ui/index.js';
 import { appPhase, loadProgress, notify } from './state/stores.js';
 
 const container = document.getElementById('app');
 if (!container) throw new Error('#app container missing from the document');
+
+/**
+ * Choose the map before anything reads the terrain field.
+ *
+ * This must happen at the very top of the entry point: `App`'s constructor builds the
+ * camera and the sky from the island's dimensions, and the terrain worker meshes it, so a
+ * switch afterwards would leave those describing somewhere else.
+ *
+ * `?map=lantern-atoll` selects the other shipped world. An unknown id throws here rather
+ * than loading the default, because the alternative is a client quietly simulating a
+ * different island than the server and reporting it as unexplained teleporting.
+ */
+try {
+  resolveMapId(new URLSearchParams(location.search).get('map'));
+} catch (err) {
+  document.body.textContent = `Unknown map. Available: ${listMaps().map((m) => m.id).join(', ')}`;
+  throw err;
+}
+console.info(`[nagisa] map: ${activeMap().name} (${activeMap().id})`);
 
 // The interface mounts first so the loading screen is on-screen before the island starts
 // building — otherwise the first two seconds are a blank page.

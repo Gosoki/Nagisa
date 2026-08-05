@@ -42,7 +42,7 @@ import {
  * on them. The plaza and the summit court get the same treatment for the same reason: a
  * gathering place has a floor.
  */
-const PAVED_PADS = new Set(['south-harbor', 'north-harbor', 'plaza', 'summit', 'village', 'noticeboard']);
+const PAVED_PADS = new Set(['south-harbor', 'north-harbor', 'plaza', 'summit', 'village']);
 
 /** Request sent by the main thread. */
 export interface TerrainBuildRequest {
@@ -154,16 +154,16 @@ function colorAt(x: number, z: number, h: number, slope: number, out: number[]):
     mix(C.sandWet, C.sand, smoothstep(-0.6, 1.4, h), out);
   } else if (h < 7) {
     mix(C.sand, C.grass, smoothstep(2.2, 5.6, h), out);
-  } else if (h < 34) {
+  } else if (h < 66) {
     // Broad patches of two greens, so a hillside has weather in it rather than being one
     // flat fill — the drawn look needs variation at a scale the eye reads as brushwork.
-    mix(C.grass, C.grassCool, patch(x, z, 0.019), out);
-  } else if (h < 47) {
+    mix(C.grass, C.grassCool, patch(x, z, 0.011), out);
+  } else if (h < 82) {
     const upland: number[] = [0, 0, 0];
-    mix(C.grass, C.grassCool, patch(x, z, 0.019), upland);
-    mix(upland, C.grassDry, smoothstep(34, 45, h), out);
+    mix(C.grass, C.grassCool, patch(x, z, 0.011), upland);
+    mix(upland, C.grassDry, smoothstep(66, 80, h), out);
   } else {
-    mix(C.grassDry, C.scree, smoothstep(47, 52, h), out);
+    mix(C.grassDry, C.scree, smoothstep(82, 90, h), out);
   }
 
   // 2 — steep faces are rock regardless of altitude.
@@ -173,7 +173,7 @@ function colorAt(x: number, z: number, h: number, slope: number, out: number[]):
   // 23° turns the entire mountain to bare scree and the island reads as a quarry.
   const rockiness = smoothstep(0.66, 0.95, slope);
   if (rockiness > 0) {
-    mix(out, h > 18 ? C.cliff : C.rock, rockiness, out);
+    mix(out, h > 26 ? C.cliff : C.rock, rockiness, out);
   }
 
   // 3 — paved terraces. Applied before the roads so a lane crossing a quay still reads

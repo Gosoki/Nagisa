@@ -275,7 +275,7 @@ Measured at 1280 × 760, `high` tier, from the twelve probe viewpoints:
 | Draw calls, `gameplay` framing | 879 |
 | Triangles | 1.43 M – 1.51 M |
 | Shader programs | 10 |
-| Landmark geometry | ~70 000 triangles across 126 landmarks |
+| Landmark geometry | ~62 000 triangles across 107 landmarks |
 | Scatter | 18 567 instances, 4 draw calls |
 | Terrain mesh build | ~1.1 s on SwiftShader, ~150 ms on real hardware |
 

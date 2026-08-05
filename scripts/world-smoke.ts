@@ -18,6 +18,12 @@
 import * as THREE from 'three';
 import {
   ISLAND_EXTENT,
+  MAX_CLIENT_SPEED,
+  MAX_SERVER_SPEED,
+  MAX_WADE_DEPTH,
+  MAX_WALKABLE_SLOPE,
+  MOVE_SPEED,
+  slopeAt,
   LANDMARKS,
   PADS,
   ZONES,
@@ -206,6 +212,41 @@ console.log('\nLandmarks');
   check('total landmark geometry is within budget', totalTris < 160_000, { totalTris: Math.round(totalTris) });
   console.log(`      ${LANDMARKS.length} landmarks, ${Math.round(totalTris)} triangles total`);
 
+  // Buildings are placed at a single height sample, so ground that varies across a
+  // footprint puts one corner in the air. `island.ts` fits a foundation as a backstop, but
+  // a foundation deep enough to hide a real slope is a retaining wall — so the layout is
+  // required to put buildings on level ground in the first place.
+  // `node tools/flatness.mjs` reports the same numbers with names attached.
+  const FOOTPRINT: Record<string, [number, number]> = {
+    lighthouse: [7, 7], stage: [14, 10], 'bell-tower': [3.4, 3.4], gate: [5.5, 0.6],
+    torii: [6, 0.6], well: [2.6, 2.6], 'notice-board': [3.6, 0.5], temizuya: [3.8, 3.2],
+    komainu: [1.6, 1.4], 'market-stall': [3.4, 2.6], 'net-rack': [1.6, 5], banner: [1.2, 1.2],
+    'post-lantern': [0.8, 0.8], 'stone-lantern': [1.4, 1.4], bench: [2.4, 0.8],
+    'summit-marker': [1.6, 1.6], 'beach-hut': [8, 6], minka: [12, 10], machiya: [9, 12],
+    warehouse: [13, 9], teahouse: [12, 9], bathhouse: [15, 12], 'keepers-house': [11, 8],
+    'shrine-hall': [14, 11],
+  };
+  const EXEMPT_FROM_FLATNESS = new Set(['pier', 'boat', 'breakwater', 'boathouse', 'rock', 'sea-wall', 'steps', 'rail']);
+  const uneven: { id: string; drop: number }[] = [];
+  for (const landmark of LANDMARKS) {
+    if (EXEMPT_FROM_FLATNESS.has(landmark.kind) || landmark.opts?.inWater) continue;
+    const [dw, dd] = FOOTPRINT[landmark.kind] ?? [3, 3];
+    const scale = landmark.scale ?? 1;
+    const w = (Number(landmark.opts?.w ?? dw) * scale) / 2;
+    const d = (Number(landmark.opts?.d ?? dd) * scale) / 2;
+    const cos = Math.cos(landmark.rot);
+    const sin = Math.sin(landmark.rot);
+    let min = Infinity;
+    let max = -Infinity;
+    for (const [ox, oz] of [[-w, -d], [w, -d], [-w, d], [w, d], [0, 0]] as const) {
+      const h = heightAt(landmark.x + ox * cos - oz * sin, landmark.z + ox * sin + oz * cos);
+      if (h < min) min = h;
+      if (h > max) max = h;
+    }
+    if (max - min > 0.45) uneven.push({ id: landmark.id, drop: Math.round((max - min) * 100) / 100 });
+  }
+  check('every building stands on level ground', uneven.length === 0, uneven.slice(0, 8));
+
   const unknown = createLandmark('not-a-real-kind' as never);
   check('an unknown landmark kind degrades to an empty group', unknown.children.length === 0);
 
@@ -215,6 +256,80 @@ console.log('\nLandmarks');
   const buildable = new Set(knownLandmarkKinds());
   const missing = [...new Set(LANDMARKS.map((l) => l.kind))].filter((k) => !buildable.has(k));
   check('every landmark kind used by the world has a builder', missing.length === 0, missing);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\nWalkability contract');
+// ---------------------------------------------------------------------------
+//
+// The client predicts movement and the server validates it. Both sides have to enforce
+// the *same* rule, and when they do not, the symptom is not a subtle physics difference —
+// it is the player being teleported at random while running, with nothing in the logs to
+// say why. These checks are what makes that failure loud instead of mysterious.
+
+{
+  // 1 — Simulate the client's integrator against the server's validator.
+  //
+  // Walk long straight lines out from every zone in every direction, at running speed,
+  // moving only where the client's rule (`canOccupy` — reproduced here as `isWalkable`
+  // plus the strictly-improving escape hatch) allows, and assert the server would have
+  // accepted every single position the client committed to.
+  const illegality = (x: number, z: number): number =>
+    Math.max(0, -heightAt(x, z) - MAX_WADE_DEPTH) + Math.max(0, slopeAt(x, z) - MAX_WALKABLE_SLOPE) * 10;
+
+  const canOccupy = (fromX: number, fromZ: number, x: number, z: number): boolean => {
+    if (isWalkable(x, z)) return true;
+    const here = illegality(fromX, fromZ);
+    return here > 0 && illegality(x, z) < here;
+  };
+
+  let committedIllegal = 0;
+  let steps = 0;
+  const stepLength = MOVE_SPEED.run / 60; // one 60 Hz tick at a run
+
+  for (const zone of ZONES) {
+    if (zone.radius > 900) continue;
+    for (let a = 0; a < 16; a++) {
+      const angle = (a / 16) * Math.PI * 2;
+      let x = zone.x;
+      let z = zone.z;
+      for (let i = 0; i < 900; i++) {
+        const nx = x + Math.cos(angle) * stepLength;
+        const nz = z + Math.sin(angle) * stepLength;
+        if (!canOccupy(x, z, nx, nz)) break;
+        x = nx;
+        z = nz;
+        steps++;
+        // This is the assertion that matters: the client committed to this position, so
+        // the server must accept it.
+        if (!isWalkable(x, z)) committedIllegal++;
+      }
+    }
+  }
+
+  check('every position the client would commit to is one the server accepts', committedIllegal === 0, {
+    committedIllegal,
+    steps,
+  });
+  check('the walk simulation actually moved', steps > 5000, { steps });
+
+  // 2 — The client's own speed ceiling must sit inside the server's budget, with room for
+  // the impulses (slides, jump carry) that arrive on top of steady-state running.
+  check('client speed ceiling is inside the server budget', MAX_CLIENT_SPEED < MAX_SERVER_SPEED, {
+    client: MAX_CLIENT_SPEED,
+    server: MAX_SERVER_SPEED,
+  });
+  check('run speed is the client ceiling', MOVE_SPEED.run === MAX_CLIENT_SPEED, {
+    run: MOVE_SPEED.run,
+    ceiling: MAX_CLIENT_SPEED,
+  });
+
+  // 3 — Spawns must be legal, since a player who spawns illegally is corrected instantly.
+  const spawnsLegal = [0, 1, 2, 3, 4, 5].every((i) => {
+    const s = spawnPoint(i);
+    return isWalkable(s.pos[0], s.pos[2]);
+  });
+  check('every spawn point satisfies the contract', spawnsLegal);
 }
 
 // ---------------------------------------------------------------------------

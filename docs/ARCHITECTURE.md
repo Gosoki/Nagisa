@@ -107,7 +107,7 @@ between batches so the loader keeps animating:
    landscape actually forms: altitude bands give sand → grass → upland, slope overrides
    them with rock because a steep face is bare rock whatever its height, paved terraces
    override that, and the roads override everything.
-2. **Landmarks** — the 126 hand-placed buildings and structures from `world.ts`, each
+2. **Landmarks** — the 107 hand-placed buildings and structures from `world.ts`, each
    dropped onto the terrain by a single height lookup and grouped into **zone buckets**.
    Waterfront kinds (piers, boats, breakwaters, sea torii) are placed at sea level
    instead; see `docs/WORLD.md` §4.

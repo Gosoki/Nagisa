@@ -75,6 +75,8 @@ export interface InkPassSettings {
   idRange: THREE.Vector3;
   /** Soft margin applied above each threshold, so lines have an antialiased edge. */
   smoothMargin: number;
+  /** Sample-position wobble, in pixels. What stops every contour being ruler-straight. */
+  wobble: number;
   /** Strength of the paper grain in the final composite, 0–1. */
   paper: number;
   /** Corner darkening, 0–1. */
@@ -103,7 +105,10 @@ export const DEFAULT_INK_SETTINGS: InkPassSettings = {
   depthNoise: 0.0025,
   normalRange: new THREE.Vector3(0.4, 0.5, 0.3),
   idRange: new THREE.Vector3(0.0004, 0.002, 0.1),
-  smoothMargin: 0.2,
+  // Wider than it was. A hard threshold gives a hard, aliased line; a person's stroke has
+  // a soft edge on both sides and varies in weight along its length.
+  smoothMargin: 0.34,
+  wobble: 1.15,
   paper: 0.5,
   vignette: 0.22,
 };
@@ -131,6 +136,7 @@ uniform float uDepthNoise;
 uniform vec3 uNormalRange;
 uniform vec3 uIdRange;
 uniform float uSmoothMargin;
+uniform float uWobble;
 uniform float uPaper;
 uniform float uVignette;
 uniform float uDepthScale;
@@ -156,6 +162,13 @@ void main() {
   float resScale = clamp(uResolution.y / 1080.0, 0.55, 1.6);
   vec2 offset = texel * uThickness * resScale;
 
+  // Take the whole detection cross from a *wobbled* position. Displacing the samples
+  // rather than the result is what makes the line itself wander: the detector still finds
+  // a mathematically exact edge, it just finds it a pixel off where it really is, and
+  // smoothly differently along the stroke. See inkStrokeWobble in glsl.ts.
+  vec2 wobble = inkStrokeWobble(gl_FragCoord.xy, uWobble) * texel;
+  vec2 sampleUv = vUv + wobble;
+
   const vec2 dirs[5] = vec2[5](vec2(0.0), vec2(-1.0, 0.0), vec2(1.0, 0.0), vec2(0.0, -1.0), vec2(0.0, 1.0));
 
   float depths[5];
@@ -164,7 +177,7 @@ void main() {
   float masks[5];
 
   for (int i = 0; i < 5; i++) {
-    vec2 uv = vUv + offset * dirs[i];
+    vec2 uv = sampleUv + offset * dirs[i];
     vec4 info = texture(tInfo, uv);
     depths[i] = decodeLinearDepth(info.r, uDepthScale);
     normals[i] = decodeNormalSpheremap(info.gb);
@@ -257,11 +270,19 @@ void main() {
     return;
   }
 
+  // Weight variation along the stroke. A pen presses harder on the pull and lifts on the
+  // release; a detector's line is perfectly even, which reads as printed. A slow noise
+  // field modulating the line's opacity — the same field the wobble uses, at a different
+  // offset — restores that unevenness without touching where the line goes.
+  float pressure = inkValueNoise(gl_FragCoord.xy * 0.03 + 91.4) * 0.55
+                 + inkValueNoise(gl_FragCoord.xy * 0.11 + 5.2) * 0.45;
+  lineAmount *= 0.72 + pressure * 0.5;
+
   // The ink itself picks up a little of the paper grain, so a long contour is not a
   // perfectly even stroke.
   float grain = paperGrain(gl_FragCoord.xy * 0.8);
   vec3 ink = uInkColor * (1.0 + grain * 0.18);
-  scene = mix(scene, ink, lineAmount);
+  scene = mix(scene, ink, clamp(lineAmount, 0.0, 1.0));
 
   // --- Display space -----------------------------------------------------------------
   // Everything up to here is linear: the geometry buffer is half-float linear, and
@@ -328,6 +349,7 @@ export class InkPass {
         uNormalRange: { value: settings.normalRange.clone() },
         uIdRange: { value: settings.idRange.clone() },
         uSmoothMargin: { value: settings.smoothMargin },
+        uWobble: { value: settings.wobble },
         uPaper: { value: settings.paper },
         uVignette: { value: settings.vignette },
         uDepthScale: inkLighting.uDepthScale,

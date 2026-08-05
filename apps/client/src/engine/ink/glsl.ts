@@ -118,9 +118,40 @@ float paperGrain(vec2 fragCoord) {
 float penHatch(vec2 fragCoord, float density, float phase) {
   vec2 rotated = vec2(fragCoord.x * 0.7071 + fragCoord.y * 0.7071, -fragCoord.x * 0.7071 + fragCoord.y * 0.7071);
   float wobble = inkValueNoise(rotated * 0.06) * 3.4;
-  float line = sin((rotated.x + wobble + phase) * density * 6.2831853);
-  // A soft threshold, not a hard one: hard strokes alias badly under adaptive resolution.
-  return smoothstep(0.1, 0.72, line);
+  float coord = (rotated.x + wobble + phase) * density;
+
+  // Nyquist fade. One stroke period is 1.0 in \`coord\`, so once a pixel spans more than
+  // about a third of a period the pattern cannot be represented and sampling it produces
+  // interference rather than hatching. See the note above the function.
+  float perPixel = fwidth(coord);
+  float resolvable = 1.0 - smoothstep(0.22, 0.5, perPixel);
+  if (resolvable <= 0.001) return 0.0;
+
+  // The stroke edge softens in proportion to how fast the pattern is moving, so hatching
+  // seen edge-on blurs out instead of stair-stepping.
+  float soft = clamp(perPixel * 3.0, 0.12, 0.55);
+  return smoothstep(0.35 - soft, 0.35 + soft, sin(coord * 6.2831853)) * resolvable;
+}
+
+/**
+ * A slow, low-frequency offset applied to where the contour detector takes its samples.
+ *
+ * A screen-space edge detector produces a mathematically exact line: one pixel wide,
+ * following the geometry to the pixel, dead straight wherever the geometry is. That is the
+ * biggest single tell that a "hand-drawn" renderer is not hand-drawn — a person's line
+ * wanders, and never runs perfectly true along a wall.
+ *
+ * Displacing the sample point by a smooth noise field before detection makes the line
+ * wander with it. Two octaves: the low one bows a stroke over tens of pixels, the high one
+ * gives it a little tooth. Amplitude is around a pixel — enough to break the
+ * ruler-straightness, not enough to detach the line from what it describes.
+ */
+vec2 inkStrokeWobble(vec2 fragCoord, float amplitude) {
+  float a = inkValueNoise(fragCoord * 0.021 + 3.7);
+  float b = inkValueNoise(fragCoord * 0.021 + 41.3);
+  float c = inkValueNoise(fragCoord * 0.062 + 11.9);
+  float d = inkValueNoise(fragCoord * 0.062 + 77.1);
+  return vec2((a - 0.5) * 0.78 + (c - 0.5) * 0.22, (b - 0.5) * 0.78 + (d - 0.5) * 0.22) * amplitude * 2.0;
 }
 `;
 

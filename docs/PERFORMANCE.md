@@ -113,7 +113,7 @@ and in a calm world a visible snap costs more than an invisible delay.
 | Phase | `high` tier |
 |---|---|
 | Terrain meshing (worker) | ~400–700 ms |
-| Landmarks (126 props) | ~300 ms, yielding every 8 props |
+| Landmarks (107 props) | ~300 ms, yielding every 8 props |
 | Roadside lanterns (67) | ~70 ms |
 | Scatter placement + merge | ~350 ms |
 
@@ -154,7 +154,7 @@ The debug readout (toggled in settings) reports FPS, draw calls, triangles, the 
 adaptive pixel ratio and the scatter instance count. Boot logs a one-line build summary:
 
 ```
-[nagisa] island built — terrain 152ms, 126 landmarks, 18447 scattered instances
+[nagisa] island built — terrain 148ms, 107 landmarks, 16765 scattered instances
 ```
 
 Server-side, `GET /metrics` exposes Prometheus text: connections, messages in/out by type,

@@ -1,5 +1,5 @@
 /**
- * Nagisa terrain field — world model v3.
+ * Nagisa terrain field — world model v2.
  * ======================================
  *
  * The island's surface is defined **analytically**, as one pure function of (x, z).
@@ -15,44 +15,33 @@
  * - **It is editable by anyone.** Moving the shrine 20 m east is a number change here,
  *   not a Blender round-trip.
  *
- * ### The shape: a hexagon around a mountain
+ * ### What changed from v1 (see `archive/world-v1/`)
+ *
+ * v1 was an east–west ellipse with a mountain ridge shoved against its northern edge, a
+ * single harbour, and the main plaza sitting at the origin. It read as a coastline with
+ * some hills behind it rather than as an island.
+ *
+ * v2 is built the other way round, from the middle outward:
  *
  * ```
- *                        北港 North Harbour        (low)
- *                              (0, -74)
- *                            ╱           ╲
- *          灯台岬 Lighthouse                町並み Old Street   ┐
- *             (-64, -37)                      (64, -37)        │ one shelf,
- *                 │        ▲ 山頂 Summit         │             │ and the road
- *                 │          (0, 0)  54 m        │             │ up the mountain
- *          神社 Shrine                     広場 Main Plaza      ┘
- *             (-64, 37)                       (64, 37)
- *                            ╲           ╱
- *                        南港 South Harbour        (low)
- *                              (0, 74)
+ *                       ── open sea, every direction ──
+ *                        北港 North Harbour  ·  灯台岬 Lighthouse Cape
+ *          神社 Shrine ┐                                    ┌ 茶屋 Teahouse
+ *                      └──── 山頂 Summit (the massif) ──────┘
+ *          浜 Beach   ┘                                     └ 町並み Old Street
+ *                        広場 Main Plaza  ·  南港 South Harbour
  * ```
  *
- * Six places on a hexagon 74 m to a side, and the summit at the centre. Everything is a
- * few seconds from everything else: the whole coast road is 444 m, and the climb from the
- * eastern shelf to the summit is 70 m.
- *
- * The heights say what each place is:
- *
- * - **Two harbours**, north and south, at sea level in their own bays.
- * - **Two high places** — the shrine on its headland and the lighthouse on its cape —
- *   raised above the ring so they read as somewhere you go *up* to.
- * - **Two that adjoin**: the plaza and the old street share one continuous eastern shelf,
- *   with no dip between them, and the main road up the mountain leaves from between them.
- * - **The summit**, highest, in the middle, visible from everywhere.
- *
- * ### What v3 changed from v2 (see `archive/world-v2/`)
- *
- * Scale, and almost nothing else. Every mechanism below — the surveyed path grades, the
- * terraces applied before the paths, the coastline built from a disc plus capes and bays,
- * the segment index — is v2's, and the comments explaining why each is shaped that way were
- * written there. v2's island was 480 m across with a 1 289 m coast road; crossing it took
- * over two minutes. That is a world you explore. This is a world you gather in, so the
- * distances are halved and the layout is a shape you can learn in one visit.
+ * - **Sea on all four sides.** The silhouette is a compact disc, not an ellipse pushed up
+ *   against the edge of the meshed area. From any shore you are looking at open water.
+ * - **The high ground is in the centre.** One massif at the island's heart, with radial
+ *   spurs and the valleys between them. Everything else is arranged around its foot, so
+ *   the mountain is the thing you orient by from anywhere on the island.
+ * - **Two harbours, north and south.** Each sits in its own bay bitten out of the coast.
+ *   The south is the arrival port (bigger, busier, faces the plaza); the north is the
+ *   working fishing harbour.
+ * - **Settlement is distributed.** Six inhabited places spread around the ring rather
+ *   than clustered along one shore, connected by a coast road and three climbing lanes.
  *
  * Determinism is non-negotiable: every function below uses integer hashing
  * (`Math.imul`, bit ops) and never `Math.random`, `Date`, or transcendental identities
@@ -158,37 +147,27 @@ export function clamp(v: number, lo: number, hi: number): number {
 // ---------------------------------------------------------------------------
 
 /** Extent of the terrain grid the client meshes, metres from origin on each axis. */
-export const ISLAND_EXTENT = 175;
+export const ISLAND_EXTENT = 320;
 
 /** Radius beyond which there is nothing but open water. Used for camera + fog limits. */
-export const OCEAN_RADIUS = 2400;
+export const OCEAN_RADIUS = 2600;
 
 /** Mean radius of the coastline, before capes, bays and wobble. */
-const COAST_RADIUS = 122;
-
-/**
- * Distance from the summit to each of the six zones — the hexagon's circumradius, which
- * for a regular hexagon is also its side length. 74 m is the whole design brief in one
- * number: about eight seconds at a run, so a neighbour is never a journey.
- */
-export const HEX_RADIUS = 74;
+const COAST_RADIUS = 238;
 
 /** Summit of the central massif. Every other place on the island is described relative to it. */
-export const SUMMIT = { x: 0, z: 0, height: 52 } as const;
+export const SUMMIT = { x: 0, z: -14, height: 88 } as const;
 
 /**
  * Horizontal reach of the massif — beyond this the ground is coastal shelf.
  *
  * Height and radius are chosen together, not independently. A smoothstep cone's steepest
- * point is its midpoint, where the gradient is `1.5 · height / radius`; at 52 m over
- * 108 m that is 0.72, or 36°, inside {@link MAX_WALKABLE_SLOPE} once the spurs and rock
- * detail have added their share. Raising the peak without widening the base is the
- * quickest way to make the whole mountain unclimbable.
- *
- * The radius also has to reach past the hexagon (74 m) so the mountain's foot *is* the
- * ground the six zones stand on, rather than a cone dropped into the middle of a plain.
+ * point is its midpoint, where the gradient is `1.5 · height / radius`; at 88 m over
+ * 182 m that is 0.73, or 36°, comfortably inside {@link MAX_WALKABLE_SLOPE} once the
+ * spurs and rock detail have added their share. Raising the peak without widening the
+ * base is the quickest way to make the whole mountain unclimbable.
  */
-const MASSIF_RADIUS = 108;
+const MASSIF_RADIUS = 182;
 
 // ---------------------------------------------------------------------------
 // Island silhouette
@@ -216,10 +195,10 @@ interface CoastFeature {
  * the shrine on the west headland, the beach runs off the south-west spit.
  */
 const CAPES: readonly CoastFeature[] = [
-  { x: -104, z: -60, reach: 58, strength: 0.26 }, // north-west: the lighthouse cape
-  { x: -104, z: 60, reach: 54, strength: 0.22 }, // south-west: the shrine headland
-  { x: 104, z: -46, reach: 52, strength: 0.2 }, // east: the old street's shelf
-  { x: 62, z: 104, reach: 50, strength: 0.18 }, // south-east: the beach spit
+  { x: 150, z: -196, reach: 96, strength: 0.3 }, // north-east: lighthouse cape
+  { x: -212, z: 26, reach: 88, strength: 0.24 }, // west: shrine headland
+  { x: 196, z: 88, reach: 84, strength: 0.2 }, // east: the old street's shelf
+  { x: -158, z: 172, reach: 92, strength: 0.22 }, // south-west: beach spit
 ] as const;
 
 /**
@@ -227,45 +206,9 @@ const CAPES: readonly CoastFeature[] = [
  * does not read as a harbour, and boats need somewhere to be.
  */
 const BAYS: readonly CoastFeature[] = [
-  { x: 0, z: 138, reach: 64, strength: 0.44 }, // south bay: the arrival port
-  { x: 0, z: -138, reach: 60, strength: 0.4 }, // north bay: the fishing harbour
+  { x: 16, z: 264, reach: 116, strength: 0.46 }, // south bay: the arrival port
+  { x: -36, z: -266, reach: 100, strength: 0.4 }, // north bay: the fishing harbour
 ] as const;
-
-/**
- * A broad, gentle rise in the ground — a *shelf* rather than a terrace.
- *
- * Terraces (`PADS`) are flat and local; a shelf is landform. This is what makes the plaza
- * and the old street read as one continuous piece of high ground with the road up the
- * mountain leaving from between them, rather than as two separate platforms with a dip in
- * the middle. Height is added smoothly and the surrounding terrain still shows through, so
- * a shelf never produces the mesa edge a wide pad would.
- */
-interface Shelf {
-  readonly x: number;
-  readonly z: number;
-  readonly reach: number;
-  readonly height: number;
-}
-
-const SHELVES: readonly Shelf[] = [
-  // The eastern shelf, carrying both the plaza and the old street.
-  { x: 70, z: 0, reach: 82, height: 13 },
-  // The western headlands are raised too, but separately: the shrine and the lighthouse
-  // are meant to read as two distinct high places, not one ridge.
-  { x: -70, z: 40, reach: 46, height: 15 },
-  { x: -70, z: -40, reach: 46, height: 17 },
-] as const;
-
-/** Combined shelf contribution at a point. */
-function shelfHeight(x: number, z: number): number {
-  let total = 0;
-  for (const shelf of SHELVES) {
-    const d = Math.hypot(x - shelf.x, z - shelf.z);
-    if (d >= shelf.reach) continue;
-    total += shelf.height * (1 - smoothstep(shelf.reach * 0.35, shelf.reach, d));
-  }
-  return total;
-}
 
 /**
  * Signed island mask: ~1 at the summit, 0 at the waterline, negative offshore.
@@ -341,15 +284,15 @@ function massif(x: number, z: number): number {
   const spur = 0.5 + 0.5 * Math.cos(ang * 6 + warp + r * 0.004);
   // Spurs are invisible at the summit (where everything converges) and strongest halfway
   // down, fading again at the foot so they do not chop up the terraces.
-  const spurWeight = 0.2 * smoothstep(10, 46, r) * (1 - smoothstep(72, MASSIF_RADIUS, r));
+  const spurWeight = 0.2 * smoothstep(14, 78, r) * (1 - smoothstep(120, MASSIF_RADIUS, r));
   const shaped = profile * (1 - spurWeight + spurWeight * spur);
 
   // 3 — rock detail. Amplitude is the budget left over after the cone and the spurs have
   // spent theirs: enough to read as rock, not enough to push any flank past walkable.
-  const rough = ridge(x * 0.019 + 5.5, z * 0.019 + 2.2, 4) - 0.42;
+  const rough = ridge(x * 0.0105 + 5.5, z * 0.0105 + 2.2, 4) - 0.42;
   const detailMask = smoothstep(0, 0.3, profile) * (1 - smoothstep(0.86, 1, profile));
 
-  return SUMMIT.height * shaped + rough * 6 * detailMask;
+  return SUMMIT.height * shaped + rough * 10 * detailMask;
 }
 
 // ---------------------------------------------------------------------------
@@ -382,48 +325,42 @@ export interface Pad {
  * what catches a pad that has drifted off its zone or been swallowed by a later one.
  */
 export const PADS: readonly Pad[] = [
-  // — The hexagon, clockwise from the south ——————————————————————————
-  //
-  // The six zones sit on the vertices of a regular hexagon of circumradius HEX_RADIUS.
-  // Their heights are the design: two harbours at sea level, two high places, and two that
-  // adjoin on the eastern shelf.
-  //
-  // Terraces must not overlap unless the nesting is deliberate — they are applied in order
-  // and a later one wins, so a big pad whose `outer` reaches a small one downhill will
-  // quietly drag it to the wrong height. At 74 m apart with `outer` at 34, the six have
-  // 6 m of clearance between their blends.
-
-  // Inner radii are sized by **what stands on them**, not by eye. A building is placed at
-  // a single height sample, so any variation across its footprint puts one corner in the
-  // air; the fix is for the whole footprint to be inside the terrace's flat part.
-  // `tools/flatness.mjs` measures that directly and `world-smoke` fails the build on it.
-  //
-  // The ceiling on how wide these can get is the gap to the next terrace: two pads need
-  // `heightDifference / walkableGradient` of clear ground between their flat parts, and
-  // the hexagon gives 74 m of centre-to-centre to spend. The tightest pair is the north
-  // harbour and the lighthouse cape — 22.6 m apart in height, so 27 m of that 74 has to
-  // stay as slope.
-
-  /** The arrival port. Barely above the water, so the boats read as boats. */
-  { id: 'south-harbor', x: 0, z: 74, height: 2.4, inner: 21, outer: 35 },
-  /** The main plaza, on the eastern shelf. */
-  { id: 'plaza', x: 64, z: 37, height: 15.0, inner: 25, outer: 37 },
-  /** The old street, sharing that shelf — see SHELVES for why there is no dip between them. */
-  { id: 'village', x: 64, z: -37, height: 17.0, inner: 25, outer: 37 },
-  /** Sunset beach, on the sand east of the south quay. */
-  { id: 'beach', x: 46, z: 92, height: 1.6, inner: 16, outer: 28 },
-  /** The working fishing harbour. */
-  { id: 'north-harbor', x: 0, z: -74, height: 2.4, inner: 20, outer: 33 },
-  /** Lighthouse cape: a flat clifftop, deliberately exposed and the higher of the two. */
-  { id: 'lighthouse', x: -64, z: -37, height: 25.0, inner: 19, outer: 33 },
-  /** The shrine, on its own headland. */
-  { id: 'shrine', x: -64, z: 37, height: 22.0, inner: 22, outer: 35 },
+  // — Coastal ring, roughly clockwise from the south ————————————————
+  /**
+   * The arrival port. Barely above the water, so the boats read as boats.
+   *
+   * Harbour terraces are kept deliberately tight. A pad's blend raises the ground all the
+   * way out to `outer`, and the ground it is raising here is *seabed* — an over-generous
+   * quay does not make a bigger harbour, it fills the bay in and leaves the piers standing
+   * on a beach. 26/46 puts the waterline about 30 m out from the quay's centre, which is
+   * enough to moor against and not enough to drain the anchorage.
+   */
+  { id: 'south-harbor', x: 16, z: 192, height: 2.6, inner: 26, outer: 46 },
+  /** Sunset beach: a wide, almost-flat apron running into the sea. */
+  { id: 'beach', x: -166, z: 146, height: 1.2, inner: 30, outer: 64 },
+  /** Shrine courtyard, cut into the west headland above the water. */
+  { id: 'shrine', x: -186, z: 20, height: 26.0, inner: 26, outer: 54 },
+  /** The fishing harbour on the north bay. Same tight-terrace rule as the south. */
+  { id: 'north-harbor', x: -36, z: -198, height: 2.4, inner: 22, outer: 42 },
+  /** Lighthouse cape: a flat clifftop, deliberately exposed. */
+  { id: 'lighthouse', x: 138, z: -190, height: 32.0, inner: 22, outer: 52 },
+  /** Teahouse rest terrace, high on the eastern flank. */
+  { id: 'teahouse', x: 168, z: -62, height: 33.0, inner: 21, outer: 50 },
+  /** The old street, on the eastern shelf. */
+  { id: 'village', x: 176, z: 76, height: 18.0, inner: 30, outer: 62 },
 
   // — Inland ————————————————————————————————————————————————————————
-  /** Notice-board terrace, one step up from the plaza floor. The one deliberate nesting. */
-  { id: 'noticeboard', x: 48, z: 22, height: 15.8, inner: 8, outer: 15 },
-  /** The summit court: a small flat terrace at the true peak, around the inner shrine. */
-  { id: 'summit', x: SUMMIT.x, z: SUMMIT.z, height: SUMMIT.height, inner: 12, outer: 30 },
+  //
+  // Pads must not overlap unless the nesting is deliberate: they are applied in order and
+  // a later pad wins, so a big terrace whose `outer` reaches a small one downhill will
+  // quietly drag it to the wrong height. The plaza is sized to stop short of the harbour
+  // quay for exactly that reason; the notice board is the one intentional nesting.
+  /** The main event plaza, on the mountain's southern shoulder above the port. */
+  { id: 'plaza', x: 0, z: 108, height: 22.0, inner: 34, outer: 62 },
+  /** Notice-board terrace, one step up from the plaza floor. */
+  { id: 'noticeboard', x: -26, z: 94, height: 24.4, inner: 11, outer: 23 },
+  /** The summit court itself: a small flat terrace at the true peak, around the inner shrine. */
+  { id: 'summit', x: SUMMIT.x, z: SUMMIT.z, height: SUMMIT.height, inner: 18, outer: 44 },
 ] as const;
 
 /** Lookup used by `world.ts` and by spawn placement. */
@@ -471,91 +408,97 @@ export interface WorldPath {
 export const PATHS: readonly WorldPath[] = [
   {
     id: 'coast',
-    name: 'Ring Road',
-    halfWidth: 3.4,
-    shoulder: 6,
+    name: 'Coast Road',
+    halfWidth: 3.6,
+    shoulder: 7,
     carve: 0.95,
     surface: 'stone',
-    // Mid-points sit at radius 82 rather than on the hexagon's 74, so each leg is ~86 m
-    // instead of 74. That extra twelve metres is not decoration: the north harbour to
-    // lighthouse cape leg climbs 23 m, and over a straight 74 m that is a 32% grade —
-    // past what the survey will hold with both ends pinned to their terraces.
     points: [
-      [0, 74], // south harbour
-      [41, 71],
-      [64, 37], // plaza
-      [82, 0],
-      [64, -37], // old street
-      [41, -71],
-      [0, -74], // north harbour
-      [-41, -71],
-      [-64, -37], // lighthouse cape
-      [-82, 0],
-      [-64, 37], // shrine
-      [-41, 71],
-      [0, 74],
+      [16, 192], // south harbour
+      [-58, 186],
+      [-118, 172],
+      [-166, 146], // beach
+      [-196, 108],
+      [-208, 62],
+      [-186, 20], // shrine
+      [-176, -34],
+      [-150, -92],
+      [-116, -142],
+      [-74, -180],
+      [-36, -198], // north harbour
+      [20, -206],
+      [78, -206],
+      [138, -190], // lighthouse cape
+      [176, -150],
+      [188, -108],
+      [168, -62], // teahouse
+      [180, -16],
+      [190, 30],
+      [176, 76], // old street
+      [150, 122],
+      [110, 158],
+      [66, 182],
+      [16, 198],
     ],
   },
   {
     id: 'south-approach',
-    name: 'Summit Road',
+    name: 'Plaza Steps',
     halfWidth: 3.2,
-    shoulder: 5.5,
+    shoulder: 6,
     carve: 0.95,
     surface: 'stone',
     points: [
-      // Leaves the ring from between the plaza and the old street — the point of putting
-      // those two on one shelf is that the mountain road starts where they meet.
-      //
-      // Then it switchbacks. The summit is 33 m above the shelf and only 82 m from it in a
-      // straight line; taken directly that is a 40% grade, and the survey would answer by
-      // lifting the whole road clear of the ground it is supposed to be cut into. Four
-      // turns stretch it to ~140 m and about 24%.
-      [82, 0],
-      [62, -16],
-      [44, -24],
-      [28, -16],
-      [20, 0],
-      [28, 16],
-      [16, 24],
-      [4, 14],
-      [0, 0], // summit
+      [16, 192], // off the harbour quay
+      [12, 168],
+      [4, 138],
+      [0, 108], // the plaza
+      [-26, 94], // notice-board terrace
+      [-8, 72],
+      [26, 52],
+      [32, 20],
+      [0, -14], // summit
     ],
   },
   {
     id: 'shrine-ascent',
     name: 'Shrine Path',
-    halfWidth: 2.6,
-    shoulder: 5,
+    halfWidth: 2.8,
+    shoulder: 5.5,
     carve: 0.94,
     surface: 'gravel',
     points: [
-      [-64, 37], // shrine courtyard
-      [-50, 32],
-      // One switchback: the west flank is the steepest side of the massif, and at this
-      // scale a single doubling-back is enough to hold the grade.
-      [-38, 36],
-      [-30, 22],
-      [-20, 24],
-      [-10, 12],
-      [0, 0], // summit
+      [-186, 20], // shrine courtyard
+      [-152, 6],
+      [-118, -4],
+      // Switchbacks: the west flank is the steepest side of the massif, so the lane
+      // doubles back on itself twice rather than running straight at the slope.
+      [-88, -30],
+      [-96, -62],
+      [-64, -74],
+      [-38, -52],
+      [-18, -32],
+      [0, -14], // summit
     ],
   },
   {
     id: 'east-lane',
-    name: 'Harbour Lane',
-    halfWidth: 2.8,
-    shoulder: 5,
+    name: 'East Lane',
+    halfWidth: 3.0,
+    shoulder: 6,
     carve: 0.94,
     surface: 'gravel',
     points: [
-      // A short cut across the middle of the island, from the south harbour up past the
-      // notice board to the plaza. The one route that does not follow the ring.
-      [0, 74],
-      [20, 60],
-      [40, 44],
-      [48, 22], // notice-board terrace
-      [64, 37], // plaza
+      [176, 76], // old street
+      [150, 44],
+      [136, 6],
+      [148, -34],
+      [168, -62], // teahouse
+      [132, -84],
+      [92, -76],
+      [56, -56],
+      [26, -34],
+      [0, -14], // summit
     ],
   },
 ] as const;
@@ -673,7 +616,7 @@ const NO_PATH: PathHit = { path: null, dist: Infinity, s: 0 };
  * this is a "am I on a path" query, not a global nearest-neighbour search, and the whole
  * point of the grid is that most of the island answers "no" in constant time.
  */
-export function nearestPath(x: number, z: number, excludeId?: WorldPath['id']): PathHit {
+export function nearestPath(x: number, z: number): PathHit {
   const segments = segmentsNear(x, z);
   if (!segments) return NO_PATH;
 
@@ -682,7 +625,6 @@ export function nearestPath(x: number, z: number, excludeId?: WorldPath['id']): 
   let bestS = 0;
 
   for (const seg of segments) {
-    if (excludeId !== undefined && seg.path.id === excludeId) continue;
     const t = clamp(((x - seg.ax) * seg.dx + (z - seg.az) * seg.dz) * seg.invLenSq, 0, 1);
     const px = seg.ax + seg.dx * t;
     const pz = seg.az + seg.dz * t;
@@ -731,26 +673,10 @@ const PROFILE_SMOOTH_PASSES = 10;
 /** Relaxation passes for the grade limiter. Each pass is one forward + one backward sweep. */
 const PROFILE_GRADE_PASSES = 40;
 
-/**
- * How far apart, in profile samples, two points must be before they count as a doubling
- * back rather than as ordinary neighbours. Three samples' worth of road either side.
- */
-const SELF_PROXIMITY_MIN_GAP = 6;
-
 /** Never carve a path below this: a coast road at sea level would flood at the shoreline. */
 const PATH_MIN_HEIGHT = 1.2;
 
 const pathProfiles = new Map<string, Float64Array>();
-
-/**
- * Routes whose profile is mid-build.
- *
- * Endpoint pinning asks a joined route for its surface height, which builds that route's
- * profile if it has not been built yet. Two routes that ended on each other would recurse
- * for ever; this breaks the cycle by falling back to the bare ground for whichever one
- * asks second. Nothing on the island does that today, and the guard costs a set lookup.
- */
-const profilesUnderConstruction = new Set<string>();
 
 /**
  * Build one path's grade profile.
@@ -795,36 +721,6 @@ function buildProfile(path: WorldPath): Float64Array {
     );
   }
 
-  // An open route's **ends** are pinned too, whether or not they land on a terrace.
-  //
-  // A road has to meet whatever it stops at. Without this, a lane with one end on a
-  // terrace and the other on open hillside has only one fixed point, and the grade limiter
-  // — whose job is to make the profile gentle, not to keep it on the ground — satisfies
-  // itself by lifting the free end into the air. The summit road did exactly that: its top
-  // pinned at 46 m, its bottom floating thirteen metres above the shelf it starts from,
-  // with an 80° wall of terrain where the carve met the hillside.
-  //
-  // What it stops *at* matters as much as that it stops. A branch leaving the ring road
-  // has to meet the **ring road's** surface, not the bare ground underneath it — the ring
-  // has already been cut to its own profile there, and pinning to the untouched ground
-  // reproduces the same cliff nine metres lower down. So: a terrace if there is one, else
-  // the route it joins, else the ground.
-  if (!closed) {
-    for (const i of [0, count - 1]) {
-      if (pinned[i]) continue;
-      const { x, z } = pathAt(path.id, i * PROFILE_STEP);
-      const junction = nearestPath(x, z, path.id);
-      const joinsAnother = junction.path && junction.dist < junction.path.halfWidth + junction.path.shoulder * 0.5;
-      profile[i] = Math.max(
-        PATH_MIN_HEIGHT,
-        joinsAnother && !profilesUnderConstruction.has(junction.path!.id)
-          ? profileHeight(junction.path!, junction.s)
-          : paddedHeight(x, z),
-      );
-      pinned[i] = 1;
-    }
-  }
-
   // Index arithmetic differs for a loop (wraps) and an open lane (clamps at the ends).
   const at = (i: number): number =>
     closed ? profile[((i % count) + count) % count] : profile[clamp(i, 0, count - 1) | 0];
@@ -860,54 +756,11 @@ function buildProfile(path: WorldPath): Float64Array {
     return true;
   };
 
-  // 3 — self-proximity. Where a route doubles back on itself — a switchback on a mountain
-  // road — two samples that are eighty metres apart *along the road* are fifteen metres
-  // apart *on the ground*. Their carve influences overlap, `nearestPath` flips between
-  // them from one pixel to the next, and whatever height difference they hold becomes a
-  // vertical step in the terrain. A hairpin with a four-metre drop across it does not read
-  // as a hairpin; it reads as the road being broken.
-  //
-  // Real switchbacks answer this by making the turn itself level. So do we: any two
-  // samples far apart in arc length but close in space are pulled toward their mean, in
-  // proportion to how much their influence regions overlap. Straight road is untouched,
-  // because no two distant samples on it are ever close together.
-  const influence = (path.halfWidth + path.shoulder) * 2;
-  const positions = Array.from({ length: count }, (_, i) => pathAt(path.id, i * PROFILE_STEP));
-
-  const relaxSelfProximity = (): boolean => {
-    let moved = false;
-    for (let i = 0; i < count; i++) {
-      for (let j = i + SELF_PROXIMITY_MIN_GAP; j < count; j++) {
-        // On a loop, the two ends are neighbours, not a doubling back.
-        if (closed && count - (j - i) < SELF_PROXIMITY_MIN_GAP) continue;
-        const d = Math.hypot(positions[i].x - positions[j].x, positions[i].z - positions[j].z);
-        if (d >= influence) continue;
-        const delta = profile[j] - profile[i];
-        if (Math.abs(delta) < 0.01) continue;
-        // Full strength when the two are on top of each other, fading to nothing as they
-        // separate — so the hairpin's apex flattens and its approaches keep their grade.
-        const strength = (1 - d / influence) * 0.5;
-        if (pinned[i] && pinned[j]) continue;
-        if (pinned[i]) profile[j] -= delta * strength;
-        else if (pinned[j]) profile[i] += delta * strength;
-        else {
-          profile[i] += delta * strength * 0.5;
-          profile[j] -= delta * strength * 0.5;
-        }
-        moved = true;
-      }
-    }
-    return moved;
-  };
-
-  // Interleaved with the grade limiter rather than run after it: flattening a hairpin
-  // changes the grade of its approaches, and re-grading them changes the hairpin.
   for (let pass = 0; pass < PROFILE_GRADE_PASSES; pass++) {
     let moved = false;
     for (let i = 1; i < count; i++) moved = relax(i - 1, i) || moved;
     for (let i = count - 2; i >= 0; i--) moved = relax(i, i + 1) || moved;
     if (closed) moved = relax(count - 1, 0) || moved;
-    moved = relaxSelfProximity() || moved;
     if (!moved) break;
   }
 
@@ -940,9 +793,7 @@ function isClosedLoop(path: WorldPath): boolean {
 function profileHeight(path: WorldPath, s: number): number {
   let profile = pathProfiles.get(path.id);
   if (!profile) {
-    profilesUnderConstruction.add(path.id);
     profile = buildProfile(path);
-    profilesUnderConstruction.delete(path.id);
     pathProfiles.set(path.id, profile);
   }
   const count = profile.length;
@@ -1009,15 +860,12 @@ function naturalHeight(x: number, z: number): number {
 
   const mountain = massif(x, z);
 
-  // The rolling coastal ground everything is built on. Its amplitude decays as the massif
-  // takes over, so the mountain's own profile is not riding on top of a second, unrelated
-  // band of noise — without this the true summit ends up wherever the noise happens to
-  // peak rather than where SUMMIT says it is.
-  const rollingWeight = 1 - smoothstep(5, 28, mountain);
-  const rolling = (3.5 + (fbm(x * 0.013 + 2.1, z * 0.013 + 9.4, 5) - 0.42) * 15) * rollingWeight;
-
-  // Named landform: the eastern shelf and the two western headlands. See SHELVES.
-  const shelf = rolling + shelfHeight(x, z) * rollingWeight;
+  // The coastal shelf everything is built on: gently rolling, 4–18 m. Its amplitude
+  // decays as the massif takes over, so the mountain's own profile is not riding on top
+  // of a second, unrelated 15 m of noise — without this the true summit ends up wherever
+  // the shelf noise happens to peak rather than where SUMMIT says it is.
+  const shelfWeight = 1 - smoothstep(6, 42, mountain);
+  const shelf = (4 + (fbm(x * 0.0072 + 2.1, z * 0.0072 + 9.4, 5) - 0.42) * 26) * shelfWeight;
 
   // Sea cliffs. This is a *coastal* feature: `coastal` confines it to a slice of the mask
   // near the shore, since a cliff term that stayed switched on inland would silently raise
@@ -1032,13 +880,13 @@ function naturalHeight(x: number, z: number): number {
   const coastal = smoothstep(0.015, 0.26, mask) * (1 - smoothstep(0.24, 0.52, mask));
   const ang2 = Math.atan2(z, x);
   const cliffiness = clamp(fbm(Math.cos(ang2) * 1.8 + 41.2, Math.sin(ang2) * 1.8 + 13.9, 3) * 2.1 - 0.5, 0, 1);
-  const shelterSouthBay = 1 - smoothstep(84, 34, Math.hypot(x, z - 128));
-  const shelterNorthBay = 1 - smoothstep(80, 32, Math.hypot(x, z + 128));
-  const shelterBeach = 1 - smoothstep(70, 26, Math.hypot(x - 62, z - 100));
-  const cliff = coastal * 16 * cliffiness * shelterSouthBay * shelterNorthBay * shelterBeach;
+  const shelterSouthBay = 1 - smoothstep(150, 60, Math.hypot(x - 16, z - 240));
+  const shelterNorthBay = 1 - smoothstep(130, 50, Math.hypot(x + 36, z + 244));
+  const shelterBeach = 1 - smoothstep(130, 46, Math.hypot(x + 166, z - 146));
+  const cliff = coastal * 22 * cliffiness * shelterSouthBay * shelterNorthBay * shelterBeach;
 
   // Fine surface detail, kept small so the walkable slope stays comfortable.
-  const detail = (fbm(x * 0.062 + 17.0, z * 0.062 + 31.0, 3) - 0.5) * 1.8;
+  const detail = (fbm(x * 0.042 + 17.0, z * 0.042 + 31.0, 3) - 0.5) * 2.6;
 
   return inland * (shelf + cliff + mountain) + detail * inland + mask * 2.5;
 }

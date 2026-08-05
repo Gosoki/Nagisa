@@ -28,7 +28,12 @@
 import * as THREE from 'three';
 import {
   AnimState,
+  GRAVITY,
+  JUMP_VELOCITY,
+  MAX_CLIENT_SPEED,
+  MAX_WADE_DEPTH,
   MAX_WALKABLE_SLOPE,
+  MOVE_SPEED,
   heightAt,
   isWalkable,
   nearestWalkable,
@@ -39,22 +44,25 @@ import type { CameraRig } from '../engine/camera-rig.js';
 import type { Input } from '../input/input.js';
 import { Character, type CharacterAppearance } from './character.js';
 
-/** Ground speeds, metres per second. */
-const WALK_SPEED = 3.1;
-const RUN_SPEED = 6.2;
+/**
+ * Ground speeds. Imported, never authored here — see `@nagisa/shared/movement` for why the
+ * client and the server must not hold their own copies of these numbers.
+ */
+const WALK_SPEED = MOVE_SPEED.walk;
+const RUN_SPEED = MOVE_SPEED.run;
 
 /** Speed while wading. Slow enough that walking into the sea feels like a decision. */
-const WADE_SPEED = 1.5;
+const WADE_SPEED = MOVE_SPEED.wade;
 
 /** Depth past which the player is turned back toward shore. */
-const MAX_WADE_DEPTH = 1.25;
+
 
 /** Horizontal acceleration and damping, per second. */
 const ACCELERATION = 26;
 const DAMPING = 14;
 
-const GRAVITY = 22;
-const JUMP_VELOCITY = 7.2;
+
+
 
 /** Vertical distance within which the character counts as standing on the ground. */
 const GROUND_EPSILON = 0.08;
@@ -182,21 +190,32 @@ export class LocalPlayer {
 
     this.velocity.y -= GRAVITY * dt;
 
+    // Whatever produced the horizontal velocity — input, a downhill slide, a shove out of
+    // deep water — it is clamped here, once, before it can move anything. The server
+    // measures speed between arrivals and corrects anything over budget, so a slide
+    // impulse that bypassed the input clamp used to be enough on its own to get a running
+    // player yanked backwards. See `@nagisa/shared/movement`.
+    const planar = Math.hypot(this.velocity.x, this.velocity.z);
+    if (planar > MAX_CLIENT_SPEED) {
+      this.velocity.x = (this.velocity.x / planar) * MAX_CLIENT_SPEED;
+      this.velocity.z = (this.velocity.z / planar) * MAX_CLIENT_SPEED;
+    }
+
     // Integrate horizontally, then resolve against the terrain.
     const nextX = this.position.x + this.velocity.x * dt;
     const nextZ = this.position.z + this.velocity.z * dt;
 
-    if (this.canOccupy(nextX, nextZ, depth)) {
+    if (this.canOccupy(nextX, nextZ)) {
       this.position.x = nextX;
       this.position.z = nextZ;
     } else {
       // Slide along the obstacle rather than stopping dead: try each axis alone, which
       // is a cheap approximation of projecting velocity onto the surface and is what
       // makes walking along a cliff edge feel smooth.
-      if (this.canOccupy(nextX, this.position.z, depth)) {
+      if (this.canOccupy(nextX, this.position.z)) {
         this.position.x = nextX;
         this.velocity.z *= 0.4;
-      } else if (this.canOccupy(this.position.x, nextZ, depth)) {
+      } else if (this.canOccupy(this.position.x, nextZ)) {
         this.position.z = nextZ;
         this.velocity.x *= 0.4;
       } else {
@@ -217,8 +236,10 @@ export class LocalPlayer {
       if (this.velocity.y < 0) this.velocity.y = 0;
       this.grounded = true;
 
-      // On too-steep ground, slide downhill. This is the escape hatch that means a
-      // player can never be permanently stuck on a cliff face.
+      // On too-steep ground, slide downhill. This is the escape hatch that means a player
+      // can never be permanently stuck on a cliff face — but it is only ever reached when
+      // the player is *already* somewhere illegal (terrain retuned under a standing
+      // player, a drifted spawn), because `canOccupy` no longer lets them walk onto it.
       if (slopeAt(this.position.x, this.position.z) > MAX_WALKABLE_SLOPE) {
         const n = normalAt(this.position.x, this.position.z);
         this.velocity.x += n[0] * 24 * dt;
@@ -228,7 +249,9 @@ export class LocalPlayer {
       this.grounded = false;
     }
 
-    // Deep water: push back toward the shore. A nudge, not a wall.
+    // Deep water: push back toward the shore. Same as the slide above — `canOccupy` keeps
+    // the player out of water this deep in the first place, so this only runs as a
+    // recovery when they are somehow already in it.
     if (depth > MAX_WADE_DEPTH) {
       const [sx, sz] = nearestWalkable(this.position.x, this.position.z, 60);
       const dx = sx - this.position.x;
@@ -297,15 +320,17 @@ export class LocalPlayer {
    * allowed to keep wading, so you never get trapped in the shallows by a rule that says
    * "you may not enter water".
    */
-  private canOccupy(x: number, z: number, currentDepth: number): boolean {
-    const h = heightAt(x, z);
-    if (h < -MAX_WADE_DEPTH - 1.5) return false;
-    // Climbing into a steep face is blocked, but only if it is steeper than where we
-    // already are — otherwise walking uphill on a rough slope stutters.
-    if (!isWalkable(x, z) && currentDepth < 0.1) {
-      return slopeAt(x, z) <= slopeAt(this.position.x, this.position.z) + 0.05;
-    }
-    return true;
+  private canOccupy(x: number, z: number): boolean {
+    if (isWalkable(x, z)) return true;
+
+    // Escape hatch. If the player is *already* somewhere the contract forbids — terrain
+    // retuned under a standing player, a spawn point that drifted, a correction that
+    // landed badly — refusing every move would weld them in place. So an illegal move is
+    // allowed, but only from an illegal position, and only when it makes the situation
+    // strictly better. That is enough to walk out of anywhere and impossible to abuse to
+    // walk *into* somewhere.
+    const here = illegality(this.position.x, this.position.z);
+    return here > 0 && illegality(x, z) < here;
   }
 
   /** Turn to face the direction of travel. */
@@ -342,4 +367,19 @@ export class LocalPlayer {
     this.character.root.position.copy(this.position);
     this.character.root.rotation.y = this.yaw;
   }
+}
+
+/**
+ * How far outside the walkability contract a position is, in metres of violation. Zero
+ * means legal.
+ *
+ * Used only by the escape hatch in `canOccupy`: comparing two illegal positions needs an
+ * ordering, and "is this one less illegal than that one" is the whole question. Water
+ * depth and excess slope are summed because a position can violate both at once and either
+ * one improving is progress.
+ */
+function illegality(x: number, z: number): number {
+  const depth = Math.max(0, -heightAt(x, z) - MAX_WADE_DEPTH);
+  const steep = Math.max(0, slopeAt(x, z) - MAX_WALKABLE_SLOPE);
+  return depth + steep * 10;
 }

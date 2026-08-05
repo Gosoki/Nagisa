@@ -43,42 +43,38 @@ interface Viewpoint {
 
 const VIEWPOINTS: Record<string, Viewpoint> = {
   /** The whole island from the south-east, high up. The silhouette test. */
-  island: { eye: [420, 300, 480], target: [0, 40, 0], fov: 42 },
-  /** Arrival: standing on the ferry pier looking up at the harbour and the mountain. */
-  arrival: { eye: [16, 6, 246], target: [8, 30, 80], fov: 52 },
+  island: { eye: [210, 170, 240], target: [0, 18, 0], fov: 42 },
+  /** Arrival: standing at the end of the ferry pier looking up at the island. */
+  arrival: { eye: [0, 5, 104], target: [4, 26, 24], fov: 55 },
   /**
    * The default third-person framing, on the quay. Matches `CameraRig`'s `default` spec
    * (10.5 m back, 3.4 m up) so anything that only shows up at the angle players actually
    * play at can be reviewed here rather than through the whole-app smoke test.
    */
-  gameplay: { eye: [16, 12.4, 202], target: [16, 3.9, 192], fov: 50 },
+  gameplay: { eye: [0, 9.5, 85], target: [0, 3.7, 74], fov: 50 },
   /** The south quay at eye level — warehouses, stalls, boats. */
-  quay: { eye: [-2, 6, 214], target: [26, 4, 186], fov: 55 },
+  quay: { eye: [-20, 7, 88], target: [6, 4, 68], fov: 55 },
   /** The plaza stage from the audience's position. */
-  plaza: { eye: [0, 24.5, 132], target: [0, 26, 86], fov: 50 },
+  plaza: { eye: [64, 19.5, 49], target: [68, 17.5, 26], fov: 50 },
   /** The Old Street, looking down the row of townhouses. */
-  street: { eye: [176, 20, 118], target: [176, 20, 40], fov: 55 },
+  street: { eye: [64, 22, -12], target: [64, 19, -48], fov: 55 },
   /** The shrine approach, through the torii. */
-  shrine: { eye: [-140, 28, 16], target: [-200, 30, 22], fov: 50 },
+  shrine: { eye: [-36, 26, 34], target: [-78, 25, 38], fov: 50 },
   /** The summit court, looking back down at the island. */
-  summit: { eye: [24, 96, 26], target: [0, 88, -14], fov: 55 },
+  summit: { eye: [17, 51, 15], target: [0, 47.5, -3], fov: 55 },
   /** The lighthouse cape against the sky. */
-  lighthouse: { eye: [104, 42, -160], target: [140, 46, -192], fov: 50 },
-  /** The teahouse terrace above the east coast. */
-  teahouse: { eye: [142, 38, -46], target: [170, 36, -66], fov: 52 },
+  lighthouse: { eye: [-44, 30, -54], target: [-64, 32, -37], fov: 50 },
+  /** The teahouse on the plaza's quiet side. */
+  teahouse: { eye: [66, 20, 30], target: [79, 17.5, 34], fov: 52 },
   /** The north fishing harbour, from the quay approach looking out over the bay. */
-  north: { eye: [16, 14, -164], target: [-46, 3, -206], fov: 55 },
+  north: { eye: [20, 10, -50], target: [-16, 3, -82], fov: 55 },
   /** Sunset beach, low and level with the water. */
-  beach: { eye: [-140, 4, 168], target: [-180, 4, 140], fov: 55 },
+  beach: { eye: [30, 5, 106], target: [56, 3, 88], fov: 55 },
   /**
-   * A close look at one character, for reviewing the rig.
-   *
-   * Framed on the plaza rather than on the world origin: the origin is 87 m up the
-   * mountain, so a camera at eye height there is buried inside the terrain, which renders
-   * as a screenful of back-faces and takes long enough on a software rasteriser to time
-   * the screenshot tool out.
+   * A close look at one character, for reviewing the rig. Framed on the plaza — the world
+   * origin is the summit, and a camera at eye height there is buried inside the terrain.
    */
-  figure: { eye: [2.6, 23.6, 111.2], target: [0, 23.1, 108], fov: 38 },
+  figure: { eye: [66.6, 16.5, 43.2], target: [64, 16, 40], fov: 38 },
 };
 
 const params = new URLSearchParams(location.search);

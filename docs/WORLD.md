@@ -1,43 +1,44 @@
-# The island — world model v2
+# The island — world model v3
 
-Nagisa is one small Japanese island, about 480 m across, surrounded by open water on every
-side. A single mountain stands at its centre; everything people built stands around the
-mountain's foot. You can walk the coast road all the way round in a little under five
-minutes, or climb to the summit from any of three directions in about ninety seconds.
+Nagisa is one small Japanese island, about 250 m across, surrounded by open water on every
+side. Six places sit on a hexagon 74 m to a side, with a single mountain at its centre.
 
-That scale is deliberate. The island has to be small enough to hold in your head after one
-visit, and large enough that arriving somewhere feels like arriving.
+That scale is the whole design. A neighbour is about eight seconds away at a run and the
+summit is sixteen; the entire ring road takes under a minute. When something starts at the
+plaza, the answer is "I'm nearly there" rather than "I'll set off".
 
-> The previous world — an ellipse with one harbour and the plaza on the origin — is kept in
-> [`archive/world-v1/`](../archive/world-v1/README.md), with a table of what changed and why.
+> Two earlier islands are kept for reference, each with a table of what changed and why:
+> [`archive/world-v1/`](../archive/world-v1/README.md) and
+> [`archive/world-v2/`](../archive/world-v2/README.md). v3 is a *scale* change from v2, not
+> a redesign — almost every mechanism below is v2's.
 
 ---
 
 ## 1. Geography
 
 ```
-                                    N  (−z)
-                     北港 North Harbour        灯台岬 Lighthouse Cape
-                        (−36, −198)                (138, −190)
-                              ╲                        ╱
-                               ╲    ▲ 山頂 Summit     ╱
-          神社 Shrine ──────────  ╲  (0, −14) 88 m  ╱  ────────── 茶屋 Teahouse
-           (−186, 20)              ╲      ▲       ╱                (168, −62)
-                                    ╲    ╱ ╲     ╱
-   W (−x)                            ╲  ╱   ╲   ╱                            E (+x)
-                                      ╲╱     ╲ ╱
-          浜 Sunset Beach          広場 Main Plaza          町並み Old Street
-             (−166, 146)              (0, 108)                 (176, 76)
-                              ╲                        ╱
-                                 南港 South Harbour  ╱
-                                     (16, 192)
-                                    S  (+z)
+                          北港 North Harbour        2.4 m
+                                (0, −74)
+                              ╱          ╲
+        灯台岬 Lighthouse                    町並み Old Street  ┐
+           (−64, −37)  25 m                    (64, −37) 17 m  │ one shelf,
+               │           ▲ 山頂 Summit            │           │ and the road
+               │             (0, 0)  52 m           │           │ up the mountain
+        神社 Shrine                           広場 Main Plaza   ┘
+           (−64, 37)  22 m                     (64, 37)  15 m
+                              ╲          ╱
+                          南港 South Harbour       2.4 m
+                                (0, 74)
 ```
 
-Heights run from the two harbour quays at ~2.5 m to the summit court at 88 m. Sea cliffs
-appear on the exposed north and east coasts and around the capes; the south-west and both
-bays are sheltered and shelve gently, so the beach and the harbours are walkable right down
-to the water.
+The heights say what each place is:
+
+- **Two harbours**, north and south, at sea level in their own bays.
+- **Two high places** — the shrine on its headland, the lighthouse on its cape — raised
+  above the ring so they read as somewhere you go *up* to.
+- **Two that adjoin**: the plaza and the old street share one continuous eastern shelf with
+  no dip between them, and the road up the mountain leaves from where they meet.
+- **The summit**, highest, in the middle, visible from everywhere.
 
 `−z` is north and `+x` is east — the three.js convention, used consistently everywhere in
 this codebase including in every coordinate in this document.
@@ -46,22 +47,20 @@ this codebase including in every coordinate in this document.
 
 | Zone | 日本語 | Kind | Venue | Anchor | Ground | What it is |
 |---|---|---|---|---|---|---|
-| South Harbour | 南港 | venue | ✓ | (16, 192) | 2.6 m | The arrival port. Ferry pier, breakwater, warehouses, market stalls, a torii standing in the bay. Everyone spawns here. |
-| Main Plaza | 広場 | venue | ✓ | (0, 108) | 22 m | The civic centre, on the mountain's southern shoulder. Roofed stage, gates, well, benches. Highest capacity on the island. |
-| Notice Board | 掲示板 | notice | | (−26, 94) | 24.4 m | A terrace one step up from the plaza floor. Announcements are read here. |
-| Old Street | 町並み | transit | | (176, 76) | 18 m | Eight machiya facing each other across a street, plus a bathhouse and a kura. The densest built place. |
-| Teahouse | 茶屋 | rest | ✓ | (168, −62) | 33 m | High on the east flank, open on all four sides, looking down at the water. Seated activities only. |
-| Shrine | 神社 | venue | ✓ | (−186, 20) | 26 m | The western headland. Three torii along the approach, komainu, temizuya, the main hall. Processions start here. |
-| Summit | 山頂 | scenic | | (0, −14) | 88 m | The inner shrine and a railing. The camera widens automatically. |
-| Lighthouse Cape | 灯台岬 | venue | ✓ | (138, −190) | 32 m | Exposed clifftop on the north-east. The lamp turns day and night. |
-| North Harbour | 北港 | venue | ✓ | (−36, −198) | 2.4 m | The working fishery. Funaya boat houses, net racks, an Ebisu torii offshore. |
-| Sunset Beach | 浜 | venue | ✓ | (−166, 146) | 1.2 m | Flat sand and shallow water on the south-west spit. Seated concerts. |
-| Coast Road | 渚道 | transit | | fallback | — | Catches anyone not inside a named place. |
+| South Harbour | 南港 | venue | ✓ | (0, 74) | 2.4 m | The arrival port. Ferry pier, breakwater, warehouses, market stalls, a torii in the bay. Everyone spawns here. |
+| Sunset Beach | 浜 | venue | ✓ | (46, 92) | 1.6 m | Sand east of the quay. Huts, a boat, a low stage. |
+| Main Plaza | 広場 | venue | ✓ | (64, 37) | 15 m | The civic centre. Roofed stage, gates, well, and the teahouse on its quiet side. |
+| Notice Board | 掲示板 | notice | | (48, 22) | 15.8 m | A shallow step up from the plaza floor. Announcements are read here. |
+| Old Street | 町並み | transit | | (64, −37) | 17 m | Six machiya facing each other across a street, a bathhouse, a kura. |
+| North Harbour | 北港 | venue | ✓ | (0, −74) | 2.4 m | The working fishery. Funaya boat houses, net racks, an Ebisu torii offshore. |
+| Lighthouse Cape | 灯台岬 | venue | ✓ | (−64, −37) | 25 m | Exposed clifftop. The lamp turns day and night. |
+| Shrine | 神社 | venue | ✓ | (−64, 37) | 22 m | The western headland. Three torii along the approach, komainu, temizuya, the hall. |
+| Summit | 山頂 | scenic | | (0, 0) | 52 m | The inner shrine and a railing. The camera widens automatically. |
+| Ring Road | 渚道 | transit | | fallback | — | Catches anyone not inside a named place. |
 
-Zone membership resolves as **smallest containing zone wins**. Overlaps are intentional and
-nested — the notice board (r=18) sits inside the plaza (r=56), which sits inside the coast
-fallback (r=9999) — so ranking by radius yields the most specific place without any priority
-field to maintain.
+Zone membership resolves as **smallest containing zone wins**, so the notice board (r=11)
+inside the plaza (r=32) inside the ring fallback (r=9999) yields the most specific place
+without any priority field to maintain.
 
 ---
 
@@ -69,159 +68,176 @@ field to maintain.
 
 The island's surface is **an analytic function**, not a mesh. `heightAt(x, z)` in
 [`packages/shared/src/terrain.ts`](../packages/shared/src/terrain.ts) *is* the terrain. The
-client meshes it into a 400 × 400 grid in a worker at load time; the server calls the same
-function to validate every position a player reports.
+client meshes it in a worker at load time; the server calls the same function to validate
+every position a player reports.
 
-Three consequences, all of them the reason for the choice:
-
-- **Client and server agree by construction.** No collision data to ship, no second
-  artefact to keep in sync.
-- **The landmass costs zero bytes.** The whole island is a few hundred lines of maths.
-- **It is editable by anyone.** Moving the shrine 20 m east is a number change.
+- **Client and server agree by construction.** No collision data to ship.
+- **The landmass costs zero bytes.** A few hundred lines of maths.
+- **It is editable by anyone.** Moving the shrine 20 m is a number change.
 
 ### Composition, in evaluation order
 
 ```
 islandMask(x, z)          circle, angular wobble, four capes, two harbour bays
    ↓
-naturalHeight(x, z)       seabed offshore; onshore: coastal shelf + sea cliffs + massif
+naturalHeight(x, z)       seabed offshore; onshore: rolling ground + named shelves
+                          + sea cliffs + the massif
    ↓
-paddedHeight(x, z)        ten gathering terraces blended in
+paddedHeight(x, z)        nine gathering terraces blended in
    ↓
-heightAt(x, z)            paths cut to their surveyed grade
+heightAt(x, z)            routes cut to their surveyed grade
 ```
 
-The order is load-bearing and the comments in `terrain.ts` say why at each step. The one
-worth repeating here: **pads are applied before paths**, so a lane crossing a terrace is
-graded against the flat plaza rather than against the hillside underneath it. Cutting paths
-first (as v1 did) meant the summit pad's own blend ring added its 30-odd degrees on top of
-the lane's gradient, and the last ten metres of every ascent were steeper than the mountain
-the lane existed to make climbable.
+**Pads before paths.** A lane crossing a terrace is graded against the flat plaza rather
+than the hillside underneath it. Cutting paths first (as v1 did) meant a terrace's own blend
+ring added its 30-odd degrees on top of the lane's gradient, and the last ten metres of
+every ascent were steeper than the mountain the lane existed to make climbable.
 
-### The massif
+### Shelves
 
-One cone with three layers: a smoothstep profile, six radial spurs with valleys between
-them, and ridged rock detail faded out at the very top and at the foot.
-
-Height and radius are chosen **together**. A smoothstep cone's steepest point is its
-midpoint, where the gradient is `1.5 · height / radius`; at 88 m over 182 m that is 36°,
-comfortably inside the 49° walkable limit once the spurs and the rock detail have added
-their share. Raising the peak without widening the base is the quickest way to make the
-whole mountain unclimbable.
+A *shelf* is landform where a terrace is a platform: a broad, gentle rise that the
+surrounding terrain still shows through. Three of them — one carrying both the plaza and
+the old street, and one under each western headland. The eastern shelf is what makes those
+two zones read as one continuous piece of high ground with the mountain road leaving from
+between them, rather than as two platforms with a dip in the middle.
 
 ### Terraces
 
-Ten flat pads, listed in `PADS`. Everything people gather on gets one — an event plaza on a
-natural slope is unusable, and characters sliding down a shrine courtyard would break the
-calm instantly.
+Nine flat pads. Everything people gather on gets one.
 
-Two rules the layout has to respect, both enforced by `scripts/world-smoke.ts`:
+Their **inner radii are sized by what stands on them**, not by eye — a building is placed at
+a single height sample, so its whole footprint has to be inside the flat part. The ceiling
+on how wide they can get is the gap to the next terrace: two pads need
+`heightDifference / walkableGradient` of clear ground between their flat parts, and the
+hexagon gives 74 m to spend. The tightest pair is the north harbour and the lighthouse cape,
+22.6 m apart in height, so 27 m of that 74 has to stay as slope.
 
-- A pad's centre must resolve to exactly its authored height. Pads apply in order and a
-  later one wins, so a big terrace whose `outer` reaches a small one downhill will quietly
-  drag it to the wrong level.
-- Two pads must not be closer than the height between them divided by the walkable
-  gradient. The plaza sits 91 m from the harbour quay for exactly this reason: 19.4 m of
-  height needs about 23 m of run.
-
-Harbour pads are kept deliberately tight (26/46 and 22/42). A pad's blend raises the ground
-all the way out to `outer`, and the ground it raises at a harbour is *seabed* — an
-over-generous quay does not make a bigger harbour, it fills the bay in and leaves the piers
-standing on a beach.
+Harbour pads are kept deliberately tight. A pad's blend raises the ground all the way out to
+`outer`, and at a harbour the ground it raises is *seabed* — an over-generous quay does not
+make a bigger harbour, it fills the bay in and leaves the piers standing on a beach.
 
 ---
 
-## 3. Paths
+## 3. Routes
 
-| Path | Length | Half-width | Surface | Route |
+| Route | Length | At a run | Surface | Where it goes |
 |---|---|---|---|---|
-| Coast Road | 1289 m | 3.6 m | stone | A closed loop touching all six inhabited places |
-| Plaza Steps | 262 m | 3.2 m | stone | South harbour → plaza → notice board → summit |
-| Shrine Path | 267 m | 2.8 m | gravel | Shrine → two switchbacks up the west flank → summit |
-| East Lane | 352 m | 3.0 m | gravel | Old Street → teahouse → summit |
+| Ring Road | 493 m | 55 s | stone | A closed loop through all six zones |
+| Summit Road | 144 m | 16 s | stone | Leaves the ring between plaza and old street, switchbacks to the summit |
+| Shrine Path | 85 m | 9 s | gravel | Shrine → one switchback up the west flank → summit |
+| Harbour Lane | 95 m | 11 s | gravel | South harbour → notice board → plaza, across the middle |
 
-Paths do two jobs. Physically they hold a gentle grade across ground that would otherwise be
-too steep to walk, which is what makes a 88 m mountain climbable without a single piece of
-stair geometry. Visually they are the island's circulation diagram: if you can see where a
-path goes, you know where you can go, and you never need a minimap.
+Every metre of all four is walkable; `world-smoke` checks it.
 
 ### Surveyed grades
 
-Flattening the ground *across* a path is not enough. A lane that is level side to side but
-follows every gully along its length still throws 70° pitches at you.
+Flattening the ground *across* a route is not enough — a lane that is level side to side but
+follows every gully along its length still throws 70° pitches at you. So each route is
+surveyed like a real road: its height is sampled every 4 m along its arc length, smoothed,
+then **grade-limited** by a relaxation pass that clamps the rise between neighbours until no
+step exceeds 30%.
 
-So each path is surveyed like a real road. Its height is sampled every 4 m along its arc
-length, smoothed, and then **grade-limited** by a relaxation pass that clamps the rise
-between neighbouring samples until no step exceeds 30%. `heightAt` reads that profile
-instead of the raw terrain under the path, and the ground is cut or banked either side.
+Three kinds of fixed point constrain that relaxation, and each exists because leaving it out
+produced a specific, visible failure:
 
-Samples that fall on a terrace are **pinned** and neither the smoothing nor the limiter may
-move them. Terraces are the island's fixed levels — the quay is at 2.6 m because boats tie
-up to it — so they are the survey's control points and the lane between them is what gets
-graded. Pinning also silently fixes junctions: every place two routes meet is a terrace
-centre, so both profiles are pinned to the same height there and the step that would
-otherwise appear where `nearestPath` switches routes cannot exist.
+- **Terraces are pinned.** They are the island's fixed levels — the quay is at 2.4 m because
+  boats tie up to it. Pinning them also fixes junctions for free, since routes that meet on a
+  terrace are pinned to the same height there.
+- **Open routes' ends are pinned.** A road has to meet what it stops at. Without this the
+  limiter, whose job is to make the profile gentle rather than to keep it on the ground,
+  satisfies itself by lifting the free end into the air — the summit road floated thirteen
+  metres above the shelf it starts from, with an 80° wall of terrain where the carve met the
+  hillside.
+- **A branch pins to the route it joins**, not to the bare ground. The ring road has already
+  been cut to its own profile where the summit road leaves it; pinning to the untouched
+  ground underneath reproduces the same cliff nine metres lower down.
 
-Every metre of all four paths is walkable. `world-smoke` checks it.
+### Switchbacks
 
-### Spatial index
+Where a route doubles back, two samples eighty metres apart *along the road* are fifteen
+metres apart *on the ground*. Their carve influences overlap, `nearestPath` flips between
+them from one pixel to the next, and whatever height difference they hold becomes a vertical
+step. A hairpin with a four-metre drop across it does not read as a hairpin; it reads as the
+road being broken.
 
-`heightAt` is called ~160 000 times to mesh the terrain and again on every position the
-server validates, and a naive nearest-point search over four polylines is 90-odd segment
-tests per call. Segments are therefore bucketed into a 32 m uniform grid on first use, so a
-lookup tests only the segments whose influence reaches the query cell — typically zero,
-which is the case worth making fast.
+Real switchbacks answer this by making the turn itself level, and so does the survey: any two
+samples far apart in arc length but close in space are pulled toward their mean, in
+proportion to how much their influence regions overlap. Straight road is untouched, because
+no two distant samples on it are ever close together.
 
 ---
 
 ## 4. What is built on it
 
-126 hand-placed landmarks, listed in `LANDMARKS` in
-[`packages/shared/src/world.ts`](../packages/shared/src/world.ts) and built by the prop
-library in [`apps/client/src/world/props/`](../apps/client/src/world/props/).
+107 hand-placed landmarks in `LANDMARKS`, built by the prop library in
+[`apps/client/src/world/props/`](../apps/client/src/world/props/).
 
 ```
-9 × machiya      6 × torii        5 × warehouse    4 × pier / stage / gate / minka / bell-tower
-13 × stone lantern               12 × rock         11 × bench       7 × post lantern
-2 × shrine hall / boathouse / net rack / beach hut / komainu / well
+11 × stone lantern   9 × rock       8 × bench      7 × machiya / post lantern
+6 × torii            5 × boat / warehouse          4 × pier / stage / gate / bell tower / banner
+2 each: sea wall, beach hut, well, minka, boathouse, net rack, rail, komainu, shrine hall
 1 each: lighthouse, keeper's house, bathhouse, teahouse, temizuya, breakwater,
         notice board, summit marker
 ```
 
-Roadside lanterns are **not** in that list: 67 of them are placed by arc length along the
-four paths at build time, because spacing them by hand would go stale the moment a road is
-re-routed. The coast road gets stone tōrō (a matched run is the real-world convention) and
-the three inland lanes get timber post lanterns.
+Roadside lanterns are **not** in that list: 37 are placed by arc length along the four
+routes at build time, because spacing them by hand goes stale the moment a road is re-routed.
+
+### Buildings stand on level ground
+
+A prop is a rigid body placed at **one** height sample, so any variation across its footprint
+puts one corner in the air and buries the opposite one. Two things keep that from happening:
+
+1. **The layout puts buildings on the flat part of a terrace.** `node tools/flatness.mjs`
+   measures the ground variation under every footprint and `world-smoke` fails the build if
+   any exceeds 45 cm.
+2. **The scene assembly fits a foundation** as a backstop: a prop is placed at its *highest*
+   corner, so nothing is ever swallowed, and a block sized to the footprint fills what that
+   leaves underneath.
+
+The second is a backstop, not a licence for the first. A foundation deep enough to hide a
+real slope is a retaining wall, and a village of buildings on retaining walls looks like a
+village that was placed by a script.
 
 ### There are no trees
 
 This pass of the world puts its effort into terrain and architecture and plants nothing.
-That is a real constraint on the art direction rather than an omission: with no canopy to
-hide behind, the hillsides have to be read by their *contours* and their colour banding,
-which is why the terrain colourer patches two greens at a scale the eye reads as brushwork
-and why the massif has spurs rather than being a smooth cone. Vegetation slots back into
-`world/scatter.ts` without touching anything else when it is wanted.
+That is a constraint on the art direction rather than an omission: with no canopy to hide
+behind, the hillsides are read by their contours and colour banding, which is why the terrain
+colourer patches two greens at a brushwork scale and why the massif has spurs. Vegetation
+slots back into `world/scatter.ts` without touching anything else.
 
-What is scattered: boulders on the steep ground and along the shore, grass tufts on the
-gentle ground, driftwood at the tide line — 18 500 instances across 4 draw calls, placed by
-rejection sampling against the terrain field so the rules read as rules ("boulders live on
-ground steeper than 15°, keeping 3 m clear of any path") rather than as coordinates.
-
-### Waterfront props have their own placement rule
-
-Piers, boats, breakwaters and the two sea torii are placed at `y = 0`, not at terrain
-height. They are authored with their piles and hulls running well below their origin so they
-reach the seabed at whatever depth the bathymetry happens to be. Dropping a pier at terrain
-height would bury it. `island.ts` owns the placement side of that contract; `structures.ts`
-owns the geometry side, and both say so.
+What is scattered: boulders on steep ground and along the shore, grass tufts on gentle
+ground, driftwood at the tide line — about 18 000 instances across 4 draw calls, placed by
+rejection sampling against the terrain field.
 
 ---
 
-## 5. Arrival
+## 5. Movement, and the walkability contract
 
-Six spawn points on the south harbour quay, all facing the mountain. You arrive by water,
-and the walk up to the plaza is the island introducing itself. They are spread along the
-quay so a crowd arriving together does not stack into one body.
+The client predicts your movement and the server validates it. Both sides enforce the same
+rule, from [`packages/shared/src/movement.ts`](../packages/shared/src/movement.ts):
+
+| | |
+|---|---|
+| Walk | 4.2 m/s |
+| Run | 9.0 m/s |
+| Wade | 2.0 m/s, to 0.9 m of water |
+| Max slope | 0.86 rad ≈ 49° |
+| Server budget | 11.5 m/s — the client's ceiling plus headroom |
+
+That file is not a preferences list. Any divergence between the two sides is not a subtle
+physics discrepancy: it is **the player being teleported at random while running**, because
+every frame the client spends outside the server's rule earns a correction. Three versions of
+that bug shipped simultaneously, all from the two sides holding their own copies of these
+numbers — the client waded deeper than the server allowed, let a player stand on ground the
+server rejected, and applied its slide impulse after its speed clamp so sliding could exceed
+the server's budget.
+
+`world-smoke` now simulates the client's integrator against the server's validator, walking
+long lines out from every zone in every direction, and asserts that every position the client
+would commit to is one the server accepts. Against the old client rule it finds about 4 800
+violations in 110 000 steps.
 
 ---
 
@@ -229,11 +245,10 @@ quay so a crowd arriving together does not stack into one body.
 
 | Command | What it does |
 |---|---|
-| `node scripts/world-map.mjs out.png --size 1400` | Shaded relief map with paths, terraces, zone anchors and every unwalkable pixel flagged in red |
-| `npm run test:world` | Asserts the invariants: finite heights, pads at their authored level, every path walkable, every landmark kind buildable, scatter determinism |
-| `node tools/shot.mjs` | Renders twelve viewpoints to PNG through the real pipeline in headless Chromium |
+| `npm run map` | Shaded relief map with routes, terraces and every unwalkable pixel in red |
+| `node tools/flatness.mjs` | Ground variation under every building's footprint |
+| `npm run test:world` | The invariants: finite heights, pads at their authored level, every route walkable, every building level, the walkability contract |
+| `npm run shots` | Thirteen viewpoints rendered to PNG through the real pipeline |
 
 The map is the one to reach for first when something looks wrong. The failure modes of a
-procedural world are spatial, and reading numbers does not catch them: a terrace that has
-drifted onto a cliff, a lane that dives into the sea, a bay that closed up when the coast
-noise was retuned — all of it is obvious in one glance at a map and invisible in a test log.
+procedural world are spatial, and reading numbers does not catch them.

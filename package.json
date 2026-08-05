@@ -24,11 +24,12 @@
     "test:world": "node scripts/world-smoke.mjs",
     "test:ui": "node scripts/ui-smoke.mjs",
     "test:e2e": "node scripts/e2e.mjs",
-    "test:all": "npm run test && npm run test:e2e && npm run test:app",
+    "test:all": "npm run test && npm run test:e2e && npm run test:app && npm run test:roam",
     "typecheck": "npm run typecheck -w @nagisa/shared && npm run typecheck -w @nagisa/server && npm run typecheck -w @nagisa/client",
     "test:app": "node tools/app-smoke.mjs",
     "shots": "node tools/shot.mjs",
-    "map": "node scripts/world-map.mjs"
+    "map": "node scripts/world-map.mjs",
+    "test:roam": "node tools/roam-smoke.mjs"
   },
   "allowScripts": {
     "esbuild@0.25.12": true

@@ -28,7 +28,7 @@ dashboard. You load the page, choose a name, and you are ashore.
 
 | | |
 |---|---|
-| **The world** | One hand-designed Japanese island, sea on every side, a single mountain at its centre. Two harbours (north and south), a main plaza, an old street, a shrine headland, a lighthouse cape, a teahouse terrace, a sunset beach, a summit shrine, and a coast road that loops the whole island. 126 buildings and structures, all generated from code — the island ships as maths, not as a downloaded mesh. |
+| **The world** | One hand-designed Japanese island, sea on every side. Six places on a hexagon 74 m to a side — two harbours, a main plaza, an old street, a shrine headland, a lighthouse cape — with a mountain at the centre and a ring road under 500 m. A neighbour is eight seconds away at a run. 107 buildings and structures, all generated from code — the island ships as maths, not as a downloaded mesh. |
 | **The look** | Drawn, not lit. A screen-space contour pass puts a pen line on every silhouette, crease and material boundary; surfaces are flat fills with a hand-authored shadow tone, pen hatching in the shade, and paper grain over the whole frame. See [docs/RENDERING.md](docs/RENDERING.md). |
 | **Multiplayer** | Server-authoritative rooms with real-time position and animation sync, presence, emotes, and shared time of day. Reconnection restores your identity, your role and your place in whatever you had joined. |
 | **Activities** | Several things run concurrently in different zones — each with a lifecycle, a host, a participant roster, an audience, and optional check-in. Switching between them is walking somewhere. |

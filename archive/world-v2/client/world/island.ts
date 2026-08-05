@@ -45,7 +45,7 @@ import {
 } from '@nagisa/shared';
 import type { QualitySettings } from '../engine/quality.js';
 import { inkDepthMaterial } from '../engine/ink/ink-material.js';
-import { stone, terrainMaterial } from './materials.js';
+import { terrainMaterial } from './materials.js';
 import { Ocean } from './ocean.js';
 import { Sky } from './sky.js';
 import { Scatter, disposeGroup } from './scatter.js';
@@ -55,39 +55,11 @@ import { buildTerrain, type TerrainBuildResult } from './terrain.worker.js';
 /** Progress callback used to drive the loading screen. */
 export type ProgressFn = (value: number, label: string) => void;
 
-/** Footprint corners plus the centre, in units of half-width/half-depth. */
-const CORNER_OFFSETS: readonly (readonly [number, number])[] = [
-  [-1, -1],
-  [1, -1],
-  [-1, 1],
-  [1, 1],
-  [0, 0],
-] as const;
-
 /**
  * Landmark kinds that float on the water rather than standing on the ground. See the
  * module header for why they are placed differently.
  */
 const WATERFRONT_KINDS: ReadonlySet<LandmarkKind> = new Set<LandmarkKind>(['pier', 'boat', 'breakwater']);
-
-/**
- * Kinds that are *meant* to follow the ground rather than sit level on it — a railing
- * along a clifftop, a boulder, a flight of steps. These skip the levelling below.
- */
-const FOLLOWS_GROUND: ReadonlySet<LandmarkKind> = new Set<LandmarkKind>(['rock', 'steps', 'rail', 'sea-wall']);
-
-/**
- * Fraction of a prop's bounding box that is actually load-bearing.
- *
- * A Japanese roof overhangs its walls by a metre or more, so the bounding box of a
- * building is considerably wider than the ground it stands on. Sampling the terrain at the
- * *bounding box* corners would find the hillside a metre beyond the wall and dig a
- * foundation for it.
- */
-const FOUNDATION_FRACTION = 0.62;
-
-/** Ground variation below this is inside what a prop's own plinth already covers. */
-const FOUNDATION_EPSILON = 0.12;
 
 /**
  * A group of props that is shown or hidden together.
@@ -255,76 +227,14 @@ export class Island {
     }
 
     object.name = landmark.id;
+    const floats = WATERFRONT_KINDS.has(landmark.kind) || landmark.opts?.inWater === true;
+    const y = floats ? 0 : heightAt(landmark.x, landmark.z);
+    object.position.set(landmark.x, y, landmark.z);
     object.rotation.y = landmark.rot;
     if (landmark.scale && landmark.scale !== 1) object.scale.setScalar(landmark.scale);
 
-    const floats = WATERFRONT_KINDS.has(landmark.kind) || landmark.opts?.inWater === true;
-    if (floats) {
-      object.position.set(landmark.x, 0, landmark.z);
-    } else if (FOLLOWS_GROUND.has(landmark.kind)) {
-      object.position.set(landmark.x, heightAt(landmark.x, landmark.z), landmark.z);
-    } else {
-      this.groundBuilding(object, landmark);
-    }
-
     this.prepareForRendering(object);
     return object;
-  }
-
-  /**
-   * Sit a building on the ground with no gap under any corner.
-   *
-   * A prop is a rigid body placed at **one** height sample, so the moment its footprint
-   * spans ground that is not level, one corner is in the air and the opposite one is
-   * buried. Placing it at the *lowest* corner buries most of it; placing it at the mean
-   * does both at once. So: place it at the **highest** corner — nothing is ever swallowed
-   * — and fill what that leaves underneath with a foundation.
-   *
-   * The foundation is a plain block sized to the footprint and reaching from the placement
-   * height down past the lowest corner. It is invisible on level ground, where it is
-   * shorter than the prop's own plinth, and on a slight slope it reads as exactly what a
-   * building on a slight slope actually has.
-   *
-   * This is a backstop, not a licence. Landmarks are still expected to be on level ground —
-   * `tools/flatness.mjs` measures it and `world-smoke` fails the build over it — because a
-   * foundation deep enough to hide a real slope is a retaining wall, and a village of
-   * buildings on retaining walls looks like a village that was placed by a script.
-   */
-  private groundBuilding(object: THREE.Object3D, landmark: Landmark): void {
-    const bounds = new THREE.Box3().setFromObject(object);
-    const halfW = Math.max(0.4, (bounds.max.x - bounds.min.x) * 0.5 * FOUNDATION_FRACTION);
-    const halfD = Math.max(0.4, (bounds.max.z - bounds.min.z) * 0.5 * FOUNDATION_FRACTION);
-
-    const cos = Math.cos(landmark.rot);
-    const sin = Math.sin(landmark.rot);
-    let lowest = Infinity;
-    let highest = -Infinity;
-    for (const [ox, oz] of CORNER_OFFSETS) {
-      const x = landmark.x + ox * halfW * cos - oz * halfD * sin;
-      const z = landmark.z + ox * halfW * sin + oz * halfD * cos;
-      const h = heightAt(x, z);
-      if (h < lowest) lowest = h;
-      if (h > highest) highest = h;
-    }
-
-    object.position.set(landmark.x, highest, landmark.z);
-
-    const drop = highest - lowest;
-    if (drop <= FOUNDATION_EPSILON) return;
-
-    // Built in the object's local space, so it inherits the rotation and scale already
-    // applied above and needs no trigonometry of its own.
-    const scale = object.scale.x || 1;
-    const depth = (drop + 0.25) / scale;
-    const foundation = new THREE.Mesh(
-      new THREE.BoxGeometry((halfW * 2) / scale, depth, (halfD * 2) / scale),
-      stone('dark'),
-    );
-    foundation.name = 'foundation';
-    foundation.position.y = -depth / 2;
-    foundation.castShadow = false;
-    foundation.receiveShadow = true;
-    object.add(foundation);
   }
 
   /**
@@ -358,7 +268,7 @@ export class Island {
     const group = new THREE.Group();
     group.name = 'roadside';
 
-    const spacing = this.quality.tier === 'low' ? 34 : 21;
+    const spacing = this.quality.tier === 'low' ? 52 : 32;
     let count = 0;
 
     for (const path of PATHS) {

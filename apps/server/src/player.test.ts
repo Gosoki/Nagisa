@@ -5,14 +5,19 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AnimState, isWalkable, heightAt } from '@nagisa/shared';
+import { AnimState, isWalkable, heightAt, spawnPoint } from '@nagisa/shared';
 import { Player } from './player.js';
 
 /**
- * A known-walkable spot on the south harbour quay, independent of `spawnPoint`'s random
- * index. The quay is a flattening pad, so this stays walkable across terrain retuning.
+ * Where a player starts, taken from the world rather than pinned here.
+ *
+ * The previous version hard-coded the quay's coordinates, which quietly became a point in
+ * the sea when the island was rebuilt at half the size — every test using it then failed
+ * for a reason that had nothing to do with the movement validator. `spawnPoint` is the
+ * same function the server uses, so this cannot drift again.
  */
-const START: [number, number, number] = [16, heightAt(16, 192), 192];
+const spawn = spawnPoint(0);
+const START: [number, number, number] = spawn.pos;
 
 /**
  * Find a walkable point with an unwalkable point roughly `gap` metres away.
@@ -114,7 +119,7 @@ test('out-of-order (replayed/stale) sequence numbers are silently ignored', () =
 test('zone is recomputed on an accepted move', () => {
   const player = makePlayer();
   const initialZone = player.zone;
-  assert.equal(initialZone, 'south-harbor');
+  assert.equal(initialZone, 'south-harbor', 'spawns are on the south quay');
   // Move inland, far enough (but split across many small accepted moves to respect the
   // speed budget) to cross into a different zone.
   let seq = 1;

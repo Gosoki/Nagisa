@@ -62,6 +62,12 @@ window.addEventListener('pagehide', () => {
 
 // Expose the app for the browser console in development. Guarded so a production bundle
 // does not hand a debugging surface to every visitor.
+//
+// A **getter**, not a snapshot. `app.debug` builds a fresh object from the app's current
+// fields, and some of those fields are replaced after boot — the local player in
+// particular is rebuilt once the appearance is chosen on the entry screen. Assigning the
+// snapshot here handed the console (and the roaming smoke test) a permanent reference to
+// the discarded placeholder character, which reads as "the player never moves".
 if (import.meta.env.DEV) {
-  (window as unknown as { nagisa: unknown }).nagisa = app.debug;
+  Object.defineProperty(window, 'nagisa', { get: () => app.debug, configurable: true });
 }

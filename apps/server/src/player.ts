@@ -10,6 +10,8 @@
 
 import {
   AnimState,
+  MAX_SERVER_SPEED,
+  MAX_SERVER_VERTICAL_SPEED,
   isWalkable,
   heightAt,
   nearestWalkable,
@@ -26,21 +28,17 @@ import {
 } from '@nagisa/shared';
 
 /**
- * Horizontal speed budget, metres/second. ~7 m/s comfortably covers a running character
- * (the reference client's run animation tops out well under this) while leaving no
- * useful headroom for a client that simply lies about its position to cross the island
- * in one report.
+ * Horizontal and vertical speed budgets, metres/second.
+ *
+ * Imported from the shared movement contract, never authored here. The client clamps its
+ * own speed to `MAX_CLIENT_SPEED` and the server's budget is that number plus headroom, so
+ * making the character faster cannot, by construction, make the character get corrected.
+ * See `@nagisa/shared/movement` for the three ways that went wrong when the two sides held
+ * their own copies.
  */
-const MAX_HORIZONTAL_SPEED = 7;
+const MAX_HORIZONTAL_SPEED = MAX_SERVER_SPEED;
 
-/**
- * Vertical speed budget, metres/second. Generous relative to the horizontal budget
- * because a single validated report can span a jump's entire apex-to-landing delta at
- * {@link PROTOCOL.MOVE_SEND_HZ} — a jump is a much larger *instantaneous* vertical rate
- * than a walk cycle is a horizontal one. This is deliberately not physically tight; the
- * server is not re-simulating gravity, only refusing to believe teleportation.
- */
-const MAX_VERTICAL_SPEED = 14;
+const MAX_VERTICAL_SPEED = MAX_SERVER_VERTICAL_SPEED;
 
 /**
  * Slack added to every speed budget, metres, to absorb network arrival jitter.

@@ -87,6 +87,8 @@ process.stdout.write(`terrain audit — ${map.name} (${map.id}), ${size}×${size
 const grid = new Uint8Array(size * size);
 let land = 0;
 let walkable = 0;
+/** Highest ground found. The direct answer to "is the mountain still there". */
+let peak = -Infinity;
 const slopes: number[] = [];
 
 for (let j = 0; j < size; j++) {
@@ -98,6 +100,7 @@ for (let j = 0; j < size; j++) {
     // the pinhole count in a coastline.
     if (h < -0.9 || !isLand(x, z)) continue;
     land++;
+    if (h > peak) peak = h;
     const ok = isWalkable(x, z);
     grid[j * size + i] = ok ? 1 : 2;
     if (ok) walkable++;
@@ -200,6 +203,67 @@ for (const [x, z, d] of stumbles.slice(0, 6)) {
   );
 }
 if (stumbles.length > 6) process.stdout.write(`    … and ${stumbles.length - 6} more\n`);
+process.stdout.write('\n');
+
+// --- Washboard: ground that changes its mind ------------------------------------------
+//
+// Nothing above sees this one. A washboard is not steep — its slope statistics are ordinary
+// — and it stops nobody, so it produces no pinholes and no stumbles. It is a defect of the
+// *second* derivative: walk eight metres and the ground goes down, up, and down again, and
+// what you see is a hillside with corrugations in it instead of even contours.
+//
+// Two reversals, not one. A single reversal in eight metres is a ridge crest or a hollow —
+// a landform, and the whole point of a hill. Counting those reports the mountain as broken.
+const WASHBOARD_SPAN = 8;
+/** Ignore reversals smaller than this, metres. Below it the surface detail is the terrain. */
+const WASHBOARD_FLOOR = 0.08;
+
+function washboardAmplitude(x: number, z: number, ux: number, uz: number): number {
+  const h: number[] = [];
+  for (let t = 0; t <= WASHBOARD_SPAN; t++) h.push(heightAt(x + ux * t, z + uz * t));
+  const turns: number[] = [];
+  for (let i = 1; i < WASHBOARD_SPAN; i++) {
+    const a = h[i]! - h[i - 1]!;
+    const b = h[i + 1]! - h[i]!;
+    if (Math.sign(a) !== Math.sign(b)) turns.push(Math.min(Math.abs(a), Math.abs(b)));
+  }
+  if (turns.length < 2) return 0;
+  turns.sort((a, b) => b - a);
+  // The second largest: both reversals have to be real for this to be a corrugation.
+  return turns[1]!;
+}
+
+const washboard: Array<[number, number, number]> = [];
+for (let j = 0; j < size; j++) {
+  const z = toWorld(j);
+  for (let i = 0; i < size; i++) {
+    if (grid[j * size + i] !== 1) continue;
+    const x = toWorld(i);
+    if (heightAt(x, z) < 0.4) continue; // The shoreline's own kink is not a corrugation.
+    let amp = 0;
+    for (const [ux, uz] of [
+      [1, 0],
+      [0, 1],
+      [Math.SQRT1_2, Math.SQRT1_2],
+      [Math.SQRT1_2, -Math.SQRT1_2],
+    ]) {
+      amp = Math.max(amp, washboardAmplitude(x, z, ux!, uz!));
+    }
+    if (amp > WASHBOARD_FLOOR) washboard.push([x, z, amp]);
+  }
+}
+washboard.sort((a, b) => b[2] - a[2]);
+const worstWashboard = washboard[0]?.[2] ?? 0;
+process.stdout.write(
+  `washboard (an ${WASHBOARD_SPAN} m walk that reverses twice): ${washboard.length} cells, ` +
+    `worst ${worstWashboard.toFixed(2)} m\n`,
+);
+for (const [x, z, amp] of washboard.slice(0, 5)) {
+  process.stdout.write(
+    `    (${x.toFixed(0).padStart(5)}, ${z.toFixed(0).padStart(5)})  ` +
+      `${amp.toFixed(2)} m  h ${heightAt(x, z).toFixed(1)}\n`,
+  );
+}
 process.stdout.write('\n');
 
 // --- Snags: walk the routes and count what stops you ---------------------------------
@@ -388,9 +452,28 @@ const verdicts: Array<[string, boolean, string]> = [
   // stopped by, which is the one form of this that is never a feature of the hillside.
   ['no stumbles on a road', onRoad.length === 0, `${onRoad.length} on a carriageway or shoulder`],
   ['stumbles are rare overall', stumbles.length <= land * 0.001, `${stumbles.length} over ${land} land cells`],
+  // Bounded rather than zero: fbm surface detail legitimately reverses, and a floor that
+  // forbade it would forbid the texture that stops the island reading as a CAD model. The
+  // numbers are the measured state after the terrace rings were smoothed — 564 cells and a
+  // 53 cm worst case before, 158 and 20 cm after — set close enough to catch a regression.
+  ['hillsides are not corrugated', washboard.length <= land * 0.006, `${washboard.length} cells over ${land}`],
+  // Step-sized, and a step is a step on any island — so this one number is absolute rather
+  // than scaled to the pack. Nagisa Island sits at 0.20 m and Lantern Atoll at 0.32 m, the
+  // latter because a 3.5 m-high sand island is *made* of gentle dunes and the metric reads a
+  // dune's turn as a reversal. Both are below what a walker feels underfoot, which is what
+  // this is asking. It caught the atoll's 4.7 m shore spike when that number was 0.3.
+  ['no corrugation is step-sized', worstWashboard < 0.4, `worst is ${worstWashboard.toFixed(2)} m`],
   ['nothing important is cut off', problems === 0, `${problems} unreachable`],
   ['stranded pockets are small', stranded <= walkable * 0.02, `${stranded} of ${walkable}`],
-  ['the island is not simply flat', walkable < land * 0.98, `${((walkable / land) * 100).toFixed(1)}% walkable`],
+  // "The smoothing did not eat the terrain" — asked of the *terrain*, not of the walkable
+  // fraction. `walkable < 98%` was Nagisa Island's shape written into a map-agnostic tool,
+  // the same mistake as auditing the default pack whatever NAGISA_MAP said: Lantern Atoll
+  // declares a 3.5 m summit and 2 m cliffs, so it is *supposed* to be 100% walkable, and
+  // demanding otherwise demands it grow a mountain it was never meant to have.
+  ['the massif still stands', peak >= map.terrain.summit.height * 0.9, `peak ${peak.toFixed(1)} m of ${map.terrain.summit.height} m declared`],
+  ...(map.terrain.relief.cliff >= 8
+    ? ([['a cliffed coast still has cliffs', walkable < land * 0.98, `${((walkable / land) * 100).toFixed(1)}% walkable`]] as Array<[string, boolean, string]>)
+    : []),
 ];
 let bad = 0;
 for (const [name, ok, detail] of verdicts) {

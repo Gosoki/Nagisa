@@ -543,7 +543,7 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   // On the quay *edge*, twenty-three metres further out. It used to stand in the middle of
   // the flat with 2.4 m of terrace on both sides of it, holding nothing back at all.
   { id: 'sh-seawall', kind: 'sea-wall', x: 14, z: 108, rot: 1.75, opts: { length: 14 } },
-  { id: 'sh-warehouse-1', kind: 'warehouse', x: 19.7, z: 82.6, rot: 0.073, opts: { w: 10, d: 8, floors: 2 } },
+  { id: 'sh-warehouse-1', kind: 'warehouse', x: 16.7, z: 86.6, rot: 0.073, opts: { w: 10, d: 8, floors: 2 } },
   { id: 'sh-warehouse-2', kind: 'warehouse', x: -19.5, z: 82.6, rot: -0.073, opts: { w: 10, d: 8 } },
   { id: 'sh-office', kind: 'machiya', x: 20.0, z: 62.0, rot: 1.004, opts: { w: 10, d: 10, floors: 2, sign: true } },
   { id: 'sh-stall-1', kind: 'market-stall', x: -9.7, z: 79.8, rot: -0.073, opts: { cloth: 1 } },
@@ -646,7 +646,7 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'nh-netrack-2', kind: 'net-rack', x: 3.1, z: -81.3, rot: 3.069 },
   { id: 'nh-boat-1', kind: 'boat', x: -10, z: -95, rot: 0.2, scale: 0.85 },
   { id: 'nh-boat-2', kind: 'boat', x: 16, z: -96, rot: -0.4, scale: 0.8 },
-  { id: 'nh-seawall', kind: 'sea-wall', x: 23, z: -102.8, rot: 1.63, opts: { length: 14 } },
+  { id: 'nh-seawall', kind: 'sea-wall', x: 23, z: -107.8, rot: 1.63, opts: { length: 14 } },
   { id: 'nh-bell', kind: 'bell-tower', x: 13.1, z: -79.6, rot: 3.069, scale: 0.75 },
   { id: 'nh-stage', kind: 'stage', x: 0.5, z: -61.2, rot: 0.073, opts: { w: 11, d: 8 } },
   { id: 'nh-rock-1', kind: 'rock', x: -32, z: -88, rot: 1.4, scale: 1.4 },

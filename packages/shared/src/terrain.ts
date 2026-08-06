@@ -947,13 +947,41 @@ export function pathAt(id: WorldPath['id'], s: number): { x: number; z: number; 
  * Composed as: seabed offshore, then onshore a coastal shelf plus the massif plus
  * cliff-forming steepening where the mask rises fast, plus fine detail.
  */
+/**
+ * How far below the mask's zero contour the seabed takes to reach its full depth.
+ *
+ * Measured in mask units, so it is a *shelf* rather than a fixed distance — see the offshore
+ * branch of {@link naturalHeight}. Sized so that the wadeable band (down to
+ * {@link MAX_WADE_DEPTH}) is a few metres wide on a sheltered shore and vanishes at a cape.
+ */
+const SHALLOWS_MASK = 0.16;
+
 function naturalHeight(x: number, z: number): number {
   const mask = islandMask(x, z);
 
   // Offshore: a seabed that drops away, so the water reads as deep further out. The
   // gradient is gentle in the bays (mask barely below zero) and steep past the capes.
+  //
+  // ### Why the whole expression is faded in
+  //
+  // The two branches of this function have to meet, and they did not. Onshore at `mask = 0`
+  // everything is multiplied by `inland`, which is zero there, so the land arrives at the
+  // waterline at exactly 0 m. The seabed used to *start* at −2.2 m and go down from there —
+  // so the height field had a two-metre step around the entire coastline, and where the mask
+  // contour is ragged enough to alternate between cells, a picket fence of five-metre spikes
+  // standing in the surf. Both islands had one; the atoll's was 4.7 m tall.
+  //
+  // Fading the seabed in from nothing closes the seam, and gives back something the island
+  // never had: shallows. `MAX_WADE_DEPTH` is 0.9 m, and the sea floor used to pass through
+  // that inside a single metre — so "standing in shallow water at the shoreline", which the
+  // walkability contract explicitly allows for, had almost nowhere it could happen.
+  //
+  // In *mask* space rather than metres, deliberately: the mask changes slowly across a bay
+  // and quickly past a cape, so one constant produces a wide sandy shelf where the coast is
+  // sheltered and almost none under a headland, which is what those two places should be.
   if (mask <= 0) {
-    return -2.2 + mask * 52 - fbm(x * 0.006 + 4.2, z * 0.006 + 1.7, 3) * 5;
+    const offshore = smoothstep(0, SHALLOWS_MASK, -mask);
+    return offshore * (mask * 52 - 2.2 - fbm(x * 0.006 + 4.2, z * 0.006 + 1.7, 3) * 5);
   }
 
   // Shore-to-inland ramp. The first stretch of the mask is beach-flat, then it climbs.
@@ -1014,35 +1042,81 @@ function naturalHeight(x: number, z: number): number {
  */
 const MAX_PAD_BLEND_GROWTH = 3;
 
-/** How many directions the rim height is sampled in, per terrace. 0.7° apart. */
+/** How many directions the ring is sampled in, per terrace. 0.7° apart. */
 const PAD_RIM_SECTORS = 512;
 
-/** Natural ground at each terrace's widest possible rim, by direction. Lazy, per pad. */
-const padRims = new Map<string, Float64Array>();
+/**
+ * How far the ring is smoothed around the terrace, in sectors either side. ≈ ±11°.
+ *
+ * ### Why the ring has to be smoothed at all
+ *
+ * The width is derived from the natural ground at the terrace's *widest possible* rim, which
+ * is well outside where the blend actually ends. That sample ring is long — sixty-two metres
+ * for the shrine — so it crosses whole landforms, and where it crosses one edge-on, half a
+ * degree of angle steps off a ridge and into a gully. The drop changes by metres, the width
+ * that absorbs it changes by metres, and the blend edge jumps *radially*.
+ *
+ * What that builds is a seam: a wall running outward from the terrace like a spoke, 1.8 m
+ * tall and 0.6 m wide, in the middle of an otherwise smooth hillside. Eight hundred of the
+ * island's ripples were this, and none of them were visible in the slope statistics, because
+ * a seam is a defect of the *second* derivative — the ground is not steep, it changes its
+ * mind.
+ *
+ * Smoothing the ring bounds how fast the width may change with angle. It is also what the
+ * thing being modelled actually does: an embankment around a built terrace varies gradually
+ * in width, because it was graded, and the enormous asymmetry this exists to capture — a
+ * harbour with the sea on one side and ten metres of mountain on the other — is a half-turn
+ * feature that a ±11° kernel does not touch.
+ */
+const PAD_RIM_SMOOTHING = 16;
 
 /**
- * Natural ground height at the far edge of a terrace's blend, in one direction.
+ * Where each terrace's blend ends, by direction. Lazy, per pad — see {@link padBlendOuter}.
  *
- * Sampled into a ring of {@link PAD_RIM_SECTORS} buckets and interpolated between them,
- * because the alternative is a `naturalHeight` call — several octaves of fbm — for every pad,
- * on every one of the hundred and sixty thousand samples the terrain mesh takes. The rim
- * height varies smoothly with angle, so a bucket every 0.7° with linear interpolation between
- * neighbours is indistinguishable from evaluating it exactly, and two hundred times cheaper.
+ * Precomputed as the finished radius rather than as the raw rim height, so the smoothing
+ * lands *after* the clamp to `[nominal, widest]`. Smoothing the input instead would leave the
+ * clamp free to reintroduce a corner in the output, which is the discontinuity being removed.
  */
-function padRimHeight(pad: Pad, angle: number): number {
+const padRims = new Map<string, Float64Array>();
+
+function padRimRing(pad: Pad): Float64Array {
   let ring = padRims.get(pad.id);
-  if (!ring) {
-    ring = new Float64Array(PAD_RIM_SECTORS);
-    const radius = pad.inner + (pad.outer - pad.inner) * MAX_PAD_BLEND_GROWTH;
-    for (let i = 0; i < PAD_RIM_SECTORS; i++) {
-      const a = (i / PAD_RIM_SECTORS) * Math.PI * 2;
-      ring[i] = naturalHeight(pad.x + Math.cos(a) * radius, pad.z + Math.sin(a) * radius);
-    }
-    padRims.set(pad.id, ring);
+  if (ring) return ring;
+
+  maxEmbankmentGradient ||= Math.tan(MAX_WALKABLE_SLOPE * EMBANKMENT_GRADE_FRACTION);
+  const nominal = pad.outer - pad.inner;
+  const widest = nominal * MAX_PAD_BLEND_GROWTH;
+  const radius = pad.inner + nominal * MAX_PAD_BLEND_GROWTH;
+
+  const raw = new Float64Array(PAD_RIM_SECTORS);
+  for (let i = 0; i < PAD_RIM_SECTORS; i++) {
+    const a = (i / PAD_RIM_SECTORS) * Math.PI * 2;
+    const drop = Math.abs(naturalHeight(pad.x + Math.cos(a) * radius, pad.z + Math.sin(a) * radius) - pad.height);
+    const needed = (SMOOTHSTEP_PEAK * drop) / maxEmbankmentGradient;
+    raw[i] = Math.min(widest, Math.max(nominal, needed));
   }
-  const t = (((angle / (Math.PI * 2)) % 1) + 1) % 1 * PAD_RIM_SECTORS;
-  const i = Math.floor(t);
-  return lerp(ring[i]!, ring[(i + 1) % PAD_RIM_SECTORS]!, t - i);
+
+  // A cosine window rather than a box: a box filter has its own corners, and the point of
+  // this pass is that the result has none.
+  ring = new Float64Array(PAD_RIM_SECTORS);
+  let weightSum = 0;
+  const weights = new Float64Array(PAD_RIM_SMOOTHING * 2 + 1);
+  for (let k = -PAD_RIM_SMOOTHING; k <= PAD_RIM_SMOOTHING; k++) {
+    const w = 0.5 + 0.5 * Math.cos((k / (PAD_RIM_SMOOTHING + 1)) * Math.PI);
+    weights[k + PAD_RIM_SMOOTHING] = w;
+    weightSum += w;
+  }
+  for (let i = 0; i < PAD_RIM_SECTORS; i++) {
+    let acc = 0;
+    for (let k = -PAD_RIM_SMOOTHING; k <= PAD_RIM_SMOOTHING; k++) {
+      acc += raw[(i + k + PAD_RIM_SECTORS) % PAD_RIM_SECTORS]! * weights[k + PAD_RIM_SMOOTHING]!;
+    }
+    // Never narrower than authored: smoothing may only widen a bank, never steepen one.
+    ring[i] = pad.inner + Math.max(nominal, acc / weightSum);
+  }
+
+  padRims.set(pad.id, ring);
+  return ring;
 }
 
 /**
@@ -1078,12 +1152,10 @@ function padRimHeight(pad: Pad, angle: number): number {
  * cuts less and leaves a steeper join, and on this island that is the better trade.
  */
 function padBlendOuter(pad: Pad, dx: number, dz: number): number {
-  maxEmbankmentGradient ||= Math.tan(MAX_WALKABLE_SLOPE * EMBANKMENT_GRADE_FRACTION);
-  const nominal = pad.outer - pad.inner;
-  const widest = nominal * MAX_PAD_BLEND_GROWTH;
-  const drop = Math.abs(padRimHeight(pad, Math.atan2(dz, dx)) - pad.height);
-  const needed = (SMOOTHSTEP_PEAK * drop) / maxEmbankmentGradient;
-  return pad.inner + Math.min(widest, Math.max(nominal, needed));
+  const ring = padRimRing(pad);
+  const t = ((((Math.atan2(dz, dx) / (Math.PI * 2)) % 1) + 1) % 1) * PAD_RIM_SECTORS;
+  const i = Math.floor(t);
+  return lerp(ring[i]!, ring[(i + 1) % PAD_RIM_SECTORS]!, t - i);
 }
 
 function paddedHeight(x: number, z: number): number {

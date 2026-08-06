@@ -571,7 +571,6 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'bh-bench-1', kind: 'bench', x: 51, z: 99, rot: 0.62 },
   { id: 'bh-boat-1', kind: 'boat', x: 58, z: 102, rot: 1.8, scale: 0.75 },
   { id: 'bh-rock-1', kind: 'rock', x: 66, z: 90, rot: 0.7, scale: 1.5 },
-  { id: 'bh-lantern-1', kind: 'post-lantern', x: 39.5, z: 98, rot: 0 },
 
   // ═══ Main Plaza (64, 37) — the civic centre ═════════════════════════════
   // The stage on the seaward side of the ring road with the farmhouse across from it, and
@@ -630,7 +629,6 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'ov-well', kind: 'well', x: 60.9, z: -60.9, rot: 2.166 },
   { id: 'ov-lantern-1', kind: 'post-lantern', x: 61.4, z: -26.3, rot: -1.118 },
   { id: 'ov-lantern-2', kind: 'post-lantern', x: 70.9, z: -38.8, rot: 2.024 },
-  { id: 'ov-lantern-3', kind: 'post-lantern', x: 60.0, z: -55.5, rot: 2.166 },
   { id: 'ov-bench-1', kind: 'bench', x: 57.9, z: -33.5, rot: -1.118 },
 
   // ═══ North Harbour (0, -74) — the working fishery ═══════════════════════
@@ -662,7 +660,6 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'lh-store', kind: 'warehouse', x: -77.7, z: -31.2, rot: -2.024, opts: { w: 10, d: 7.5 } },
   { id: 'lh-rail', kind: 'rail', x: -85.2, z: -54.9, rot: 2.452, opts: { length: 16 } },
   { id: 'lh-bench-1', kind: 'bench', x: -68.2, z: -43.2, rot: -2.166 },
-  { id: 'lh-lantern-1', kind: 'post-lantern', x: -56.7, z: -35.4, rot: 0.976 },
   { id: 'lh-rock-1', kind: 'rock', x: -78, z: -52, rot: 0.8, scale: 1.7 },
   { id: 'lh-rock-2', kind: 'rock', x: -50, z: -50, rot: 2.4, scale: 1.2 },
 

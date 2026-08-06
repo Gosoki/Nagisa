@@ -107,6 +107,12 @@ export interface Config {
   readonly CORS_ORIGIN: string;
   /** Secret used to HMAC-sign resume tokens. See resume.ts. Generated if not supplied. */
   readonly RESUME_SECRET: string;
+  /**
+   * Filesystem path for developer placement notes (see notes.ts). When unset — which is
+   * every deployment — the `/dev/notes` endpoints do not exist at all. `scripts/dev.mjs`
+   * sets it, so it is on for local development and absent everywhere else.
+   */
+  readonly DEV_NOTES_PATH: string | undefined;
 }
 
 function buildConfig(): Config {
@@ -119,6 +125,7 @@ function buildConfig(): Config {
   const ADMIN_TOKEN = envOptStr('ADMIN_TOKEN');
   const STATIC_DIR = envOptStr('STATIC_DIR');
   const PERSIST_PATH = envOptStr('PERSIST_PATH');
+  const DEV_NOTES_PATH = envOptStr('DEV_NOTES_PATH');
   const CORS_ORIGIN = envStr('CORS_ORIGIN', '*');
   // A resume secret is required for HMAC signing. If the operator did not supply one,
   // generate a random per-process secret: resume tokens simply won't survive a restart,
@@ -144,6 +151,7 @@ function buildConfig(): Config {
     ADMIN_TOKEN,
     STATIC_DIR,
     PERSIST_PATH,
+    DEV_NOTES_PATH,
     CORS_ORIGIN,
     RESUME_SECRET,
   });

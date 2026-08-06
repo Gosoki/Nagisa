@@ -336,8 +336,27 @@ export interface StickState {
 export const stickState: Writable<StickState | null> = writable(null);
 
 /** Which optional panel is open. Only ever one, and `null` most of the time. */
-export type PanelId = 'people' | 'activities' | 'settings' | 'host' | null;
+export type PanelId = 'people' | 'activities' | 'settings' | 'host' | 'notes' | null;
 export const openPanel: Writable<PanelId> = writable(null);
+
+/**
+ * Developer mode: shows the placement-notes panel and its HUD button.
+ *
+ * `?dev=1` turns it on and remembers it; `?dev=0` turns it off again. A URL parameter
+ * rather than a setting because it is not a preference — it is a different job, and a
+ * toggle for it in the settings panel would be one more thing every player has to read
+ * past and decide is not for them.
+ */
+export const devMode: boolean = (() => {
+  try {
+    const param = new URLSearchParams(location.search).get('dev');
+    if (param === '1') localStorage.setItem('nagisa.dev', '1');
+    if (param === '0') localStorage.removeItem('nagisa.dev');
+    return localStorage.getItem('nagisa.dev') === '1';
+  } catch {
+    return false;
+  }
+})();
 
 /** Open a panel, closing whatever else was open. */
 export function togglePanel(id: Exclude<PanelId, null>): void {
@@ -360,6 +379,14 @@ export interface Settings {
   showStats: boolean;
   /** Reduce motion: stills the camera drift and shortens transitions. */
   reducedMotion: boolean;
+  /**
+   * Draw the medium: pen hatching in the shade and paper tooth over everything.
+   *
+   * Both are screen-space, so they belong to the picture rather than to the surfaces —
+   * which is the point of them and also why they slide as you walk. On by default;
+   * off gives flat fills and lines only.
+   */
+  paperTexture: boolean;
 }
 
 const SETTINGS_KEY = 'nagisa.settings';
@@ -374,6 +401,7 @@ function loadSettings(): Settings {
     showStats: false,
     reducedMotion:
       typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches,
+    paperTexture: true,
   };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -440,6 +468,12 @@ export interface WorldCommands {
   switchRoom(id: string): void;
   setQuality(tier: QualityTier): void;
   setMuted(muted: boolean): void;
+  /**
+   * Where the camera is and what it is aimed at, world space. Used by the developer
+   * notes panel so a marked spot carries the view it was marked from, which is what
+   * lets the exact frame be reproduced later as a probe viewpoint.
+   */
+  cameraView?(): { eye: [number, number, number]; target: [number, number, number] } | null;
   travelTo(zone: ZoneId): void;
   /** Host controls. */
   setActivityState(id: ActivityId, state: ActivityState): void;

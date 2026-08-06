@@ -95,33 +95,39 @@ const C = {
   /** the bare summit */
   scree: [0.62, 0.6, 0.557],
   /**
-   * The terraces. Cooler and greyer than `SCENE_COLORS.paving`, deliberately.
+   * The terraces — `SCENE_COLORS.paving`, warm.
    *
-   * At the token's own value a paved square and a beach differ by about a tenth in each
-   * channel, and at the scale a terrace is seen from that is no difference at all — the
-   * summit court, a stone court at the top of a mountain, read as sand. Built ground and
-   * natural ground want to be separable at a glance; the contour line between them now
-   * exists, and this gives it two different things to separate.
+   * These were pushed cool and grey to separate a paved square from a beach, and at
+   * [0.757, 0.749, 0.722] they separated it completely: every quay, plaza and court on the
+   * island came out the colour of wet concrete on an island whose whole palette is sand and
+   * green. Paving here is crushed shell and packed sand, not aggregate.
+   *
+   * Separation from the beach is now carried by *value* rather than hue — eight to ten per
+   * cent darker, in the same family — plus the contour line the surface-band field already
+   * draws between them, which did not exist when the colours were first pulled apart.
    */
-  paving: [0.757, 0.749, 0.722],
-  /** a cooler paving tone, patched into the above so a quay is not one flat sheet */
-  pavingCool: [0.702, 0.706, 0.694],
+  paving: [0.824, 0.788, 0.698],
+  /** a slightly cooler, deeper tone patched into the above so a quay is not one flat sheet */
+  pavingCool: [0.784, 0.749, 0.663],
   /**
    * The gravel lanes.
    *
-   * Darker and greyer than the token, which sat at [0.871, 0.824, 0.714] — three per cent
-   * from `sand` in every channel. At that distance a lane crossing a beach, a lane crossing
-   * a quay and the beach itself were one continuous pale wash, and the whole island read as
-   * paths made of sand. A gravel road is *made ground*: it wants to be the same family as
-   * paving and a different one from the shore.
+   * Separated from the shore by *value*, not by hue.
+   *
+   * It sat at [0.871, 0.824, 0.714] — three per cent from `sand` in every channel — and a
+   * lane crossing a beach, a lane crossing a quay and the beach itself were one pale wash.
+   * The first correction pulled it grey, which fixed that and made every road on a sand-and-
+   * green island look like wet tarmac. So: still sand's family, five to twelve per cent below
+   * it, in this order — sand, paving, gravel, stone lane — which is enough for the eye to
+   * separate four surfaces that are all, correctly, the colour of ground.
    */
-  gravel: [0.741, 0.706, 0.627],
+  gravel: [0.800, 0.757, 0.655],
   /**
    * The stone lanes. Their own tone rather than `paving`, which is what they used to be —
    * and a stone road laid across a paved terrace in the terrace's own colour is not a road
    * you can see, only a contour line where one ought to be.
    */
-  laneStone: [0.697, 0.688, 0.659],
+  laneStone: [0.761, 0.737, 0.678],
   /** boardwalk timber */
   boardwalk: [0.588, 0.494, 0.376],
   /** the seabed, visible through shallow water */

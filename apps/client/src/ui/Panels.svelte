@@ -20,12 +20,14 @@
   import ActivitiesPanel from './ActivitiesPanel.svelte';
   import SettingsPanel from './SettingsPanel.svelte';
   import HostPanel from './HostPanel.svelte';
+  import NotesPanel from './NotesPanel.svelte';
 
   const TITLES = {
     people: 'People',
     activities: 'Activities',
     settings: 'Settings',
     host: 'Host',
+    notes: 'Placement notes',
   } as const;
 
   let panelEl: HTMLElement | undefined = $state();
@@ -68,6 +70,8 @@
       <SettingsPanel />
     {:else if $openPanel === 'host'}
       <HostPanel />
+    {:else if $openPanel === 'notes'}
+      <NotesPanel />
     {/if}
   </div>
 {/if}

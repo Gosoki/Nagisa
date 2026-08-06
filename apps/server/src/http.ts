@@ -29,6 +29,7 @@ import { extname, join, normalize, resolve, sep } from 'node:path';
 import type { WebSocketServer } from 'ws';
 import type { Config } from './config.js';
 import type { Logger } from './logger.js';
+import { appendNote, parseNote, readNotes } from './notes.js';
 import { metrics } from './metrics.js';
 import type { RoomManager } from './rooms.js';
 
@@ -107,6 +108,34 @@ async function tryServeStatic(staticDir: string, urlPath: string, res: ServerRes
 }
 
 /**
+ * Read a JSON request body, bounded. Returns null on anything malformed or oversized —
+ * the caller turns that into one 400, rather than each site inventing its own.
+ */
+async function readJsonBody(req: IncomingMessage, limit = 8192): Promise<unknown | null> {
+  return new Promise((resolveBody) => {
+    let size = 0;
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > limit) {
+        resolveBody(null);
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      try {
+        resolveBody(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      } catch {
+        resolveBody(null);
+      }
+    });
+    req.on('error', () => resolveBody(null));
+  });
+}
+
+/**
  * Build the HTTP server. `isReady` is a callback rather than a boolean because
  * readiness can change after boot (e.g. during graceful shutdown, `/readyz` should
  * start failing before the process actually exits, so a load balancer stops sending
@@ -149,6 +178,41 @@ export function createServer(deps: {
       json(res, 200, { rooms: rooms.listViews() }, config.CORS_ORIGIN);
       return;
     }
+    // Developer placement notes. Absent unless DEV_NOTES_PATH is set, which nothing but
+    // `scripts/dev.mjs` does — see notes.ts for why this is not authenticated instead.
+    if (config.DEV_NOTES_PATH && pathname === '/dev/notes') {
+      const notesPath = config.DEV_NOTES_PATH;
+      if (req.method === 'GET') {
+        json(res, 200, { notes: await readNotes(notesPath) }, config.CORS_ORIGIN);
+        return;
+      }
+      if (req.method === 'POST') {
+        const body = await readJsonBody(req);
+        if (body === null) {
+          json(res, 400, { error: 'body must be JSON under 8 KB' }, config.CORS_ORIGIN);
+          return;
+        }
+        const note = parseNote(body, new Date());
+        if (typeof note === 'string') {
+          json(res, 400, { error: note }, config.CORS_ORIGIN);
+          return;
+        }
+        await appendNote(notesPath, note);
+        log.info('dev_note', { zone: note.zone, nearest: note.nearest?.id ?? null });
+        json(res, 201, { ok: true, note }, config.CORS_ORIGIN);
+        return;
+      }
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'access-control-allow-origin': config.CORS_ORIGIN,
+          'access-control-allow-methods': 'GET, POST, OPTIONS',
+          'access-control-allow-headers': 'content-type',
+        });
+        res.end();
+        return;
+      }
+    }
+
     if (pathname === WS_PATH) {
       // Real WebSocket upgrades never reach here (the 'upgrade' event fires instead of
       // 'request' for those) — a plain GET to the ws path is a client mistake.

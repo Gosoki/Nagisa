@@ -145,6 +145,15 @@ export const inkLighting = {
   uDepthScale: { value: 500 },
   /** Wall-clock seconds, for the very slight boil on the hatching. */
   uTime: { value: 0 },
+  /**
+   * Master switch for the drawn-medium texture — the pen hatching and the paper tooth.
+   *
+   * Both are screen-space fields, which is what makes them read as a medium the world is
+   * drawn *on* rather than as surface detail — and also what makes them slide across the
+   * world as the camera moves. That is a taste question, so it is a setting; shared here
+   * because it has to reach every material on the island from one write.
+   */
+  uPaperTexture: { value: 1 },
 };
 
 // ---------------------------------------------------------------------------
@@ -237,6 +246,7 @@ uniform float uCameraNear;
 uniform float uCameraFar;
 uniform float uDepthScale;
 uniform float uTime;
+uniform float uPaperTexture;
 
 #ifdef USE_VCOLOR
   in vec3 vVertexColor;
@@ -303,15 +313,33 @@ void main() {
     float rim = pow(1.0 - clamp(dot(normalize(vViewNormal), V), 0.0, 1.0), 3.5);
     lit = mix(lit, lit + uSkyColor * 0.3, rim * 0.1);
 
-    // Pen hatching on the shadow side. Two sets at different densities and phases, so it
-    // reads as a hand building up tone rather than as a screen-door pattern.
-    float shadeAmount = 1.0 - key;
-    if (uHatch > 0.001 && shadeAmount > 0.01) {
-      float boil = floor(uTime * 8.0) * 3.7; // stepped, so the strokes jitter rather than drift
+    // Pen hatching, in the *deep* shade only.
+    //
+    // ### Why this was reported as "severe diagonal streaks"
+    //
+    // Three things compounded, none of them individually large:
+    //
+    // - It ran from one minus the key term, so any surface even slightly turned from the key
+    //   light got some. On a world of flat fills that is most of the screen, and seventy
+    //   parallel strokes across a viewport is a strong pattern at any contrast — regularity
+    //   is what the eye picks up, not amplitude.
+    // - It is a *screen-space* field, so the strokes do not belong to the surfaces they are
+    //   drawn on. Standing still they are texture; walking, they slide across the world.
+    // - The boil re-phased them eight times a second. Stepped jitter reads as a drawn line
+    //   being re-inked at two or three hertz and as a fault at eight.
+    //
+    // So: a fifth of the amplitude, a third of the contrast, only where the shade is
+    // genuinely deep, and a boil slow enough to read as redrawing — about eight tenths of a
+    // per cent at its strongest, where it was seven. uPaperTexture takes it to zero outright
+    // when the medium is switched off in settings, which is the real answer for anyone who
+    // does not want a medium at all.
+    float shadeAmount = smoothstep(0.42, 0.95, 1.0 - key);
+    if (uHatch * uPaperTexture > 0.001 && shadeAmount > 0.01) {
+      float boil = floor(uTime * 1.6) * 3.7;
       float h1 = penHatch(gl_FragCoord.xy, 0.055, boil);
-      float h2 = penHatch(gl_FragCoord.xy, 0.098, boil + 40.0);
-      float hatch = clamp(h1 * 0.72 + h2 * 0.45, 0.0, 1.0);
-      lit = mix(lit, lit * 0.87, hatch * shadeAmount * uHatch);
+      float h2 = penHatch(gl_FragCoord.xy, 0.081, boil + 40.0);
+      float hatch = clamp(h1 * 0.62 + h2 * 0.3, 0.0, 1.0);
+      lit = mix(lit, lit * 0.96, hatch * shadeAmount * uHatch * uPaperTexture);
     }
 
     lit += uGlowColor * uGlowStrength;
@@ -325,7 +353,7 @@ void main() {
   // texture into a veil over the whole picture.
   float tone = clamp(dot(lit, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
   float toothMask = 4.0 * tone * (1.0 - tone);
-  lit *= 1.0 + paperGrain(gl_FragCoord.xy) * 0.05 * toothMask;
+  lit *= 1.0 + paperGrain(gl_FragCoord.xy) * 0.05 * toothMask * uPaperTexture;
 
   // Exponential-squared fog, matched to the sky so the far shore dissolves.
   float dist = length(vViewPosition);
@@ -397,7 +425,7 @@ export function createInkMaterial(options: InkMaterialOptions = {}): THREE.Shade
     color = 0xffffff,
     matId = 0,
     outline = true,
-    hatch = 0.55,
+    hatch = 0.2,
     vertexColors = false,
     side = THREE.FrontSide,
     transparent = false,

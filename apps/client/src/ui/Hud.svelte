@@ -26,6 +26,7 @@
     interactPrompt,
     emoteOpen,
     connectionTroubled,
+    devMode,
     settings,
     togglePanel,
     cmd,
@@ -103,6 +104,23 @@
       <path d="M6 5V13.5M6 13.5a2 2 0 100 4 2 2 0 000-4zM12 6.5a2 2 0 100 4 2 2 0 000-4zM12 10.5V19M18 5V9.5M18 9.5a2 2 0 100 4 2 2 0 000-4zM18 13.5V19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
     </svg>
   </button>
+
+  <!-- Developer placement notes. Absent unless ?dev=1 — see `devMode` in stores.ts. -->
+  {#if devMode}
+    <button
+      type="button"
+      class="icon-btn"
+      class:active={$openPanel === 'notes'}
+      aria-label="Placement notes"
+      aria-pressed={$openPanel === 'notes'}
+      onclick={() => togglePanel('notes')}
+    >
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+        <path d="M12 21s6.5-6.1 6.5-10.5a6.5 6.5 0 10-13 0C5.5 14.9 12 21 12 21z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+        <circle cx="12" cy="10.3" r="2.2" fill="none" stroke="currentColor" stroke-width="1.5" />
+      </svg>
+    </button>
+  {/if}
 
   {#if $isHost}
     <button

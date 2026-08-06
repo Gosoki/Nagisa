@@ -71,6 +71,21 @@
 </div>
 
 <div class="section row">
+  <span class="label">Paper texture</span>
+  <button
+    type="button"
+    class="toggle"
+    class:on={$settings.paperTexture}
+    role="switch"
+    aria-checked={$settings.paperTexture}
+    aria-label="Paper texture"
+    onclick={() => settings.update((s) => ({ ...s, paperTexture: !s.paperTexture }))}
+  >
+    <span class="knob"></span>
+  </button>
+</div>
+
+<div class="section row">
   <span class="label">Reduce motion</span>
   <button
     type="button"

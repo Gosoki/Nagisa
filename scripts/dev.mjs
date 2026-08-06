@@ -19,7 +19,7 @@
 
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -40,7 +40,14 @@ function run(name, args) {
     // work here.
     shell: false,
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, FORCE_COLOR: '1' },
+    env: {
+      ...process.env,
+      FORCE_COLOR: '1',
+      // Turns on POST/GET /dev/notes and the client's placement-notes panel (?dev=1).
+      // Deliberately set here and nowhere else: the endpoint is *absent* in a deployment
+      // rather than present and guarded. See apps/server/src/notes.ts.
+      DEV_NOTES_PATH: process.env.DEV_NOTES_PATH ?? join(root, 'dev-notes.jsonl'),
+    },
   });
 
   const prefix = `${COLORS[name] ?? ''}[${name}]${COLORS.reset} `;

@@ -32,7 +32,8 @@
     "test:roam": "node tools/roam-smoke.mjs",
     "audit:terrain": "node scripts/terrain-audit.mjs",
     "audit:placement": "node scripts/placement-audit.mjs",
-    "plans": "node tools/plan-diagram.mjs"
+    "plans": "node tools/plan-diagram.mjs",
+    "notes": "node scripts/notes.mjs"
   },
   "allowScripts": {
     "esbuild@0.25.12": true

@@ -187,7 +187,9 @@ nagisa/
 ├── scripts/
 │   ├── dev.mjs               # Runs all three workspaces with prefixed output
 │   ├── dev-server.mjs        # Compiles + restarts the realtime server on change
-│   └── world-map.mjs         # Renders the island to a PNG relief map
+│   ├── world-map.mjs         # Renders the island to a PNG relief map
+│   ├── find-spot.mjs         # Every legal position for a landmark
+│   └── notes.mjs             # Prints placement notes written from inside the world
 ├── tools/
 │   ├── shot.mjs              # Twelve viewpoints → PNG, through the real pipeline
 │   ├── plan-diagram.mjs      # One plan drawing per place: roads, footprints, doors

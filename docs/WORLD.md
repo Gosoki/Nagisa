@@ -255,6 +255,7 @@ violations in 110 000 steps.
 | `node tools/shot.mjs plans` | The same places again, but from directly overhead, through the real renderer |
 | `node scripts/layout-solve.mjs --intent f.json` | Turns *station along a lane, offset, facing* into `x`, `z` and a yaw |
 | `SPOT='{"id":"…","near":[x,z]}' node scripts/find-spot.mjs` | Every position a landmark could stand that satisfies all four audits at once |
+| `npm run notes` | Placement notes written from inside the world — see below |
 
 The map is the one to reach for first when something looks wrong. The failure modes of a
 procedural world are spatial, and reading numbers does not catch them.
@@ -298,6 +299,23 @@ validated from two coordinates, so the server checks it exactly.
 
 What remains is a band of steep ground round the mountain's foot, forty to fifty metres out
 from each harbour. That is a mountain, and the roads are how you get past it.
+
+### Saying which building
+
+The slow part of arranging a village is not moving a building; it is *saying which one*. A
+note like "this hut is too close to the road" is unusable a day later, because "this" was
+something you were looking at and the record kept only the words.
+
+So: run `npm run dev`, open the client with `?dev=1`, and a pin button appears in the top
+right. Stand where the problem is, press **Mark here**, pick the landmark from the list of
+the eight nearest, write a sentence, save. The note records the position, the heading, the
+zone, the landmark's id and the camera, and lands in `dev-notes.jsonl`. `npm run notes`
+prints them, each with a `probe.ts`-ready viewpoint for the exact frame it was written from,
+so the view can be re-rendered without anybody having to describe it.
+
+The endpoint is *absent* unless `DEV_NOTES_PATH` is set, which only `scripts/dev.mjs` does.
+A feature that cannot be reached in a deployment cannot be abused in one, and that is a
+better property than a guard, which is a thing to get wrong.
 
 ### Placing a building beside a road
 

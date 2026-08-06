@@ -41,6 +41,7 @@ import {
   type Emote,
   type ZoneId,
 } from '@nagisa/shared';
+import { inkLighting } from './engine/ink/ink-material.js';
 import { Renderer, type FrameSubscriber } from './engine/renderer.js';
 import { CameraRig } from './engine/camera-rig.js';
 import { detectTier, settingsFor, isTouchDevice, type QualityTier } from './engine/quality.js';
@@ -606,6 +607,19 @@ export class App {
         void this.ambience.unlock().then(() => this.ambience.setMuted(muted));
       },
 
+      // Read straight off the live camera rather than recomputed from the rig's spec: a
+      // note is about the frame that was actually on screen, drift and terrain lift and
+      // all, so that a probe viewpoint built from it shows the same thing.
+      cameraView: () => {
+        const camera = this.renderer.camera;
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        const target = camera.position.clone().addScaledVector(forward, 12);
+        return {
+          eye: [camera.position.x, camera.position.y, camera.position.z],
+          target: [target.x, target.y, target.z],
+        };
+      },
+
       travelTo: (zoneId) => {
         const zone = getZone(zoneId);
         if (!zone) return;
@@ -632,6 +646,11 @@ export class App {
     settings.subscribe((s) => {
       this.nameTags.enabled = s.showNames;
       this.ambience.setMuted(s.muted);
+      // The drawn medium — hatching in every material, tooth in the composite. One shared
+      // uniform reaches the island; the pass keeps its own.
+      inkLighting.uPaperTexture.value = s.paperTexture ? 1 : 0;
+      const ink = this.renderer.inkUniforms;
+      if (ink?.uPaper) ink.uPaper.value = s.paperTexture ? 0.5 : 0;
     });
   }
 

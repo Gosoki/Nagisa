@@ -26,8 +26,10 @@ import {
   ACTIVITY_TEMPLATES,
   ActivityState,
   INTERACTABLES,
+  ISLAND_EXTENT,
   PROTOCOL,
   Role,
+  activeMap,
   getZone,
   interactablePosition,
   spawnPoint,
@@ -43,6 +45,7 @@ import { Renderer, type FrameSubscriber } from './engine/renderer.js';
 import { CameraRig } from './engine/camera-rig.js';
 import { detectTier, settingsFor, isTouchDevice, type QualityTier } from './engine/quality.js';
 import { Island } from './world/island.js';
+import { bakePlan } from './world/plan.js';
 import { Input } from './input/input.js';
 import { LocalPlayer } from './character/local-player.js';
 import { RemotePlayers } from './character/remote-players.js';
@@ -67,6 +70,7 @@ import {
   zoneAnnounce,
   chatLog,
   followTarget,
+  planImage,
   selfPose,
   type SelfState,
   type WorldCommands,
@@ -198,6 +202,21 @@ export class App {
     this.camera.locked = true;
     this.camera.yaw = spawn.yaw + Math.PI;
     this.camera.snap(this.local.position);
+
+    // Photograph the island from above for the minimap, before the frame loop starts and
+    // while the scene is guaranteed to be complete and nobody is in it. See `world/plan.ts`.
+    try {
+      const extent = ISLAND_EXTENT * 0.82;
+      planImage.set({
+        mapId: activeMap().id,
+        canvas: bakePlan(this.renderer.renderer, this.renderer.scene, extent),
+        extent,
+      });
+    } catch (err) {
+      // A minimap that falls back to a drawn relief is a much smaller problem than a world
+      // that fails to load, so this must never be fatal.
+      console.warn('[app] plan capture failed; the minimap will draw the terrain instead', err);
+    }
 
     this.renderer.add(this.frameSubscriber);
     this.renderer.start();

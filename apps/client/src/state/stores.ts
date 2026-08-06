@@ -214,6 +214,18 @@ export function notify(text: string, tone: LocalNotice['tone'] = 'neutral', ttlM
  */
 export const selfPose = { x: 0, y: 0, z: 0, yaw: 0 };
 
+/**
+ * The island photographed from above, for the minimap to blit.
+ *
+ * Captured once after the world is built (see `world/plan.ts`) rather than drawn a second
+ * time from the terrain field, so the map shows the buildings, the piers and the torii —
+ * the things anyone actually navigates by — and cannot drift out of step with the world.
+ *
+ * Keyed by map id, because a different pack is a different island.
+ */
+export const planImage: Writable<{ mapId: string; canvas: HTMLCanvasElement; extent: number } | null> =
+  writable(null);
+
 // ---------------------------------------------------------------------------
 // Chat
 // ---------------------------------------------------------------------------

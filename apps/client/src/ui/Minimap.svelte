@@ -27,7 +27,7 @@
    */
   import { onMount } from 'svelte';
   import { ISLAND_EXTENT, PATHS, SCENE_COLORS, SUMMIT, ZONES, activeMapId, heightAt, isLand } from '@nagisa/shared';
-  import { followTarget, players, selfPose, settings } from '../state/stores.js';
+  import { followTarget, planImage, players, selfPose, settings } from '../state/stores.js';
 
   /** On-screen size, CSS pixels. */
   const SIZE = 168;
@@ -38,12 +38,20 @@
    */
   const BAKE_RES = 192;
 
-  /** World half-extent the map covers. A little past the shore so the island is not clipped. */
-  $: EXTENT = ISLAND_EXTENT * 0.82;
+  /**
+   * World half-extent the map covers, a little past the shore so the island is not clipped.
+   *
+   * When the base is a capture this must be *its* extent rather than a recomputed one, or the
+   * dots are projected through a different window than the picture was taken through and
+   * everyone drifts steadily off the coast as you near the edge of the map.
+   */
+  $: EXTENT = planExtent ?? ISLAND_EXTENT * 0.82;
 
   let liveCanvas: HTMLCanvasElement | undefined;
   let base: HTMLCanvasElement | undefined;
   let bakedFor: string | null = null;
+  /** Half-extent the current base image covers, when it came from a capture. */
+  let planExtent: number | null = null;
   let expanded = false;
   let raf = 0;
 
@@ -231,17 +239,37 @@
   }
 
   onMount(() => {
-    // Bake lazily and re-bake if the map has changed under us.
-    const ensureBase = (): void => {
+    /**
+     * Prefer the photograph, fall back to the drawing.
+     *
+     * `planImage` is a single top-down render of the real scene, captured after the world is
+     * built (`world/plan.ts`) — so the map shows the buildings, the piers and the torii, the
+     * things people actually navigate by, in the colours the world uses. `bakeTerrain` is the
+     * old path and stays as the fallback: it needs nothing but the terrain field, so it works
+     * before the capture lands and if the capture fails on a driver that cannot read back a
+     * half-float target.
+     */
+    const unsubscribe = planImage.subscribe((plan) => {
       const id = activeMapId();
+      if (plan && plan.mapId === id) {
+        base = plan.canvas;
+        bakedFor = id;
+        // The capture's own half-extent wins: the live layer must project onto the same
+        // window the photograph was taken through, or the players drift off their island.
+        planExtent = plan.extent;
+        return;
+      }
       if (bakedFor !== id) {
         base = bakeTerrain();
         bakedFor = id;
+        planExtent = null;
       }
-    };
-    ensureBase();
+    });
     raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      unsubscribe();
+    };
   });
 </script>
 

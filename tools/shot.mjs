@@ -51,7 +51,11 @@ const views = args.filter((a, i) => {
 });
 
 const ALL_VIEWS = ['island', 'arrival', 'gameplay', 'quay', 'plaza', 'street', 'shrine', 'summit', 'lighthouse', 'teahouse', 'north', 'beach', 'slopes', 'figure'];
-const targets = views.length > 0 ? views : ALL_VIEWS;
+// Plan views are not in the default sweep — they are slow (one island build each) and
+// they answer a layout question rather than an art-direction one. Ask for them by name:
+//   node tools/shot.mjs plan-street plan-summit
+const PLAN_VIEWS = ['plan-island', 'plan-summit', 'plan-shrine', 'plan-street', 'plan-plaza', 'plan-south', 'plan-north', 'plan-lighthouse', 'plan-beach'];
+const targets = views.length === 0 ? ALL_VIEWS : views.flatMap((v) => (v === 'plans' ? PLAN_VIEWS : [v]));
 
 mkdirSync(outDir, { recursive: true });
 

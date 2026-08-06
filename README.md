@@ -190,6 +190,7 @@ nagisa/
 │   └── world-map.mjs         # Renders the island to a PNG relief map
 ├── tools/
 │   ├── shot.mjs              # Twelve viewpoints → PNG, through the real pipeline
+│   ├── plan-diagram.mjs      # One plan drawing per place: roads, footprints, doors
 │   ├── app-smoke.mjs         # Whole stack, two players, end to end
 │   └── pixel-probe.mjs       # Live material uniforms from a running page
 ├── Dockerfile

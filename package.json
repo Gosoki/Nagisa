@@ -31,7 +31,8 @@
     "map": "node scripts/world-map.mjs",
     "test:roam": "node tools/roam-smoke.mjs",
     "audit:terrain": "node scripts/terrain-audit.mjs",
-    "audit:placement": "node scripts/placement-audit.mjs"
+    "audit:placement": "node scripts/placement-audit.mjs",
+    "plans": "node tools/plan-diagram.mjs"
   },
   "allowScripts": {
     "esbuild@0.25.12": true

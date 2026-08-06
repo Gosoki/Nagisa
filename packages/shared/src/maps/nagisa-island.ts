@@ -176,8 +176,16 @@ const PADS: MapPack['terrain']['pads'] = [
   // — Inland ————————————————————————————————————————————————————————
   /** Notice-board terrace, one step up from the plaza floor. The one deliberate nesting. */
   { id: 'noticeboard', x: 48, z: 22, height: 8.4, inner: 8, outer: 12 },
-  /** The summit court: a small flat terrace at the true peak, around the inner shrine. */
-  { id: 'summit', x: SUMMIT.x, z: SUMMIT.z, height: SUMMIT.height, inner: 12, outer: 30 },
+  /**
+   * The summit court: a flat terrace at the true peak, around the inner shrine.
+   *
+   * `inner` is 16 rather than 12 because the two mountain paths no longer run *through* the
+   * court — they meet at a junction on its southern edge — and the composition they used to
+   * be tangled with now needs the room they were taking. A hall deep enough to have a
+   * veranda, flanked by a bell and a basin, wants sixteen metres of flat before its corners
+   * are standing on the blend.
+   */
+  { id: 'summit', x: SUMMIT.x, z: SUMMIT.z, height: SUMMIT.height, inner: 16, outer: 30 },
 ] as const;
 
 /**
@@ -238,8 +246,20 @@ const PATHS: MapPack['terrain']['paths'] = [
       // Three metres of clearance is the whole fix. See `npm run audit:terrain`.
       [58, -5],
       [36, -6],
-      [16, 3],
-      [0, 0], // summit
+      [24, 2],
+      [10, 12],
+      // The road stops *below* the court, not in it.
+      //
+      // It used to end at (0, 0) — the peak, the middle of the terrace, the exact centre of
+      // the composition — and the shrine path left from the same point, so the summit's inner
+      // shrine had a through road running between its gate and its hall. There is no
+      // arrangement of buildings that survives that: whatever stands north of the line has
+      // its back to the road and whatever stands south of it is in the way.
+      //
+      // So the two mountain routes now meet here, sixteen metres south of the peak, and the
+      // court opens onto the junction through its torii. You arrive at a gate rather than
+      // walking through somebody's shrine.
+      [0, 16],
     ],
   },
   {
@@ -250,11 +270,14 @@ const PATHS: MapPack['terrain']['paths'] = [
     carve: 0.94,
     surface: 'gravel',
     points: [
-      [-64, 37], // shrine courtyard
+      // The sandō, and the shrine's whole geometry, is this line: the hall stands at its head
+      // facing back down it, the three torii sit on it, and the coast road crosses it at the
+      // T where the two meet. Everything at the shrine is placed by station along this lane.
+      [-64, 37], // shrine courtyard, at the T
       [-46, 30],
       [-28, 20],
-      [-12, 10],
-      [0, 0], // summit
+      [-14, 13],
+      [0, 16], // meets the summit road below the court
     ],
   },
   {
@@ -296,7 +319,9 @@ const ZONES: MapPack['world']['zones'] = [
     x: 0,
     z: 74,
     radius: 32,
-    stage: { dx: -9, dz: -6, facing: Math.PI * 0.1 },
+    // Where a crowd forms: at the stage, facing the way the stage does. Both follow
+    // `sh-stage`, which moved inland when the quay road was cleared.
+    stage: { dx: -8, dz: -19, facing: -0.073 },
     softCapacity: 60,
     ambience: 'harbor',
     caption: 'The ferry ties up here. Everyone arrives at the south quay.',
@@ -309,7 +334,7 @@ const ZONES: MapPack['world']['zones'] = [
     x: 64,
     z: 37,
     radius: 32,
-    stage: { dx: 4, dz: -12, facing: 0 },
+    stage: { dx: 3, dz: 16.7, facing: -2.166 },
     softCapacity: 140,
     ambience: 'town',
     caption: 'The middle of things, on the eastern shelf. Something is usually about to start.',
@@ -346,7 +371,7 @@ const ZONES: MapPack['world']['zones'] = [
     x: 0,
     z: -74,
     radius: 30,
-    stage: { dx: 9, dz: 5, facing: -Math.PI * 0.35 },
+    stage: { dx: 0.5, dz: 12.8, facing: -3.068 },
     softCapacity: 40,
     ambience: 'harbor',
     caption: 'Nets, ice, and boats that go out before anyone is awake.',
@@ -397,7 +422,7 @@ const ZONES: MapPack['world']['zones'] = [
     x: 46,
     z: 92,
     radius: 22,
-    stage: { dx: -2, dz: -4, facing: -Math.PI * 0.75 },
+    stage: { dx: 0, dz: -4, facing: 0 },
     softCapacity: 60,
     ambience: 'waves',
     caption: 'Flat sand, shallow water, and the long light.',
@@ -433,18 +458,21 @@ const SPAWN_POINTS: MapPack['world']['spawnPoints'] = [
 ] as const;
 
 const INTERACTABLES: MapPack['world']['interactables'] = [
-  { id: 'notice-board', zone: 'noticeboard', dx: 0, dz: -4, range: 4.5, kind: 'use', label: 'Read', effect: 'read_announcements' },
+  // Offsets are from the zone anchor, and they follow the thing they belong to: every one of
+  // these stands in front of a specific bell, board or bench, so a building that moves takes
+  // its prompt with it. A prompt left behind is a "Ring" that rings nothing.
+  { id: 'notice-board', zone: 'noticeboard', dx: -3.2, dz: 2.5, range: 4.5, kind: 'use', label: 'Read', effect: 'read_announcements' },
   { id: 'plaza-post', zone: 'plaza', dx: -13, dz: 7, range: 3.5, kind: 'use', label: 'Check in', effect: 'checkin_nearby' },
-  { id: 'shrine-bell', zone: 'shrine', dx: 3, dz: -8, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
-  { id: 'summit-bell', zone: 'summit', dx: 8, dz: 5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
-  { id: 'south-harbor-bell', zone: 'south-harbor', dx: 10, dz: 4, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
-  { id: 'north-harbor-bell', zone: 'north-harbor', dx: -9, dz: -4, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
+  { id: 'shrine-bell', zone: 'shrine', dx: -9.5, dz: -7, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
+  { id: 'summit-bell', zone: 'summit', dx: 9.3, dz: 4.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
+  { id: 'south-harbor-bell', zone: 'south-harbor', dx: 10.5, dz: 3.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
+  { id: 'north-harbor-bell', zone: 'north-harbor', dx: 13.1, dz: -3.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
   { id: 'lighthouse-door', zone: 'lighthouse', dx: 0, dz: 3, range: 4, kind: 'use', label: 'Look', effect: 'none' },
-  { id: 'summit-rail', zone: 'summit', dx: -2, dz: 11, range: 5, kind: 'use', label: 'Look', effect: 'none' },
-  { id: 'teahouse-mat-a', zone: 'plaza', dx: 14, dz: 9, range: 2.5, kind: 'sit', label: 'Sit', effect: 'none' },
-  { id: 'teahouse-mat-b', zone: 'plaza', dx: 17, dz: 11, range: 2.5, kind: 'sit', label: 'Sit', effect: 'none' },
+  { id: 'summit-rail', zone: 'summit', dx: -21.5, dz: -7, range: 6, kind: 'use', label: 'Look', effect: 'none' },
+  { id: 'teahouse-mat-a', zone: 'plaza', dx: 15.7, dz: -21.1, range: 2.5, kind: 'sit', label: 'Sit', effect: 'none' },
+  { id: 'teahouse-mat-b', zone: 'plaza', dx: 17.5, dz: -19.5, range: 2.5, kind: 'sit', label: 'Sit', effect: 'none' },
   { id: 'beach-log', zone: 'beach', dx: 5, dz: 7, range: 3, kind: 'sit', label: 'Sit', effect: 'none' },
-  { id: 'plaza-bench', zone: 'plaza', dx: 13, dz: 8, range: 3, kind: 'sit', label: 'Sit', effect: 'none' },
+  { id: 'plaza-bench', zone: 'plaza', dx: 3.6, dz: 9.9, range: 3, kind: 'sit', label: 'Sit', effect: 'none' },
 ] as const;
 
 /**
@@ -454,147 +482,204 @@ const INTERACTABLES: MapPack['world']['interactables'] = [
  * The coast road's lanterns, mile-posts and railings are *not* here: those are placed by
  * arc length along the path at build time, because spacing them by hand would be busywork
  * that goes stale the moment the road is re-routed.
+ *
+ * ### Everything here is placed *from a road*
+ *
+ * Almost every coordinate below was solved rather than eyeballed — see
+ * `scripts/layout-solve.mjs`. A building beside a lane is authored as *this far along that
+ * lane, this far off its centreline, facing the traffic*, and the script converts that to an
+ * `x`, a `z` and a yaw. Two things come out right for free that were persistently wrong when
+ * they were typed by hand:
+ *
+ * - **The setback clears what the building actually occupies.** A machiya's eaves reach
+ *   0.9 m past its plaster, a minka's veranda and steps 2.4 m past its front wall, a funaya's
+ *   slipway 4.3 m past its. Nineteen buildings were standing in a carriageway while every
+ *   wall line was clear of it.
+ * - **The door is on the street.** Every builder in `props/buildings.ts` models its entrance
+ *   on the local −z face, so a yaw is a statement about which way a building is *turned* and
+ *   not merely how it is squared up. Both rows of the Old Street had their backs to it.
+ *
+ * The rule the layout is held to — and `npm run audit:placement` enforces — is that a
+ * frontage may address the road or stand side-on to it, but never turn away from it. The one
+ * exemption is a frontage that opens onto water instead, which is what a boat house, a beach
+ * hut and a quay stage are *for*.
  */
 const LANDMARKS: MapPack['world']['landmarks'] = [
   // ═══ South Harbour (0, 74) — the arrival port ═══════════════════════════
-  // Waterfront props run out along +z into the bay; the quay buildings sit behind them,
-  // all inside the terrace's flat inner radius so nothing stands on a slope.
+  // The quay road runs east–west across the terrace. Warehouses, stalls and the bell stand
+  // on the seaward side facing back at it; the office and the stage are behind it inland.
   { id: 'sh-torii-sea', kind: 'torii', x: 0, z: 112, rot: 0.05, scale: 1.7, opts: { inWater: true } },
   { id: 'sh-pier-main', kind: 'pier', x: 0, z: 88, rot: 0, opts: { length: 30, width: 7, lamps: true } },
-  { id: 'sh-pier-west', kind: 'pier', x: -20, z: 82, rot: Math.PI * 0.4, opts: { length: 18, width: 4.5 } },
+  // Moved 4 m west and 2 m inland: its seaward tip used to end inside the main pier's deck.
+  { id: 'sh-pier-west', kind: 'pier', x: -24, z: 80, rot: Math.PI * 0.4, opts: { length: 18, width: 4.5 } },
   { id: 'sh-breakwater', kind: 'breakwater', x: 34, z: 98, rot: -0.55, opts: { length: 40, beacon: true } },
   { id: 'sh-boat-1', kind: 'boat', x: 16, z: 98, rot: 0.3, opts: { style: 'ferry', scale: 1.25 } },
   { id: 'sh-boat-2', kind: 'boat', x: -12, z: 96, rot: -0.7 },
-  { id: 'sh-seawall', kind: 'sea-wall', x: 19, z: 80, rot: -0.4, opts: { length: 22 } },
-  { id: 'sh-warehouse-1', kind: 'warehouse', x: 18.8, z: 82.9, rot: -0.2, opts: { w: 10, d: 8, floors: 2 } },
-  { id: 'sh-warehouse-2', kind: 'warehouse', x: -18.8, z: 82.9, rot: 0.2, opts: { w: 10, d: 8 } },
-  { id: 'sh-office', kind: 'machiya', x: 2.2, z: 58.6, rot: 3.142, opts: { w: 10, d: 10, floors: 2, sign: true } },
-  { id: 'sh-stall-1', kind: 'market-stall', x: -8.3, z: 79.9, rot: 0.1, opts: { cloth: 1 } },
-  { id: 'sh-stall-2', kind: 'market-stall', x: -2.2, z: 80.3, rot: 0.1, opts: { cloth: 2 } },
-  { id: 'sh-stall-3', kind: 'market-stall', x: 4.1, z: 80, rot: 0.1, opts: { cloth: 0 } },
-  { id: 'sh-stage', kind: 'stage', x: -10.4, z: 61.9, rot: 1.571, opts: { w: 12, d: 9 } },
-  { id: 'sh-bell', kind: 'bell-tower', x: 10.1, z: 79.7, rot: 0, scale: 0.8 },
-  { id: 'sh-lantern-1', kind: 'post-lantern', x: -8, z: 72, rot: 0 },
-  { id: 'sh-lantern-2', kind: 'post-lantern', x: 8, z: 72, rot: 0 },
-  { id: 'sh-banner-1', kind: 'banner', x: -14, z: 78, rot: 0.2 },
-  { id: 'sh-banner-2', kind: 'banner', x: 14, z: 72, rot: -0.3 },
+  // On the quay *edge*, twenty-three metres further out. It used to stand in the middle of
+  // the flat with 2.4 m of terrace on both sides of it, holding nothing back at all.
+  { id: 'sh-seawall', kind: 'sea-wall', x: 12.5, z: 103, rot: 1.803, opts: { length: 14 } },
+  { id: 'sh-warehouse-1', kind: 'warehouse', x: 19.7, z: 82.6, rot: 0.073, opts: { w: 10, d: 8, floors: 2 } },
+  { id: 'sh-warehouse-2', kind: 'warehouse', x: -19.5, z: 82.6, rot: -0.073, opts: { w: 10, d: 8 } },
+  { id: 'sh-office', kind: 'machiya', x: 8.6, z: 54.4, rot: -2.531, opts: { w: 10, d: 10, floors: 2, sign: true } },
+  { id: 'sh-stall-1', kind: 'market-stall', x: -9.7, z: 79.8, rot: -0.073, opts: { cloth: 1 } },
+  { id: 'sh-stall-2', kind: 'market-stall', x: -3.7, z: 80.2, rot: -0.073, opts: { cloth: 2 } },
+  { id: 'sh-stall-3', kind: 'market-stall', x: 3.5, z: 80.2, rot: 0.073, opts: { cloth: 0 } },
+  { id: 'sh-stage', kind: 'stage', x: -8.0, z: 55.0, rot: 3.069, opts: { w: 12, d: 9 } },
+  { id: 'sh-bell', kind: 'bell-tower', x: 10.5, z: 79.9, rot: 0.073, scale: 0.8 },
+  { id: 'sh-lantern-1', kind: 'post-lantern', x: -7.6, z: 79.5, rot: -0.073 },
+  { id: 'sh-lantern-2', kind: 'post-lantern', x: 7.4, z: 79.5, rot: 0.073 },
+  { id: 'sh-banner-1', kind: 'banner', x: -13.7, z: 79.5, rot: -0.073 },
+  { id: 'sh-banner-2', kind: 'banner', x: 13.4, z: 79.5, rot: 0.073 },
   { id: 'sh-rock-1', kind: 'rock', x: -26, z: 92, rot: 1.1, scale: 1.3 },
 
   // ═══ Sunset Beach (46, 92) — the sand east of the quay ══════════════════
-  { id: 'bh-hut-1', kind: 'beach-hut', x: 37, z: 93, rot: -0.4, opts: { w: 6, d: 5 } },
-  { id: 'bh-hut-2', kind: 'beach-hut', x: 55, z: 93, rot: 0.4, opts: { w: 6, d: 5 } },
-  { id: 'bh-stage', kind: 'stage', x: 46, z: 86, rot: 0, opts: { w: 11, d: 8 } },
+  // The one place on the island that faces *away* from its road on purpose: the huts open
+  // onto the sand and the stage plays to a crowd sitting on it, with the water behind them.
+  { id: 'bh-hut-1', kind: 'beach-hut', x: 34, z: 94, rot: 2.892, opts: { w: 6, d: 5 } },
+  { id: 'bh-hut-2', kind: 'beach-hut', x: 58, z: 94, rot: -2.892, opts: { w: 6, d: 5 } },
+  { id: 'bh-stage', kind: 'stage', x: 46, z: 88, rot: 3.142, opts: { w: 11, d: 8 } },
   { id: 'bh-bench-1', kind: 'bench', x: 51, z: 99, rot: 0.62 },
   { id: 'bh-boat-1', kind: 'boat', x: 58, z: 102, rot: 1.8, scale: 0.75 },
-  { id: 'bh-rock-1', kind: 'rock', x: 64, z: 92, rot: 0.7, scale: 1.5 },
-  { id: 'bh-lantern-1', kind: 'post-lantern', x: 38, z: 96, rot: 0 },
+  { id: 'bh-rock-1', kind: 'rock', x: 66, z: 90, rot: 0.7, scale: 1.5 },
+  { id: 'bh-lantern-1', kind: 'post-lantern', x: 39.5, z: 98, rot: 0 },
 
   // ═══ Main Plaza (64, 37) — the civic centre ═════════════════════════════
-  { id: 'pl-stage', kind: 'stage', x: 76, z: 46, rot: -2.21, opts: { w: 12, d: 9, roof: true, tiers: true } },
-  { id: 'pl-gate-s', kind: 'gate', x: 66, z: 54, rot: 0.05, scale: 1.1 },
-  { id: 'pl-gate-w', kind: 'gate', x: 60.0, z: 34.0, rot: 0.821},
-  { id: 'pl-minka', kind: 'minka', x: 62.0, z: 12.0, rot: -3.054, opts: { w: 11, d: 9 } },
-  { id: 'pl-well', kind: 'well', x: 71, z: 54, rot: 0.3},
-  { id: 'pl-lantern-1', kind: 'stone-lantern', x: 58, z: 27, rot: 0.3 },
-  { id: 'pl-lantern-2', kind: 'stone-lantern', x: 75, z: 28, rot: -0.3 },
-  { id: 'pl-lantern-3', kind: 'stone-lantern', x: 53, z: 48, rot: 0.1 },
-  { id: 'pl-lantern-4', kind: 'stone-lantern', x: 75, z: 48, rot: -0.1 },
-  { id: 'pl-bench-1', kind: 'bench', x: 77, z: 45, rot: -0.6 },
-  { id: 'pl-bench-2', kind: 'bench', x: 51, z: 45, rot: 0.6 },
-  { id: 'pl-banner-1', kind: 'banner', x: 58, z: 52, rot: 0 },
-  { id: 'pl-banner-2', kind: 'banner', x: 71, z: 52, rot: 0 },
+  // The stage on the seaward side of the ring road with the farmhouse across from it, and
+  // the teahouse further south where the road bends away — the quiet corner it was always
+  // meant to be, rather than a building wedged against the carriageway.
+  { id: 'pl-stage', kind: 'stage', x: 67.0, z: 53.7, rot: 0.976, opts: { w: 12, d: 9, roof: true, tiers: true } },
+  { id: 'pl-gate-s', kind: 'gate', x: 48.2, z: 60.3, rot: 2.547, scale: 1.1 },
+  { id: 'pl-gate-w', kind: 'gate', x: 58.6, z: 32.0, rot: 0.818 },
+  { id: 'pl-minka', kind: 'minka', x: 78.0, z: 35.1, rot: 1.118, opts: { w: 11, d: 9 } },
+  { id: 'pl-well', kind: 'well', x: 64.8, z: 64.3, rot: 0.976 },
+  { id: 'pl-lantern-1', kind: 'stone-lantern', x: 58.5, z: 57.6, rot: 0.976 },
+  { id: 'pl-lantern-2', kind: 'stone-lantern', x: 46.9, z: 49.8, rot: -2.166 },
+  { id: 'pl-lantern-3', kind: 'stone-lantern', x: 80.7, z: 18.6, rot: 1.118 },
+  { id: 'pl-lantern-4', kind: 'stone-lantern', x: 68.1, z: 12.5, rot: -2.024 },
+  { id: 'pl-bench-1', kind: 'bench', x: 67.6, z: 46.9, rot: 0.976 },
+  { id: 'pl-bench-2', kind: 'bench', x: 53.5, z: 37.3, rot: -2.166 },
+  { id: 'pl-banner-1', kind: 'banner', x: 77.3, z: 30.3, rot: 1.118 },
+  { id: 'pl-banner-2', kind: 'banner', x: 61.1, z: 22.4, rot: -2.024 },
   // The teahouse: a v2 zone kept as a building, on the quiet side of the plaza.
-  { id: 'pl-teahouse', kind: 'teahouse', x: 80.2, z: 30.1, rot: -1.44, opts: { w: 11, d: 8.5, veranda: true } },
+  { id: 'pl-teahouse', kind: 'teahouse', x: 85.0, z: 18.5, rot: 1.118, opts: { w: 11, d: 8.5, veranda: true } },
 
   // — Notice-board terrace (48, 22), one step up from the plaza ————————
-  { id: 'nb-board', kind: 'notice-board', x: 48, z: 16.9, rot: 0.1, scale: 1.4 },
-  { id: 'nb-lantern-1', kind: 'stone-lantern', x: 42, z: 24, rot: 0 },
-  { id: 'nb-bench-1', kind: 'bench', x: 53, z: 25, rot: -0.4 },
+  { id: 'nb-board', kind: 'notice-board', x: 41.7, z: 23.4, rot: -1.920, scale: 1.4 },
+  { id: 'nb-lantern-1', kind: 'stone-lantern', x: 39.5, z: 16.9, rot: -1.920 },
+  { id: 'nb-bench-1', kind: 'bench', x: 39.3, z: 29.9, rot: -1.920 },
 
   // ═══ Old Street (64, -37) — two rows facing each other ══════════════════
-  // Two rows of row houses, laid out **along the ring road** rather than along the z axis.
+  // Two rows of row houses laid out **along the ring road**, at eleven metres either side of
+  // its centreline, each row turned to face across at the other.
   //
-  // The road crosses this terrace diagonally — tangent (-0.44, -0.90) — so rows squared to
-  // the world met it at 26° and their end houses stood in the carriageway. A street beside a
-  // road runs with the road: both rows are offset 10.5 m either side of the centreline and
-  // spaced 11 m apart along it, which is the same street it always was, turned to face the
-  // traffic it is beside. Their yaws follow: each row faces across at the other.
-  { id: 'ov-machiya-1', kind: 'machiya', x: 48.5, z: -41.5, rot: 2.026, opts: { w: 8, d: 10, floors: 2, sign: true } },
-  { id: 'ov-machiya-2', kind: 'machiya', x: 54.5, z: -32.3, rot: 2.026, opts: { w: 8, d: 10, floors: 2 } },
-  { id: 'ov-machiya-3', kind: 'machiya', x: 59.4, z: -22.5, rot: 2.026, opts: { w: 8, d: 10, floors: 1, sign: true } },
-  { id: 'ov-machiya-4', kind: 'machiya', x: 67.4, z: -50.7, rot: -1.115, opts: { w: 8, d: 10, floors: 2 } },
-  { id: 'ov-machiya-5', kind: 'machiya', x: 73.4, z: -41.5, rot: -1.115, opts: { w: 8, d: 10, floors: 1, sign: true } },
-  { id: 'ov-machiya-6', kind: 'machiya', x: 78.3, z: -31.7, rot: -1.115, opts: { w: 8, d: 10, floors: 2 } },
-  // Back on the terrace now that it is wide enough: behind the east row, off the road.
-  { id: 'ov-warehouse', kind: 'warehouse', x: 84.0, z: -47.0, rot: -1.115, opts: { w: 10, d: 8 } },
-  { id: 'ov-bathhouse', kind: 'bathhouse', x: 59.8, z: -61.9, rot: -2.68, opts: { w: 10, d: 8 } },
-  { id: 'ov-gate-s', kind: 'gate', x: 69.0, z: -24.5, rot: -2.68},
-  { id: 'ov-gate-n', kind: 'gate', x: 52.0, z: -60.0, rot: -2.68},
-  { id: 'ov-well', kind: 'well', x: 63.5, z: -17.0, rot: 0},
-  { id: 'ov-lantern-1', kind: 'post-lantern', x: 60, z: -44, rot: 0 },
-  { id: 'ov-lantern-2', kind: 'post-lantern', x: 69, z: -37, rot: 0 },
-  { id: 'ov-lantern-3', kind: 'post-lantern', x: 60, z: -30, rot: 0 },
-  { id: 'ov-bench-1', kind: 'bench', x: 69, z: -44, rot: -1.047},
+  // Both rows used to be turned the other way — facing outward, backs to the street, which is
+  // the one arrangement a street cannot survive. The yaws below are the same two angles as
+  // before with the rows swapped, which is all it took; the sign of a yaw is the difference
+  // between a village and the back of a stage set.
+  //
+  // The row houses are spaced 8–9 m along the road, so their eaves touch. That is what a
+  // 町屋 terrace *is* — party walls, one continuous frontage — and the placement audit knows
+  // to allow it between machiya and nothing else.
+  { id: 'ov-machiya-1', kind: 'machiya', x: 59.7, z: -21.1, rot: -1.118, opts: { w: 8, d: 10, floors: 2, sign: true } },
+  { id: 'ov-machiya-2', kind: 'machiya', x: 56.2, z: -28.3, rot: -1.118, opts: { w: 8, d: 10, floors: 2 } },
+  { id: 'ov-machiya-3', kind: 'machiya', x: 51.9, z: -35.5, rot: -0.976, opts: { w: 8, d: 10, floors: 1, sign: true } },
+  { id: 'ov-bathhouse', kind: 'bathhouse', x: 45.4, z: -45.6, rot: -0.976, opts: { w: 10, d: 8 } },
+  // The kura anchors the far end of the east row, where the street meets its north gate.
+  { id: 'ov-warehouse', kind: 'warehouse', x: 81.1, z: -24.8, rot: 2.024, opts: { w: 10, d: 8 } },
+  { id: 'ov-machiya-4', kind: 'machiya', x: 76.5, z: -35.9, rot: 2.024, opts: { w: 8, d: 10, floors: 2 } },
+  { id: 'ov-machiya-5', kind: 'machiya', x: 71.0, z: -46.0, rot: 2.166, opts: { w: 8, d: 10, floors: 1, sign: true } },
+  { id: 'ov-machiya-6', kind: 'machiya', x: 66.5, z: -52.6, rot: 2.166, opts: { w: 8, d: 10, floors: 2 } },
+  { id: 'ov-gate-s', kind: 'gate', x: 72.9, z: -18.6, rot: -2.689 },
+  { id: 'ov-gate-n', kind: 'gate', x: 49.7, z: -58.2, rot: -2.547 },
+  { id: 'ov-well', kind: 'well', x: 60.9, z: -60.9, rot: 2.166 },
+  { id: 'ov-lantern-1', kind: 'post-lantern', x: 61.4, z: -26.3, rot: -1.118 },
+  { id: 'ov-lantern-2', kind: 'post-lantern', x: 70.9, z: -38.8, rot: 2.024 },
+  { id: 'ov-lantern-3', kind: 'post-lantern', x: 60.0, z: -55.5, rot: 2.166 },
+  { id: 'ov-bench-1', kind: 'bench', x: 57.9, z: -33.5, rot: -1.118 },
 
   // ═══ North Harbour (0, -74) — the working fishery ═══════════════════════
+  // Both funaya now face the bay, which is the only direction a boat house can face: the
+  // ground floor is open so a boat can be pulled up the slipway straight into it, and the
+  // pair of them used to have that slipway pointing at the coast road.
   { id: 'nh-torii-sea', kind: 'torii', x: 0, z: -110, rot: 0.1, scale: 1.4, opts: { inWater: true } },
   { id: 'nh-pier-e', kind: 'pier', x: 8, z: -86, rot: Math.PI, opts: { length: 20, width: 5 } },
   { id: 'nh-pier-w', kind: 'pier', x: -16, z: -84, rot: Math.PI * 1.1, opts: { length: 16, width: 4.5 } },
-  { id: 'nh-boathouse-1', kind: 'boathouse', x: -24.7, z: -83.3, rot: Math.PI * 0.85, opts: { w: 7, d: 10 } },
-  { id: 'nh-boathouse-2', kind: 'boathouse', x: -27, z: -61.9, rot: Math.PI * 0.7, opts: { w: 6.5, d: 9 } },
-  { id: 'nh-shed', kind: 'warehouse', x: 11.7, z: -63.5, rot: -0.2, opts: { w: 10, d: 8 } },
-  { id: 'nh-minka', kind: 'minka', x: -11.7, z: -63.5, rot: 0.2, opts: { w: 10, d: 8 } },
-  { id: 'nh-netrack-1', kind: 'net-rack', x: 6, z: -82, rot: -0.2 },
-  { id: 'nh-netrack-2', kind: 'net-rack', x: -6, z: -82, rot: 0.2 },
-  { id: 'nh-boat-1', kind: 'boat', x: -8, z: -94, rot: 0.2, scale: 0.85 },
+  { id: 'nh-boathouse-1', kind: 'boathouse', x: -22.1, z: -83.0, rot: 0.073, opts: { w: 7, d: 10 } },
+  { id: 'nh-boathouse-2', kind: 'boathouse', x: -6.1, z: -83.7, rot: 0.073, opts: { w: 6.5, d: 9 } },
+  { id: 'nh-shed', kind: 'warehouse', x: 15.8, z: -61.8, rot: -0.073, opts: { w: 10, d: 8 } },
+  { id: 'nh-minka', kind: 'minka', x: -13.5, z: -60.7, rot: 0.073, opts: { w: 10, d: 8 } },
+  { id: 'nh-netrack-1', kind: 'net-rack', x: 7.1, z: -81.0, rot: 3.069 },
+  { id: 'nh-netrack-2', kind: 'net-rack', x: 3.1, z: -81.3, rot: 3.069 },
+  { id: 'nh-boat-1', kind: 'boat', x: -10, z: -95, rot: 0.2, scale: 0.85 },
   { id: 'nh-boat-2', kind: 'boat', x: 16, z: -96, rot: -0.4, scale: 0.8 },
-  { id: 'nh-seawall', kind: 'sea-wall', x: 22, z: -77, rot: 1.2, opts: { length: 18 } },
-  { id: 'nh-bell', kind: 'bell-tower', x: -13.1, z: -79.4, rot: 0, scale: 0.75 },
-  { id: 'nh-stage', kind: 'stage', x: 0, z: -62, rot: Math.PI, opts: { w: 11, d: 8 } },
+  { id: 'nh-seawall', kind: 'sea-wall', x: 23, z: -102.8, rot: 1.63, opts: { length: 14 } },
+  { id: 'nh-bell', kind: 'bell-tower', x: 13.1, z: -79.6, rot: 3.069, scale: 0.75 },
+  { id: 'nh-stage', kind: 'stage', x: 0.5, z: -61.2, rot: 0.073, opts: { w: 11, d: 8 } },
   { id: 'nh-rock-1', kind: 'rock', x: -32, z: -88, rot: 1.4, scale: 1.4 },
 
   // ═══ Lighthouse Cape (-64, -37) — the exposed high cape ═════════════════
+  // The keeper's cottage and the store are a mirrored pair across the coast road, both
+  // addressing it. The railing is on the seaward rim of the terrace where the ground
+  // genuinely falls away — it used to stand on flat grass in the middle of the cape.
   { id: 'lh-tower', kind: 'lighthouse', x: -72, z: -43, rot: -0.524, scale: 0.92 },
-  { id: 'lh-keepers', kind: 'keepers-house', x: -49.0, z: -30.0, rot: -0.7, opts: { w: 10, d: 7.5 } },
-  { id: 'lh-store', kind: 'warehouse', x: -79.0, z: -30.0, rot: 1.047, opts: { w: 10, d: 7.5 } },
-  { id: 'lh-rail', kind: 'rail', x: -64, z: -46, rot: 0.15, opts: { length: 16 } },
-  { id: 'lh-bench-1', kind: 'bench', x: -74, z: -45, rot: 0.896 },
-  { id: 'lh-lantern-1', kind: 'post-lantern', x: -55, z: -42, rot: 0 },
+  { id: 'lh-keepers', kind: 'keepers-house', x: -60.6, z: -22.9, rot: 1.118, opts: { w: 10, d: 7.5 } },
+  { id: 'lh-store', kind: 'warehouse', x: -77.7, z: -31.2, rot: -2.024, opts: { w: 10, d: 7.5 } },
+  { id: 'lh-rail', kind: 'rail', x: -85.2, z: -54.9, rot: 2.452, opts: { length: 16 } },
+  { id: 'lh-bench-1', kind: 'bench', x: -68.2, z: -43.2, rot: -2.166 },
+  { id: 'lh-lantern-1', kind: 'post-lantern', x: -56.7, z: -35.4, rot: 0.976 },
   { id: 'lh-rock-1', kind: 'rock', x: -78, z: -52, rot: 0.8, scale: 1.7 },
   { id: 'lh-rock-2', kind: 'rock', x: -50, z: -50, rot: 2.4, scale: 1.2 },
 
   // ═══ Shrine (-64, 37) — the western headland ════════════════════════════
-  // The approach runs east→west along the sando: three torii, then the hall.
-  { id: 'sr-torii-1', kind: 'torii', x: -46, z: 34, rot: Math.PI * 0.5, scale: 1.35 },
-  { id: 'sr-torii-2', kind: 'torii', x: -54, z: 35, rot: Math.PI * 0.5, scale: 1.25 },
-  { id: 'sr-torii-3', kind: 'torii', x: -60, z: 36, rot: Math.PI * 0.5, scale: 1.15 },
-  { id: 'sr-komainu-l', kind: 'komainu', x: -66, z: 30, rot: Math.PI * 0.5, opts: { side: 1 } },
-  { id: 'sr-komainu-r', kind: 'komainu', x: -66, z: 44, rot: Math.PI * 0.5, opts: { side: -1 } },
-  { id: 'sr-temizuya', kind: 'temizuya', x: -62.8, z: 51.1, rot: 0},
-  { id: 'sr-hall', kind: 'shrine-hall', x: -78, z: 37, rot: Math.PI * 0.5, opts: { w: 12, d: 10, honden: true } },
-  { id: 'sr-bell', kind: 'bell-tower', x: -62.8, z: 22.9, rot: 0},
-  { id: 'sr-lantern-1', kind: 'stone-lantern', x: -72, z: 29, rot: 0, scale: 1.15 },
-  { id: 'sr-lantern-2', kind: 'stone-lantern', x: -72, z: 45, rot: 0, scale: 1.15 },
-  { id: 'sr-lantern-3', kind: 'stone-lantern', x: -54, z: 29, rot: 0 },
-  { id: 'sr-lantern-4', kind: 'stone-lantern', x: -54, z: 45, rot: 0 },
-  { id: 'sr-rock-1', kind: 'rock', x: -86, z: 48, rot: 0.5, scale: 1.5 },
+  // The whole composition is one line: the **sandō**, which is `shrine-ascent`'s first leg
+  // running east-south-east from the T where it meets the coast road at (-64, 37).
+  //
+  // It was previously drawn approximately. The three torii sat one, two and four metres off
+  // that line at yaws 21° from square to it, so the gates you walk through were neither on the
+  // path nor across it; and the hall stood at the far end facing *west*, with its back to its
+  // own approach and its doors looking out to sea.
+  //
+  // Now every one of these is placed by station along the sandō and squared to it: the hall at
+  // its head fourteen metres west of the T, exactly where the road crosses, facing back down
+  // the approach; the three gates on the centreline at 6, 13 and 20 m, growing as they go out;
+  // the guardian dogs, the bell and the basin in mirrored pairs either side.
+  { id: 'sr-torii-1', kind: 'torii', x: -45.4, z: 29.8, rot: 1.941, scale: 1.35 },
+  { id: 'sr-torii-2', kind: 'torii', x: -51.9, z: 32.3, rot: 1.941, scale: 1.25 },
+  { id: 'sr-torii-3', kind: 'torii', x: -58.4, z: 34.8, rot: 1.941, scale: 1.15 },
+  { id: 'sr-komainu-l', kind: 'komainu', x: -65.8, z: 44.7, rot: -1.203, opts: { side: 1 } },
+  { id: 'sr-komainu-r', kind: 'komainu', x: -70.6, z: 32.5, rot: -1.203, opts: { side: -1 } },
+  { id: 'sr-temizuya', kind: 'temizuya', x: -67.2, z: 51.1, rot: -1.203 },
+  { id: 'sr-hall', kind: 'shrine-hall', x: -77.0, z: 42.1, rot: -1.203, opts: { w: 11, d: 9, honden: true } },
+  { id: 'sr-bell', kind: 'bell-tower', x: -75.9, z: 28.7, rot: -1.203 },
+  { id: 'sr-lantern-1', kind: 'stone-lantern', x: -53.4, z: 39.3, rot: -1.203, scale: 1.15 },
+  { id: 'sr-lantern-2', kind: 'stone-lantern', x: -57.8, z: 28.1, rot: -1.203, scale: 1.15 },
+  { id: 'sr-lantern-3', kind: 'stone-lantern', x: -46.4, z: 36.6, rot: -1.203 },
+  { id: 'sr-lantern-4', kind: 'stone-lantern', x: -50.8, z: 25.4, rot: -1.203 },
+  { id: 'sr-rock-1', kind: 'rock', x: -88, z: 52, rot: 0.5, scale: 1.5 },
   { id: 'sr-rock-2', kind: 'rock', x: -84, z: 24, rot: 2.1, scale: 1.2 },
 
   // ═══ Summit (0, 0) — the inner shrine, at the top of everything ═════════
-  { id: 'su-torii', kind: 'torii', x: 0, z: 9, rot: 0, scale: 1.2 },
-  { id: 'su-hall', kind: 'shrine-hall', x: 0, z: -9, rot: 0, opts: { w: 9, d: 7.5, honden: true, small: true } },
-  { id: 'su-bell', kind: 'bell-tower', x: 10.9, z: -4.6, rot: 0, scale: 0.85 },
+  // A court, now that the road has been taken out of the middle of it — see `south-approach`.
+  // North–south axis: you come up to the junction sixteen metres south, walk in through the
+  // torii, pass the summit stone at the true peak, and the hall is at the head facing you,
+  // flanked by the bell and the basin. Everything is inside the terrace's flat sixteen metres.
+  { id: 'su-torii', kind: 'torii', x: 0, z: 8.5, rot: 0, scale: 1.2 },
+  { id: 'su-marker', kind: 'summit-marker', x: 0, z: 0, rot: 0 },
+  { id: 'su-hall', kind: 'shrine-hall', x: 0, z: -9, rot: 3.142, opts: { w: 9, d: 7.5, honden: true, small: true } },
+  { id: 'su-bell', kind: 'bell-tower', x: 9.3, z: 1.5, rot: 3.142, scale: 0.85 },
   // The bell tower's mirror. A shrine court reads as a court because the approach is flanked;
   // with the bell alone on one side, the summit was symmetric everywhere except at eye level.
-  { id: 'su-temizuya', kind: 'temizuya', x: -10.9, z: -4.6, rot: 0 },
-  { id: 'su-marker', kind: 'summit-marker', x: -7, z: -3, rot: 0 },
-  { id: 'su-rail', kind: 'rail', x: -3, z: 6, rot: 0, opts: { length: 8 } },
-  { id: 'su-lantern-1', kind: 'stone-lantern', x: -7, z: -8, rot: 0 },
-  { id: 'su-lantern-2', kind: 'stone-lantern', x: 7, z: -8, rot: 0 },
-  { id: 'su-bench-1', kind: 'bench', x: -10, z: 3, rot: 0.4 },
-  { id: 'su-bench-2', kind: 'bench', x: 10, z: 3, rot: -0.4 },
-  { id: 'su-rock-1', kind: 'rock', x: 14, z: -12, rot: 1.2, scale: 1.2 },
-  { id: 'su-rock-2', kind: 'rock', x: -14, z: -13, rot: 0.3, scale: 1.4 },
+  { id: 'su-temizuya', kind: 'temizuya', x: -9.3, z: 1.5, rot: 3.142 },
+  // The belvedere, out on the western rim where the mountain actually starts to fall away.
+  // A railing is a statement that there is a drop here; on the flat of the court it was
+  // fencing off nothing at all.
+  { id: 'su-rail', kind: 'rail', x: -23.8, z: -7.7, rot: -0.398, opts: { length: 12 } },
+  { id: 'su-lantern-1', kind: 'stone-lantern', x: -3.8, z: 4.5, rot: 3.142 },
+  { id: 'su-lantern-2', kind: 'stone-lantern', x: 3.8, z: 4.5, rot: 3.142 },
+  { id: 'su-bench-1', kind: 'bench', x: -11.5, z: -5, rot: 0.4 },
+  { id: 'su-bench-2', kind: 'bench', x: 11.5, z: -5, rot: -0.4 },
+  { id: 'su-rock-1', kind: 'rock', x: 17, z: -14, rot: 1.2, scale: 1.2 },
+  { id: 'su-rock-2', kind: 'rock', x: -16, z: -15, rot: 0.3, scale: 1.4 },
 ] as const;
 
 const ACTIVITY_TEMPLATES: MapPack['world']['activityTemplates'] = [

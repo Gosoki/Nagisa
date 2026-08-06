@@ -39,6 +39,38 @@ interface Viewpoint {
   target: [number, number, number];
   /** Vertical field of view. Wider for landscapes, tighter for architecture. */
   fov?: number;
+  /**
+   * Which way is up in frame. Only meaningful looking straight down, where `lookAt` has no
+   * roll to derive — `-z` puts north at the top, matching the minimap and the plan diagrams.
+   */
+  up?: [number, number, number];
+  /** Skip the crowd. A plan view wants to see the ground, not nine people standing on it. */
+  empty?: boolean;
+}
+
+/**
+ * A plan view: straight down over a place, framing `span` metres, north up.
+ *
+ * The camera stays a perspective one — the renderer's ink pass, its shadow box and its
+ * adaptive resolution all read `renderer.camera`, and swapping in an orthographic camera to
+ * get parallel projection would mean auditing all three. From 340 m up a `span`-metre window
+ * subtends a few degrees, and the convergence across it is small enough that a roof ridge
+ * still reads as parallel to the wall under it, which is all these are for.
+ *
+ * They exist because a layout defect is a *plan* defect: a building in the road, a door on
+ * the wrong side, two roofs interpenetrating. From eye level the first is hidden by the
+ * second and from an oblique aerial the roofs hide the ground. `tools/plan-diagram.mjs`
+ * draws the same thing from the data; this is the check that the data and the geometry agree.
+ */
+function plan(cx: number, cz: number, ground: number, span: number): Viewpoint {
+  const altitude = 340;
+  return {
+    eye: [cx, ground + altitude, cz],
+    target: [cx, ground, cz],
+    fov: (2 * Math.atan(span / 2 / altitude) * 180) / Math.PI,
+    up: [0, 0, -1],
+    empty: true,
+  };
 }
 
 /**
@@ -88,6 +120,17 @@ const VIEWPOINTS: Record<string, Viewpoint> = {
    * origin is the summit, and a camera at eye height there is buried inside the terrain.
    */
   figure: { eye: [66.6, 9.5, 43.2], target: [64, 9, 40], fov: 38 },
+
+  // Plan views — one per terrace, plus the island. See `plan()` above.
+  'plan-island': plan(0, 0, 8, 300),
+  'plan-summit': plan(0, 0, 26, 76),
+  'plan-shrine': plan(-64, 37, 11, 96),
+  'plan-street': plan(64, -37, 9, 96),
+  'plan-plaza': plan(64, 37, 8, 100),
+  'plan-south': plan(0, 74, 2.4, 96),
+  'plan-north': plan(0, -74, 2.4, 96),
+  'plan-lighthouse': plan(-64, -37, 13, 96),
+  'plan-beach': plan(46, 92, 1.6, 72),
 };
 
 const params = new URLSearchParams(location.search);
@@ -155,6 +198,7 @@ async function main(): Promise<void> {
     // The figure view wants exactly one subject, standing at the point the camera is
     // aimed at; every other view wants a ring of them in front of the venue.
     if (viewName === 'figure' && i > 0) continue;
+    if (view.empty) continue;
     const x = viewName === 'figure' ? view.target[0] : anchor.x + Math.cos(angle) * radius;
     const z = viewName === 'figure' ? view.target[2] : anchor.z + Math.sin(angle) * radius;
     const character = new Character({ outfit: i, skin: i % 5, accessory: i % 5 });
@@ -192,6 +236,8 @@ async function main(): Promise<void> {
 
   const camera = renderer.camera;
   camera.position.set(...view.eye);
+  // Before `lookAt`, which derives the roll from it. Straight down has no natural up.
+  if (view.up) camera.up.set(...view.up);
   camera.lookAt(...view.target);
   if (view.fov) {
     camera.fov = view.fov;

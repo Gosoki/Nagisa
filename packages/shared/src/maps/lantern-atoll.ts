@@ -176,11 +176,11 @@ export const LANTERN_ATOLL: MapPack = {
       // ── The landing ─────────────────────────────────────────────────────────
       // The pair of huts and the pair of lanterns are mirrored about the x = 0 lane, which
       // is the axis you arrive along: what you see first is symmetrical, and everything
-      // further round the ring is not.
+      // further round the ring is not. Both huts open onto the lane rather than away from it.
       { id: 'at-pier', kind: 'pier', x: 0, z: 76, rot: 0 },
       { id: 'at-boat', kind: 'boat', x: -7, z: 78, rot: 0.3 },
-      { id: 'at-hut-w', kind: 'beach-hut', x: -15.7, z: 64.6, rot: Math.PI / 2 },
-      { id: 'at-hut-e', kind: 'beach-hut', x: 15.7, z: 64.6, rot: -Math.PI / 2 },
+      { id: 'at-hut-w', kind: 'beach-hut', x: -18.7, z: 62.7, rot: -0.388 },
+      { id: 'at-hut-e', kind: 'beach-hut', x: 18.6, z: 62.7, rot: 0.388 },
       { id: 'at-board', kind: 'notice-board', x: 0, z: 54, rot: 0 },
       { id: 'at-lantern-w', kind: 'post-lantern', x: -5, z: 68, rot: 0 },
       { id: 'at-lantern-e', kind: 'post-lantern', x: 5, z: 68, rot: 0 },
@@ -188,31 +188,34 @@ export const LANTERN_ATOLL: MapPack = {
       { id: 'at-rock-e', kind: 'rock', x: 22, z: 69, rot: 2.1, scale: 0.9 },
 
       // ── Lantern house ───────────────────────────────────────────────────────
-      // The tower, its keeper's house set back and to one side, and two stone lanterns
-      // flanking the approach — mirrored about z = 0, which is the lane's axis here.
-      { id: 'at-tower', kind: 'lighthouse', x: -52.6, z: 0.4, rot: 0 },
-      { id: 'at-keeper', kind: 'keepers-house', x: -46.8, z: -8.7, rot: -0.876 },
+      // The tower and the keeper's house both stand on the seaward side of the lane and both
+      // address it; the stone lanterns flank the approach, mirrored about z = 0. The two sea
+      // walls are out on the bank where the sand actually drops to the water — they used to
+      // stand on the flat of the terrace, twenty metres short of anything to hold back.
+      { id: 'at-tower', kind: 'lighthouse', x: -70.4, z: -3.7, rot: -1.959 },
+      { id: 'at-keeper', kind: 'keepers-house', x: -65.2, z: -15.6, rot: -1.959 },
       { id: 'at-stone-n', kind: 'stone-lantern', x: -RING_RADIUS + 9, z: -5, rot: 0 },
       { id: 'at-stone-s', kind: 'stone-lantern', x: -RING_RADIUS + 9, z: 5, rot: 0 },
-      { id: 'at-wall-n', kind: 'sea-wall', x: -RING_RADIUS - 6, z: -12, rot: 0.2 },
-      { id: 'at-wall-s', kind: 'sea-wall', x: -RING_RADIUS - 6, z: 12, rot: -0.2 },
+      { id: 'at-wall-n', kind: 'sea-wall', x: -86.4, z: -11, rot: 0.02, opts: { length: 16 } },
+      { id: 'at-wall-s', kind: 'sea-wall', x: -84.5, z: 8, rot: 0.35, opts: { length: 16 } },
 
       // ── North camp ──────────────────────────────────────────────────────────
       // One-sided on purpose. A ring where every place is symmetrical reads as a diagram.
-      { id: 'at-shelter-a', kind: 'beach-hut', x: -9.8, z: -67.0, rot: -0.175 },
-      { id: 'at-shelter-b', kind: 'beach-hut', x: 2.4, z: -69.3, rot: -0.1 },
-      { id: 'at-net-rack', kind: 'net-rack', x: 13, z: -RING_RADIUS - 2, rot: -0.175 },
+      { id: 'at-shelter-a', kind: 'beach-hut', x: 14.2, z: -64.5, rot: 2.753 },
+      { id: 'at-shelter-b', kind: 'beach-hut', x: -13.9, z: -64.6, rot: -2.753 },
+      { id: 'at-net-rack', kind: 'net-rack', x: 19.6, z: -61.9, rot: 2.753 },
       { id: 'at-bench-n', kind: 'bench', x: -2, z: -RING_RADIUS + 7, rot: Math.PI },
       { id: 'at-well', kind: 'well', x: 7.1, z: -52.4, rot: 0 },
 
       // ── East market ─────────────────────────────────────────────────────────
-      // Two stalls facing each other across the lane, with a lantern at each end of the
-      // gap between them: the one place on the atoll that is a street rather than a shore.
-      { id: 'at-stall-n', kind: 'market-stall', x: 52.4, z: -6.8, rot: -Math.PI / 2 },
-      { id: 'at-stall-s', kind: 'market-stall', x: 52.4, z: 6.8, rot: Math.PI / 2 },
-      { id: 'at-banner-n', kind: 'banner', x: RING_RADIUS - 3, z: -11, rot: 0 },
-      { id: 'at-banner-s', kind: 'banner', x: RING_RADIUS - 3, z: 11, rot: 0 },
-      { id: 'at-warehouse', kind: 'warehouse', x: 71.4, z: 2.1, rot: -Math.PI / 2 },
+      // A row rather than two facing rows: both stalls on the seaward side of the lane with
+      // the kura behind them, all three turned to the traffic. The stalls are mirrored about
+      // z = 0, so the market still reads as composed from the lane you arrive on.
+      { id: 'at-stall-n', kind: 'market-stall', x: 65.0, z: -8.7, rot: 1.959 },
+      { id: 'at-stall-s', kind: 'market-stall', x: 64.9, z: 8.8, rot: 1.182 },
+      { id: 'at-banner-n', kind: 'banner', x: 62.3, z: -15.2, rot: 1.959 },
+      { id: 'at-banner-s', kind: 'banner', x: 62.2, z: 15.3, rot: 1.182 },
+      { id: 'at-warehouse', kind: 'warehouse', x: 75.0, z: 1.0, rot: 1.494 },
       { id: 'at-market-bench', kind: 'bench', x: RING_RADIUS - 14, z: 0, rot: -Math.PI / 2 },
     ],
 

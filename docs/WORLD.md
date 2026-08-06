@@ -246,9 +246,34 @@ violations in 110 000 steps.
 | Command | What it does |
 |---|---|
 | `npm run map` | Shaded relief map with routes, terraces and every unwalkable pixel in red |
+| `npm run plans` | One plan drawing per place: terrain, carriageway, every built footprint, and an arrow out of each door |
 | `node tools/flatness.mjs` | Ground variation under every building's footprint |
+| `npm run audit:terrain` | Walkability: pinholes, stranded pockets, snags on the lanes and terraces, reachability |
+| `npm run audit:placement` | Layout: symmetry, orientation, overlaps, buildings in the carriageway, doors turned away from the road, walls holding nothing back |
 | `npm run test:world` | The invariants: finite heights, pads at their authored level, every route walkable, every building level, the walkability contract |
 | `npm run shots` | Thirteen viewpoints rendered to PNG through the real pipeline |
+| `node tools/shot.mjs plans` | The same places again, but from directly overhead, through the real renderer |
+| `node scripts/layout-solve.mjs --intent f.json` | Turns *station along a lane, offset, facing* into `x`, `z` and a yaw |
 
 The map is the one to reach for first when something looks wrong. The failure modes of a
 procedural world are spatial, and reading numbers does not catch them.
+
+### Placing a building beside a road
+
+Author it in road coordinates and let `scripts/layout-solve.mjs` do the trigonometry. Two
+things go wrong every time they are typed by hand:
+
+- **The setback has to clear what the building *occupies*, not what its walls enclose.** Eaves
+  overhang by 0.6–1.5 m, a minka's veranda and steps reach 2.4 m past its front wall, a
+  funaya's slipway 4.3 m past its. A pass that measured wall lines once left nineteen
+  buildings standing in a carriageway while believing none were.
+- **A yaw says which way a building is *turned*, not merely how it is squared up.** Every
+  builder in `props/buildings.ts` models its entrance on the local −z face, so `rot` and
+  `rot + π` are opposite buildings, not the same one. Both rows of the Old Street were
+  authored with their backs to it.
+
+The rule, and what `audit:placement` enforces: a frontage may address the road or stand
+side-on to it, never turn away. The exemption is a frontage that opens onto water within
+46 m — a boat house, a beach hut, a stage playing to a crowd sitting on the sand — which is
+measured against the terrain rather than declared per kind, because the same kind is right
+both ways round on the same island.

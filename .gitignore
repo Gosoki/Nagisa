@@ -9,3 +9,4 @@ dist/
 # Development render output (tools/shot.mjs, tools/app-smoke.mjs, scripts/world-map.mjs)
 shots/
 *.png
+plans/

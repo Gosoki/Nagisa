@@ -27,7 +27,7 @@
    */
   import { onMount } from 'svelte';
   import { ISLAND_EXTENT, PATHS, SCENE_COLORS, SUMMIT, ZONES, activeMapId, heightAt, isLand } from '@nagisa/shared';
-  import { followTarget, planImage, players, selfPose, settings } from '../state/stores.js';
+  import { currentZone, followTarget, planImage, players, selfPose, settings } from '../state/stores.js';
 
   /** On-screen size, CSS pixels. */
   const SIZE = 168;
@@ -96,7 +96,11 @@
     const canvas = document.createElement('canvas');
     canvas.width = BAKE_RES;
     canvas.height = BAKE_RES;
-    const ctx = canvas.getContext('2d')!;
+    // `getContext` is allowed to return null — jsdom always does, and a real browser will
+    // under memory pressure. A minimap that cannot draw should be a blank badge, not a
+    // thrown exception inside `onMount` that takes the whole overlay down with it.
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return canvas;
     const image = ctx.createImageData(BAKE_RES, BAKE_RES);
     const step = (EXTENT * 2) / BAKE_RES;
     // Normalise height against *this map's* summit. A literal here was fine for one island
@@ -170,7 +174,8 @@
       liveCanvas.width = size * dpr;
       liveCanvas.height = size * dpr;
     }
-    const ctx = liveCanvas.getContext('2d')!;
+    const ctx = liveCanvas.getContext('2d');
+    if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, size, size);
     ctx.drawImage(base, 0, 0, size, size);
@@ -284,6 +289,19 @@
       tabindex="0"
       aria-label={expanded ? 'Collapse map' : 'Expand map'}
     ></canvas>
+    <!--
+      Where you are, directly under where you are on the map.
+
+      It used to sit in the corner opposite the minimap, which meant the two halves of the
+      same question — *which place is this* and *where is that place* — were as far apart as
+      the screen allows. Reading them together took a saccade across the whole viewport.
+    -->
+    {#if $currentZone}
+      <div class="zone">
+        <span class="zone-name">{$currentZone.name}</span>
+        <span class="zone-ja">{$currentZone.nameJa}</span>
+      </div>
+    {/if}
     {#if $followTarget}
       <button class="following" on:click={() => followTarget.set(null)}>
         Following {$followTarget.name} · stop
@@ -293,16 +311,42 @@
 {/if}
 
 <style>
+  /* Top-left, with the place name under it. The top-right corner belongs to the icon
+     buttons and the headcount, which are controls; this corner is where you *are*. */
   .minimap {
     position: absolute;
     top: var(--sp-md);
-    right: var(--sp-md);
+    left: var(--sp-md);
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
+    align-items: flex-start;
     gap: var(--sp-xs);
     pointer-events: none;
     z-index: var(--z-hud);
+  }
+
+  /* On a surface, like every other piece of HUD chrome. Bare text at `--ui-ink-faint` was
+     invisible the moment the camera pointed at pale stone, which on this island is most of
+     the time. */
+  .zone {
+    padding: 2px 10px 3px;
+    border-radius: 999px;
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow);
+    white-space: nowrap;
+  }
+
+  .zone-name {
+    font-size: var(--fs-xs);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ui-ink-muted);
+  }
+
+  .zone-ja {
+    margin-left: var(--sp-xs);
+    font-size: var(--fs-xs);
+    color: var(--ui-ink-faint);
   }
 
   canvas {
@@ -336,7 +380,7 @@
     .minimap {
       top: auto;
       bottom: var(--sp-md);
-      right: var(--sp-md);
+      left: var(--sp-md);
     }
   }
 </style>

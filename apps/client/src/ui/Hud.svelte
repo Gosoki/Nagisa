@@ -3,10 +3,15 @@
    * Hud — the persistent in-world layer, shown while `$appPhase === 'world'`.
    *
    * This is the "always on" surface, so it is held to the tightest budget in the whole
-   * overlay: a small zone label top-left, up to four small icon buttons top-right, and
-   * one emote button plus an occasional contextual prompt bottom-centre. Nothing here is
-   * a panel — the icon buttons only *open* panels, which live in Panels.svelte and are
-   * absent from the screen until requested.
+   * overlay: the headcount and up to four small icon buttons top-right, and one emote
+   * button plus an occasional contextual prompt bottom-centre. Nothing here is a panel —
+   * the icon buttons only *open* panels, which live in Panels.svelte and are absent from
+   * the screen until requested.
+   *
+   * The top-*left* corner is the minimap's, and the name of the place you are standing in
+   * goes underneath it (see Minimap.svelte) rather than here. Two facts about your
+   * location belong next to each other; the headcount is a fact about the room, so it
+   * moved across to sit with the button that lists the people in it.
    *
    * The host button is the one piece of chrome that appears/disappears based on state
    * (`$isHost`), rather than always being present and disabled — an inert 4th icon would
@@ -21,32 +26,40 @@
     interactPrompt,
     emoteOpen,
     connectionTroubled,
+    settings,
     togglePanel,
     cmd,
   } from '../state/stores.js';
 </script>
 
-<div class="top-left">
-  {#if $currentZone}
+<!--
+  The place name normally lives under the minimap, in Minimap.svelte, so that "where am I"
+  and "where is that" are one glance rather than two corners. This is the fallback for a
+  session with the minimap switched off, which would otherwise lose the name entirely.
+-->
+{#if $currentZone && $settings.minimap === false}
+  <div class="top-left">
     <div class="zone">
       <span class="zone-name">{$currentZone.name}</span>
       <span class="zone-ja">{$currentZone.nameJa}</span>
     </div>
-  {/if}
-  <div class="population" aria-label="{$population} on the island">
-    <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
-      <circle cx="12" cy="8" r="3.4" fill="var(--ui-ink-muted)" />
-      <path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5" fill="none" stroke="var(--ui-ink-muted)" stroke-width="1.6" stroke-linecap="round" />
-    </svg>
-    <span>{$population}</span>
   </div>
-</div>
+{/if}
 
 {#if $connectionTroubled}
   <p class="reconnecting" role="status">Reconnecting…</p>
 {/if}
 
 <div class="top-right">
+  <!-- How many people are here, beside the button that says who they are. -->
+  <div class="population" aria-label="{$population} on the island">
+    <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.4" fill="currentColor" />
+      <path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+    </svg>
+    <span>{$population}</span>
+  </div>
+
   <button
     type="button"
     class="icon-btn"
@@ -158,12 +171,27 @@
     color: var(--ui-ink-faint);
   }
 
+  /**
+   * A pill, not bare text.
+   *
+   * Sitting in the top-left over a dark quay it was legible; moved up beside the icon
+   * buttons it is over whatever the camera happens to be pointing at, and `--ui-ink-faint`
+   * on pale stone is nothing at all. Everything else in this corner solves that by standing
+   * on `--ui-surface`, so this does too — and matching the buttons' 32 px height is what
+   * keeps the row on one baseline.
+   */
   .population {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
+    height: 32px;
+    padding: 0 11px;
+    border-radius: 999px;
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow);
     font-size: var(--fs-xs);
-    color: var(--ui-ink-faint);
+    font-variant-numeric: tabular-nums;
+    color: var(--ui-ink-muted);
   }
 
   .reconnecting {
@@ -185,6 +213,7 @@
     right: max(var(--sp-md), env(safe-area-inset-right));
     z-index: var(--z-hud);
     display: flex;
+    align-items: center;
     gap: var(--sp-xs);
     pointer-events: auto;
   }

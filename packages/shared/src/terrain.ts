@@ -72,7 +72,7 @@
  */
 
 import { onMapChange } from './map/registry.js';
-import type { CoastFeature, MapRelief, MapTerrain, Pad, PathSurface, Shelf, Shelter, WorldPath } from './map/types.js';
+import type { CoastFeature, Landmark, MapRelief, MapTerrain, Pad, PathSurface, Shelf, Shelter, WorldPath } from './map/types.js';
 // Side effect: registers the built-in packs and activates one, so the bindings below are
 // populated before any consumer reads them.
 import './maps/index.js';
@@ -1310,6 +1310,109 @@ export function footingDownhill(x: number, z: number): [number, number] {
   return [-gx / len, -gz / len];
 }
 
+// ---------------------------------------------------------------------------
+// Solid structures
+// ---------------------------------------------------------------------------
+
+/**
+ * Wall footprints, `[width, depth]` in the landmark's own frame — the walls, not the eaves.
+ *
+ * Distinct from `world.landmarkExtent` on purpose. That table answers "how much room
+ * does this take up", which includes the roof, because you cannot put a lantern under an
+ * overhang. This one answers "what stops you", and a roof does not: standing under the eaves
+ * of a warehouse out of the rain is a thing a person does.
+ *
+ * Only buildings with walls are here. A torii is a gate you walk through, a stage is a
+ * platform you walk onto, a market stall is open on three sides, and a bench is something you
+ * step over. Blocking those would replace "you can walk through a wall" with a dozen invisible
+ * posts, which is a worse bug and a harder one to see.
+ */
+const SOLID_FOOTPRINTS: Readonly<Record<string, readonly [number, number]>> = {
+  warehouse: [10, 8],
+  machiya: [8, 10],
+  minka: [10, 8],
+  bathhouse: [13, 10],
+  teahouse: [11, 8.5],
+  'keepers-house': [10, 7.5],
+  boathouse: [7, 10],
+  'shrine-hall': [10, 8],
+  lighthouse: [9.3, 9.3],
+};
+
+/**
+ * Landmarks that block, with their footprints resolved and pre-rotated.
+ *
+ * Rebuilt on every map change, from the pack directly rather than through `world.ts` —
+ * both modules read the same pack, so this is a sibling of that one and not a dependency
+ * on it. `terrain.ts` owning the walkability contract is why the data has to come here:
+ * `isWalkable` is what the server validates against, and a collider the contract could not
+ * see would be a wall the client drew and the server let you walk through.
+ */
+let SOLIDS: Array<{ x: number; z: number; hw: number; hd: number; cos: number; sin: number; radius: number }> = [];
+
+function rebuildSolids(landmarks: readonly Landmark[]): void {
+  SOLIDS = [];
+  for (const l of landmarks) {
+    const base = SOLID_FOOTPRINTS[l.kind];
+    if (!base) continue;
+    const scale = l.scale ?? 1;
+    const w = ((typeof l.opts?.w === 'number' ? l.opts.w : base[0]) / 2) * scale;
+    const d = ((typeof l.opts?.d === 'number' ? l.opts.d : base[1]) / 2) * scale;
+    SOLIDS.push({
+      x: l.x,
+      z: l.z,
+      hw: w,
+      hd: d,
+      cos: Math.cos(l.rot),
+      sin: Math.sin(l.rot),
+      radius: Math.hypot(w, d),
+    });
+  }
+}
+
+/**
+ * How far inside a building's walls a point is, metres. Zero when it is outside all of them.
+ *
+ * ### Why the world needed this at all
+ *
+ * It did not have it. Every building on the island was scenery you walked straight through —
+ * no collider, no footprint, nothing. The height field is the only thing that had ever stopped
+ * a player, which is elegant right up until you walk through the front of the bathhouse and
+ * out of the back.
+ *
+ * ### Why a prism over the footprint is "hugging the terrain"
+ *
+ * Because the world is a height field and the walkability contract is horizontal: a position
+ * is a place, and its height comes from `heightAt`. A footprint tested in plan and a floor
+ * taken from the terrain *is* a collider that follows the ground exactly, with no mesh to fall
+ * through and no gap to wedge into. There is nothing to fit, because there is no second
+ * representation of the ground to fit it to.
+ *
+ * Returned as a depth rather than a boolean so {@link illegality} can order two positions
+ * inside a wall, which is what lets a player who somehow ends up inside one walk out instead
+ * of being welded in place.
+ */
+export function structureDepth(x: number, z: number): number {
+  let worst = 0;
+  for (const s of SOLIDS) {
+    const dx = x - s.x;
+    const dz = z - s.z;
+    // Circle first: two multiplies to reject nearly everything on the island.
+    if (dx * dx + dz * dz > s.radius * s.radius) continue;
+    const lx = Math.abs(dx * s.cos - dz * s.sin) - s.hw;
+    const lz = Math.abs(dx * s.sin + dz * s.cos) - s.hd;
+    if (lx >= 0 || lz >= 0) continue;
+    const depth = Math.min(-lx, -lz);
+    if (depth > worst) worst = depth;
+  }
+  return worst;
+}
+
+/** Whether a building stands at `(x, z)`. */
+export function insideStructure(x: number, z: number): boolean {
+  return structureDepth(x, z) > 0;
+}
+
 /** Steepest slope a character may stand on. Beyond this they slide. */
 export const MAX_WALKABLE_SLOPE = 0.86; // ≈ 49°
 
@@ -1349,6 +1452,12 @@ export function isWalkable(x: number, z: number): boolean {
   const h = heightAt(x, z);
   // Standing in shallow water at the shoreline is fine and looks good; deep water is not.
   if (h < -MAX_WADE_DEPTH) return false;
+  // Inside a building. Here rather than only in `canEnterFrom`, so that everything built on
+  // "where may a player be" agrees: `nearestWalkable` pushes a spawn or a correction out of
+  // a wall instead of into one, the crowd slots for an activity stop being dealt inside the
+  // old street's houses, and the terrain audit counts a warehouse as ground you cannot walk
+  // on, which it is.
+  if (structureDepth(x, z) > 0) return false;
   // Footing, not point slope. `footingSlopeAt` documents what goes wrong with the latter.
   return footingSlopeAt(x, z) <= MAX_WALKABLE_SLOPE;
 }
@@ -1540,6 +1649,16 @@ export function isSliverAt(x: number, z: number): boolean {
 export function canEnterFrom(fromX: number, fromZ: number, x: number, z: number): boolean {
   if (isWalkable(x, z)) return true;
   if (Math.abs(x) > ISLAND_EXTENT || Math.abs(z) > ISLAND_EXTENT) return false;
+  // A wall is not a slope, and none of the releases below apply to it: you cannot descend
+  // into a warehouse or step across one. Checked before them for exactly that reason.
+  //
+  // The one move allowed is *out*. A player who is somehow already inside a building — a
+  // landmark moved under them between builds, a correction that landed badly — must be able
+  // to walk out rather than be welded in place, so a step that is strictly less deep is
+  // permitted. Ordering by depth makes that checkable from the two coordinates alone, which
+  // is what lets the server agree.
+  const depth = structureDepth(x, z);
+  if (depth > 0) return depth < structureDepth(fromX, fromZ);
   const h = heightAt(x, z);
   // Deep water is never relaxed. It is the one part of the contract that is about place
   // rather than footing, and neither a run-up nor a crease should carry you into a channel.
@@ -1579,7 +1698,10 @@ export function canEnterFrom(fromX: number, fromZ: number, x: number, z: number)
 export function illegality(x: number, z: number): number {
   const depth = Math.max(0, -heightAt(x, z) - MAX_WADE_DEPTH);
   const steep = Math.max(0, footingSlopeAt(x, z) - MAX_WALKABLE_SLOPE);
-  return depth + steep * 10;
+  // Being inside a wall is the most urgent of the three: weighted above a metre of water and
+  // above a radian of overhang, so the client's escape hatch walks you out of a building
+  // before it worries about anything else you are also standing in.
+  return depth + steep * 10 + structureDepth(x, z) * 20;
 }
 
 /**
@@ -1646,5 +1768,6 @@ onMapChange((pack) => {
   pathProfiles.clear();
   pathCuts.clear();
   padRims.clear();
+  rebuildSolids(pack.world.landmarks);
   profilesUnderConstruction.clear();
 });

@@ -112,22 +112,33 @@ const C = {
   /**
    * The gravel lanes.
    *
-   * Separated from the shore by *value*, not by hue.
+   * Separated from the shore by *value*, not by hue — and by enough of it.
    *
-   * It sat at [0.871, 0.824, 0.714] — three per cent from `sand` in every channel — and a
-   * lane crossing a beach, a lane crossing a quay and the beach itself were one pale wash.
-   * The first correction pulled it grey, which fixed that and made every road on a sand-and-
-   * green island look like wet tarmac. So: still sand's family, five to twelve per cent below
-   * it, in this order — sand, paving, gravel, stone lane — which is enough for the eye to
-   * separate four surfaces that are all, correctly, the colour of ground.
+   * It sat at [0.871, 0.824, 0.714], three per cent from `sand` in every channel, and a lane
+   * crossing a beach was invisible. The correction after that pulled it grey, which fixed
+   * the beach and made every road on a sand-and-green island look like wet tarmac. The
+   * correction after *that* — this one's predecessor — put it back in sand's family five to
+   * twelve per cent below it, which reads on grass and does not read at all on the ground it
+   * spends most of its length crossing.
+   *
+   * That is the whole difficulty: a road here runs over sand, over paving and over grass, and
+   * seven per cent of value is plenty against green and nothing against cream. Looked at from
+   * above — which is how the minimap is baked, and how the question was asked — the ring road
+   * simply vanished where it crossed both harbours and the plaza.
+   *
+   * So: still earth, still warm, but eighteen to twenty per cent below the terraces rather
+   * than seven. The hue ratios are held close to `paving`'s (R:B of 1.27 against 1.18) so it
+   * stays packed earth and crushed shell rather than becoming aggregate again.
    */
-  gravel: [0.800, 0.757, 0.655],
+  gravel: [0.698, 0.647, 0.541],
   /**
    * The stone lanes. Their own tone rather than `paving`, which is what they used to be —
    * and a stone road laid across a paved terrace in the terrace's own colour is not a road
-   * you can see, only a contour line where one ought to be.
+   * you can see, only a contour line where one ought to be. A shade cooler and darker than
+   * the gravel, since it is laid stone rather than run gravel, but the same distance below
+   * the terraces.
    */
-  laneStone: [0.761, 0.737, 0.678],
+  laneStone: [0.667, 0.635, 0.561],
   /** boardwalk timber */
   boardwalk: [0.588, 0.494, 0.376],
   /** the seabed, visible through shallow water */
@@ -269,12 +280,17 @@ function colorAt(x: number, z: number, h: number, slope: number, out: number[], 
   const hit = nearestPath(x, z);
   if (hit.path && h > 0.2) {
     const edge = hit.path.halfWidth;
-    // 6 m of transition, not 2.4. Vertex colours are interpolated across a mesh whose cells
-    // are about 1.8 m, so a transition narrower than a few cells cannot be represented: the
-    // boundary snaps to the grid and the lane comes out edged in polygons. The *line* along
-    // it is drawn from a continuous field and stays a curve either way (see SurfaceMix), and
-    // a crisp line over a soft wash is what a drawn map does anyway.
-    const paved = 1 - smoothstep(edge, edge + 6, hit.dist);
+    // A soft shoulder, but not an unlimited one. Vertex colours are interpolated across a
+    // mesh whose cells run from 1 m at the high tier to 2.2 m at the low one, so a transition
+    // narrower than a couple of cells cannot be represented: the boundary snaps to the grid
+    // and the lane comes out edged in polygons. The *line* along it is drawn from a
+    // continuous field and stays a curve either way (see SurfaceMix), and a crisp line over a
+    // soft wash is what a drawn map does anyway.
+    //
+    // It was 6 m, which on a 3.4 m half-width road left the ribbon fading over nearly twice
+    // its own width — legible against grass, and from above, crossing a quay, not a road at
+    // all. 4.5 m is two cells even at the lowest tier and gives the road an edge.
+    const paved = 1 - smoothstep(edge, edge + 4.5, hit.dist);
     if (paved > 0) {
       mix(out, SURFACE_COLORS[hit.path.surface], paved * 0.9, out);
       mix4.lane = paved;

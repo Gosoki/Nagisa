@@ -51,6 +51,7 @@ import {
   SPAWN_POINTS,
   ZONES,
   activeMap,
+  insideStructure,
   resolveMapId,
   canEnterFrom,
   footingSlopeAt,
@@ -178,6 +179,10 @@ for (let j = 0; j < size; j++) {
       const mx = x + dx / 2;
       const mz = z + dz / 2;
       if (canEnterFrom(x, z, mx, mz) && canEnterFrom(mx, mz, bx, bz)) continue;
+      // A wall between two places is a wall. This tool measures the *ground*, and counting
+      // a warehouse as a defect in the ground would report the collision volumes added for
+      // exactly this purpose as a regression.
+      if (insideStructure(mx, mz)) continue;
       const lane = nearestPath(mx, mz);
       stumbles.push([mx, mz, lane.dist, lane.path?.halfWidth ?? 0]);
     }
@@ -300,9 +305,10 @@ function walkLine(label: string, ax: number, az: number, bx: number, bz: number)
   for (let i = 0; i < steps; i++) {
     const nx = x + ux * STEP;
     const nz = z + uz * STEP;
-    // A refusal is only a snag if *slope* caused it. Deep water and the map edge are
-    // supposed to stop you, and counting them reports the sea as a terrain defect.
-    if (!canOccupy(x, z, nx, nz) && heightAt(nx, nz) >= -MAX_WADE_DEPTH) {
+    // A refusal is only a snag if *slope* caused it. Deep water, the map edge and the wall
+    // of a building are all supposed to stop you, and counting them reports the sea, the
+    // horizon and the old street's houses as terrain defects.
+    if (!canOccupy(x, z, nx, nz) && heightAt(nx, nz) >= -MAX_WADE_DEPTH && !insideStructure(nx, nz)) {
       snags.push([label, nx, nz]);
       // Keep going from the refused position, so one obstacle is one snag rather than a
       // run of them, and the rest of the line still gets walked.

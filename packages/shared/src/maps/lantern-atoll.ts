@@ -191,7 +191,7 @@ export const LANTERN_ATOLL: MapPack = {
       // The tower, its keeper's house set back and to one side, and two stone lanterns
       // flanking the approach — mirrored about z = 0, which is the lane's axis here.
       { id: 'at-tower', kind: 'lighthouse', x: -RING_RADIUS, z: 0, rot: 0 },
-      { id: 'at-keeper', kind: 'keepers-house', x: -RING_RADIUS + 12, z: -10, rot: -1.2 },
+      { id: 'at-keeper', kind: 'keepers-house', x: -RING_RADIUS + 12, z: -10, rot: -0.876 },
       { id: 'at-stone-n', kind: 'stone-lantern', x: -RING_RADIUS + 9, z: -5, rot: 0 },
       { id: 'at-stone-s', kind: 'stone-lantern', x: -RING_RADIUS + 9, z: 5, rot: 0 },
       { id: 'at-wall-n', kind: 'sea-wall', x: -RING_RADIUS - 6, z: -12, rot: 0.2 },
@@ -199,9 +199,9 @@ export const LANTERN_ATOLL: MapPack = {
 
       // ── North camp ──────────────────────────────────────────────────────────
       // One-sided on purpose. A ring where every place is symmetrical reads as a diagram.
-      { id: 'at-shelter-a', kind: 'beach-hut', x: -9, z: -RING_RADIUS - 3, rot: 0.2 },
+      { id: 'at-shelter-a', kind: 'beach-hut', x: -9, z: -RING_RADIUS - 3, rot: -0.175 },
       { id: 'at-shelter-b', kind: 'beach-hut', x: 2, z: -RING_RADIUS - 6, rot: -0.1 },
-      { id: 'at-net-rack', kind: 'net-rack', x: 13, z: -RING_RADIUS - 2, rot: -0.6 },
+      { id: 'at-net-rack', kind: 'net-rack', x: 13, z: -RING_RADIUS - 2, rot: -0.175 },
       { id: 'at-bench-n', kind: 'bench', x: -2, z: -RING_RADIUS + 7, rot: Math.PI },
       { id: 'at-well', kind: 'well', x: 9, z: -RING_RADIUS + 5, rot: 0 },
 

@@ -25,14 +25,12 @@
  * on the nearest bench.
  */
 
-import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { shutdown, start, waitForPortsFree } from './stack.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const ANSI = new RegExp(String.fromCharCode(27) + '\\[[0-9;]*m', 'g');
-const children = [];
 let failures = 0;
 
 function check(name, ok, detail) {
@@ -43,28 +41,12 @@ function check(name, ok, detail) {
   }
 }
 
-function start(name, npmArgs, ready, timeoutMs = 120_000) {
-  const child = spawn('npm', npmArgs, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
-  children.push(child);
-  return new Promise((res, rej) => {
-    const timer = setTimeout(() => rej(new Error(`${name} not ready in ${timeoutMs}ms`)), timeoutMs);
-    let buffer = '';
-    const scan = (chunk) => {
-      buffer += chunk.toString().replace(ANSI, '');
-      const match = buffer.match(ready);
-      if (match) {
-        clearTimeout(timer);
-        res(match);
-      }
-    };
-    child.stdout.on('data', scan);
-    child.stderr.on('data', scan);
-  });
-}
-
 try {
-  await start('server', ['run', 'dev', '-w', '@nagisa/server'], /"event":"boot_complete"/);
-  const viteMatch = await start('client', ['run', 'dev', '-w', '@nagisa/client'], /localhost:(\d+)/);
+  // A run against a stack this process did not start proves nothing about this working
+  // tree — and Vite would quietly take :5174 and let every check pass on a stale bundle.
+  await waitForPortsFree();
+  await start('server', ['run', 'dev', '-w', '@nagisa/server'], /"event":"boot_complete"/, { cwd: root });
+  const viteMatch = await start('client', ['run', 'dev', '-w', '@nagisa/client'], /localhost:(\d+)/, { cwd: root });
   const port = Number(viteMatch[1]);
   console.log(`  ok   stack up on :${port}`);
 
@@ -240,7 +222,7 @@ try {
   failures++;
   console.error(`  FAIL ${String(err)}`);
 } finally {
-  for (const child of children) child.kill('SIGTERM');
+  await shutdown();
 }
 
 console.log(failures === 0 ? '\nchat smoke passed' : `\nchat smoke failed (${failures})`);

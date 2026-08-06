@@ -2,6 +2,7 @@ node_modules/
 dist/
 .smoke-*/
 .uismoke-*/
+.audit-*/
 *.log
 .env
 

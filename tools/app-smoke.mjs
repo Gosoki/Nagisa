@@ -20,11 +20,11 @@
  * Exits non-zero on any failure, so it can gate a release.
  */
 
-import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { shutdown, start, waitForPortsFree } from './stack.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -35,8 +35,6 @@ const flag = (name, fallback) => {
 const outDir = resolve(root, flag('out', 'shots/app'));
 mkdirSync(outDir, { recursive: true });
 
-const ANSI = new RegExp(String.fromCharCode(27) + '\\[[0-9;]*m', 'g');
-const children = [];
 let failures = 0;
 
 function check(name, ok, detail) {
@@ -49,31 +47,15 @@ function check(name, ok, detail) {
 }
 
 /** Spawn a workspace process and resolve when its output matches `ready`. */
-function start(name, npmArgs, ready, timeoutMs = 90_000) {
-  const child = spawn('npm', npmArgs, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
-  children.push(child);
-  return new Promise((resolvePromise, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${name} did not become ready in ${timeoutMs}ms`)), timeoutMs);
-    let buffer = '';
-    const scan = (chunk) => {
-      buffer += chunk.toString().replace(ANSI, '');
-      const match = buffer.match(ready);
-      if (match) {
-        clearTimeout(timer);
-        resolvePromise(match);
-      }
-    };
-    child.stdout.on('data', scan);
-    child.stderr.on('data', scan);
-  });
-}
-
 try {
+  // A run against a stack this process did not start proves nothing about this working
+  // tree — and Vite would quietly take :5174 and let every check pass on a stale bundle.
+  await waitForPortsFree();
   // The realtime server first: the client proxies /ws to it, and a client that opens its
   // socket before the server is listening spends the whole run in backoff.
-  await start('server', ['run', 'dev', '-w', '@nagisa/server'], /"event":"boot_complete"/);
+  await start('server', ['run', 'dev', '-w', '@nagisa/server'], /"event":"boot_complete"/, { cwd: root });
   console.log('  ok   realtime server booted');
-  const viteMatch = await start('client', ['run', 'dev', '-w', '@nagisa/client'], /localhost:(\d+)/);
+  const viteMatch = await start('client', ['run', 'dev', '-w', '@nagisa/client'], /localhost:(\d+)/, { cwd: root });
   const port = Number(viteMatch[1]);
   console.log(`  ok   vite on :${port}`);
 
@@ -146,7 +128,7 @@ try {
   failures++;
   console.error(`  FAIL ${String(err)}`);
 } finally {
-  for (const child of children) child.kill('SIGTERM');
+  await shutdown();
 }
 
 console.log(failures === 0 ? '\napp smoke passed' : `\napp smoke failed (${failures})`);

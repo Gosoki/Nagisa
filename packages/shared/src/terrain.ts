@@ -1355,10 +1355,62 @@ export function isWalkable(x: number, z: number): boolean {
 
 
 /**
- * How much lower the ground has to be for a move onto it to count as going *down*, metres.
- * Small — this is a threshold on "is this a descent", not on "is this a cliff".
+ * How steeply the ground must fall for a move onto it to count as going *down*.
+ *
+ * ### Why this is a gradient and not a height
+ *
+ * It was a height: half a metre lower than where you stood. That number is meaningless
+ * without a step size, and the step size is not one number — the client integrates at 60 Hz
+ * and moves 7 cm per step at a walk, while the server compares against the last report it
+ * accepted, which is a metre or more back. Half a metre of drop in 7 cm of travel is an
+ * **82° slope**. So the rule that exists to let you walk off a ledge only fired for the
+ * server, and the client — the thing actually doing the walking — could not step off
+ * anything shallower than a sheer face.
+ *
+ * Measured at the clifftop at (30, 5): blocked after 1.5 m at both walk and run speed, and
+ * walked clean off at the 1 m step every audit in this repo used. Every tool that had ever
+ * measured descent was measuring a rule no player experienced.
+ *
+ * As a gradient it is the *same angle* at every step size, which is the property that makes
+ * the two sides agree: 7 cm of travel needs 5.7 cm of drop, a metre needs 82 cm, and both
+ * are the same 39° of ground falling away. Below {@link MAX_WALKABLE_SLOPE} on purpose —
+ * the lip of a cliff eases before it plunges, and a threshold at the walkable limit would
+ * refuse the first step of every descent for being taken on ground that is still walkable.
+ *
+ * ### Why it asks the footing fit rather than the two heights
+ *
+ * A gradient alone is not enough, and the reason is that the two halves of the rule were
+ * measuring different things. Ground is refused when the **footing fit** — a plane through a
+ * 1.4 m ring, see {@link footingSlopeAt} — is steeper than the limit. At the lip of a cliff
+ * that fit already sees the drop beyond while the ground directly underfoot is still gentle,
+ * so a rule comparing two heights 7 cm apart finds no descent on ground the fit has already
+ * called a cliff. That band, a stride wide, is where a player stands at the edge and cannot
+ * step off. It was 42% of the island's clifftops even after the gradient fix.
+ *
+ * So the release uses the same fit that applied the refusal: steep ground may be entered
+ * when you are moving *down its own slope*. `footingDownhill` is the direction that fit
+ * says is downhill; if the step has a real component along it, the step is a descent. This
+ * is a direction test, so it is step-size independent by construction, and it cannot be used
+ * to climb because gaining height is refused outright by the height comparison beside it.
  */
-export const DESCENT_STEP = 0.5;
+export const DESCENT_GRADE = Math.tan(0.688); // ≈ 39°, 0.8 × MAX_WALKABLE_SLOPE
+
+/**
+ * Floor under the drop a descent must clear, metres. Stops a step of no length qualifying
+ * as a descent because zero times a gradient is zero.
+ */
+const DESCENT_MIN_DROP = 0.02;
+
+/**
+ * How much of a step must point down the slope for it to be a descent, as a cosine.
+ *
+ * A 70° cone about the downhill direction. Wide, deliberately: the client measures the step
+ * from its previous physics position and the server from the last report it accepted, which
+ * is an order of magnitude further back, so on a curve the two compute headings that differ.
+ * A narrow cone would have them disagree about the same step — the failure this file exists
+ * to prevent. Wide costs nothing, because the height comparison is what forbids climbing.
+ */
+const DESCENT_ALIGNMENT = 0.35;
 
 /**
  * Longest run of over-steep ground a stride carries you across, metres.
@@ -1492,7 +1544,16 @@ export function canEnterFrom(fromX: number, fromZ: number, x: number, z: number)
   // Deep water is never relaxed. It is the one part of the contract that is about place
   // rather than footing, and neither a run-up nor a crease should carry you into a channel.
   if (h < -MAX_WADE_DEPTH) return false;
-  if (h <= heightAt(fromX, fromZ) - DESCENT_STEP) return true;
+  const run = Math.hypot(x - fromX, z - fromZ);
+  const fromH = heightAt(fromX, fromZ);
+  // Falling away steeply between the two points: unambiguous, and cheap.
+  if (h <= fromH - Math.max(DESCENT_MIN_DROP, DESCENT_GRADE * run)) return true;
+  // Otherwise ask the fit that refused the ground which way *it* thinks is down. Losing
+  // height is required — that is what makes this incapable of being a way to climb.
+  if (run > 1e-3 && h <= fromH - DESCENT_MIN_DROP) {
+    const [dx, dz] = footingDownhill(x, z);
+    if (((x - fromX) * dx + (z - fromZ) * dz) / run > DESCENT_ALIGNMENT) return true;
+  }
   return isSliver(x, z, h);
 }
 

@@ -22,4 +22,5 @@ export * from './protocol.js';
 export * from './terrain.js';
 export * from './movement.js';
 export * from './world.js';
+export * from './routing.js';
 export * from './tokens.js';

@@ -41,6 +41,7 @@ import {
   illegality,
   isSliverAt,
   nearestWalkable,
+  routeTo,
 } from '@nagisa/shared';
 import type { CameraRig } from '../engine/camera-rig.js';
 import type { Input } from '../input/input.js';
@@ -52,6 +53,27 @@ import { Character, type CharacterAppearance } from './character.js';
  */
 const WALK_SPEED = MOVE_SPEED.walk;
 const RUN_SPEED = MOVE_SPEED.run;
+
+/**
+ * How a scripted walk ended.
+ *
+ * `cancelled` is the player taking over, which is normal and silent. `blocked` is the walk
+ * failing — no route, or three seconds of getting nowhere — and is the one a caller has to
+ * say something about.
+ */
+export type WalkOutcome = 'arrived' | 'cancelled' | 'blocked';
+
+/** How close counts as arrived at the destination, metres. */
+const ARRIVAL_RADIUS = 1.0;
+
+/** How close counts as reaching an intermediate waypoint. Looser — it is a corner, not a place. */
+const WAYPOINT_RADIUS = 1.8;
+
+/** Progress that resets the stall watchdog, metres. Above the noise of a character settling. */
+const STALL_PROGRESS = 0.05;
+
+/** How long a scripted walk may make no progress before it gives up, seconds. */
+const STALL_TIMEOUT = 3;
 
 /** Speed while wading. Slow enough that walking into the sea feels like a decision. */
 const WADE_SPEED = MOVE_SPEED.wade;
@@ -89,7 +111,13 @@ export class LocalPlayer {
 
   /** Set while a scripted move is running (walking to an activity slot). */
   private autoWalkTarget: THREE.Vector3 | null = null;
-  private autoWalkResolve: (() => void) | null = null;
+  private autoWalkResolve: ((outcome: WalkOutcome) => void) | null = null;
+  /** Remaining waypoints of the current scripted walk. See {@link walkTo}. */
+  private autoWalkRoute: Array<[number, number]> | null = null;
+  private autoWalkLeg = 0;
+  /** Closest the character has come to the current waypoint, for the stall watchdog. */
+  private autoWalkBest = Infinity;
+  private autoWalkStalledFor = 0;
 
   /** Scratch vectors — allocating in the update loop is how frame times die. */
   private readonly tmpForward = new THREE.Vector3();
@@ -110,7 +138,7 @@ export class LocalPlayer {
     this.yaw = yaw;
     this.velocity.set(0, 0, 0);
     this.grounded = true;
-    this.autoWalkTarget = null;
+    this.finishWalk('cancelled');
     this.syncTransform();
   }
 
@@ -138,18 +166,88 @@ export class LocalPlayer {
   }
 
   /**
-   * Walk the character to a point automatically, resolving when it arrives.
+   * Walk the character to a point automatically, resolving when the walk ends.
    *
    * Joining an activity uses this rather than teleporting: being moved somewhere while
    * you watch is a very different feeling from blinking there, and preserving the walk
    * is most of what keeps the world continuous.
+   *
+   * ### It follows a route, not a bearing
+   *
+   * This used to steer straight at the destination. The middle of the island is a mountain,
+   * so a straight line from the south harbour to the north one goes over it: the character
+   * walked into the hillside and ground against it indefinitely, with nothing on screen to
+   * say why. Thirty of the seventy-two ordered pairs of named places never arrived. See
+   * `routeTo` in `@nagisa/shared`.
+   *
+   * Resolves with how the walk ended. A caller that told the player "walking to the shrine"
+   * needs to know when that turned out not to be true — and needs to tell the two apart,
+   * because taking over yourself needs no comment and being unable to get there does.
    */
-  walkTo(x: number, z: number): Promise<void> {
+  walkTo(x: number, z: number): Promise<WalkOutcome> {
     const [wx, wz] = nearestWalkable(x, z);
-    this.autoWalkTarget = new THREE.Vector3(wx, heightAt(wx, wz), wz);
+    this.finishWalk('cancelled');
+
+    const route = routeTo(this.position.x, this.position.z, wx, wz);
+    if (!route.length) return Promise.resolve('blocked');
+
+    this.autoWalkRoute = route;
+    this.autoWalkLeg = 0;
+    this.autoWalkTarget = new THREE.Vector3(route[0]![0], heightAt(route[0]![0], route[0]![1]), route[0]![1]);
+    this.autoWalkBest = Infinity;
+    this.autoWalkStalledFor = 0;
     return new Promise((resolve) => {
       this.autoWalkResolve = resolve;
     });
+  }
+
+  /** Move on to the next waypoint, resetting the stall watchdog for the new leg. */
+  private advanceLeg(): void {
+    if (!this.autoWalkRoute) return;
+    this.autoWalkLeg++;
+    const leg = this.autoWalkRoute[this.autoWalkLeg];
+    if (!leg) {
+      this.finishWalk('arrived');
+      return;
+    }
+    this.autoWalkTarget = new THREE.Vector3(leg[0], heightAt(leg[0], leg[1]), leg[1]);
+    this.autoWalkBest = Infinity;
+    this.autoWalkStalledFor = 0;
+  }
+
+  /**
+   * Give up on a walk that has stopped getting anywhere.
+   *
+   * The backstop behind the routing, and the thing that makes "the character grinds into a
+   * hillside forever" impossible rather than merely unlikely. A route can be stale — someone
+   * being followed walks somewhere unreachable, the map changes under a walk in flight — and
+   * no amount of good pathfinding removes the need for a walk to be able to *end*.
+   */
+  private tickWalkWatchdog(dt: number): void {
+    if (!this.autoWalkTarget) return;
+    const dist = Math.hypot(
+      this.autoWalkTarget.x - this.position.x,
+      this.autoWalkTarget.z - this.position.z,
+    );
+    if (dist < this.autoWalkBest - STALL_PROGRESS) {
+      this.autoWalkBest = dist;
+      this.autoWalkStalledFor = 0;
+      return;
+    }
+    this.autoWalkStalledFor += dt;
+    if (this.autoWalkStalledFor > STALL_TIMEOUT) this.finishWalk('blocked');
+  }
+
+  /** End the current scripted walk, if any, and settle its promise. */
+  private finishWalk(outcome: WalkOutcome): void {
+    this.autoWalkTarget = null;
+    this.autoWalkRoute = null;
+    const resolve = this.autoWalkResolve;
+    this.autoWalkResolve = null;
+    // Settled even when a second `walkTo` supersedes the first, which used to drop the
+    // earlier promise on the floor: nothing awaited it, but a promise that can never settle
+    // is a leak waiting for the first caller who does.
+    resolve?.(outcome);
   }
 
   /** True while a scripted walk is in progress. See {@link walkTo}. */
@@ -159,15 +257,14 @@ export class LocalPlayer {
 
   /** Cancel an automatic walk — any manual input does this. */
   cancelWalkTo(): void {
-    this.autoWalkTarget = null;
-    this.autoWalkResolve?.();
-    this.autoWalkResolve = null;
+    this.finishWalk('cancelled');
   }
 
   /**
    * Fixed-step physics. Runs at 60 Hz regardless of frame rate.
    */
   fixedUpdate(dt: number): void {
+    this.tickWalkWatchdog(dt);
     this.resolveIntent(this.tmpDir);
 
     const depth = -Math.min(0, heightAt(this.position.x, this.position.z));
@@ -303,17 +400,26 @@ export class LocalPlayer {
     if (this.seated) return out;
 
     // A scripted walk overrides manual input, but any manual input cancels it.
-    if (this.autoWalkTarget) {
-      const dx = this.autoWalkTarget.x - this.position.x;
-      const dz = this.autoWalkTarget.z - this.position.z;
-      const dist = Math.hypot(dx, dz);
-      if (dist < 1.0) {
-        this.cancelWalkTo();
-        return out;
-      }
+    if (this.autoWalkTarget && this.autoWalkRoute) {
       if (Math.abs(this.input.move.x) > 0.05 || Math.abs(this.input.move.y) > 0.05) {
         this.cancelWalkTo();
       } else {
+        const dx = this.autoWalkTarget.x - this.position.x;
+        const dz = this.autoWalkTarget.z - this.position.z;
+        const dist = Math.hypot(dx, dz);
+        const last = this.autoWalkLeg >= this.autoWalkRoute.length - 1;
+
+        // Intermediate waypoints are corners to round, not places to stand on: releasing
+        // them early is what makes a route read as walking down a road rather than as a
+        // series of small corrections.
+        if (dist < (last ? ARRIVAL_RADIUS : WAYPOINT_RADIUS)) {
+          if (last) {
+            this.finishWalk('arrived');
+            return out;
+          }
+          this.advanceLeg();
+          return out.set(dx / (dist || 1), 0, dz / (dist || 1));
+        }
         return out.set(dx / dist, 0, dz / dist);
       }
     }

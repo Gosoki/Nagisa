@@ -625,8 +625,12 @@ export class App {
         if (!zone) return;
         // "Travel" walks you there. There is no fast travel on Nagisa — the island is
         // small enough to cross in ninety seconds, and the crossing is the product.
-        void this.local.walkTo(zone.x, zone.z);
         notify(`Walking to ${zone.name}`, 'neutral');
+        void this.local.walkTo(zone.x, zone.z).then((outcome) => {
+          // Saying "walking to the shrine" and then silently not going is worse than not
+          // offering to.
+          if (outcome === 'blocked') notify(`Could not find a way to ${zone.name} from here`, 'warn');
+        });
       },
 
       setActivityState: (id: ActivityId, state: ActivityState) => {

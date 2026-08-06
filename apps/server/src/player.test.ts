@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AnimState, isSliverAt, isWalkable, heightAt, spawnPoint } from '@nagisa/shared';
+import { AnimState, MAX_WADE_DEPTH, MOVE_SPEED, isSliverAt, isWalkable, heightAt, spawnPoint } from '@nagisa/shared';
 import { Player } from './player.js';
 
 /**
@@ -115,18 +115,52 @@ test('a move onto unwalkable terrain within the speed budget is rejected with a 
   assert.deepEqual(player.pos, start, 'player position must be unchanged after rejection');
 });
 
-test('a move onto unwalkable terrain that is *below* the player is accepted', () => {
+test('a player can walk off a clifftop at the step size the client actually uses', () => {
   // The other half of `canEnterFrom`: steep ground may be entered on the way down. Without
-  // this a clifftop is a fence — the ground past the edge is unwalkable, so the step off it
-  // is refused, so the player cannot jump down, fall down, or walk off at all.
-  const { start, target } = findWalkableEdge(13, false);
-  assert.equal(isWalkable(target[0], target[2]), false, 'test fixture precondition: target must be unwalkable');
-  assert.ok(heightAt(target[0], target[2]) < heightAt(start[0], start[2]), 'fixture: target must be lower');
+  // it a clifftop is a fence — the ground past the edge is unwalkable, so the step off it is
+  // refused, so the player cannot jump down, fall down, or walk off at all.
+  //
+  // Walked one physics step at a time, because that is where this broke and a coarser test
+  // could not see it. The rule used to be "half a metre lower than where you stood", and a
+  // walking character covers 7 cm per step: half a metre of drop in 7 cm is an 82° slope, so
+  // the release only ever fired for coarse movements. 270 of the island's 271 land clifftops
+  // could not be walked off, and every audit in the repo stepped at 1 m and saw nothing.
+  const STEP = MOVE_SPEED.walk / 60;
 
-  const player = makePlayer(start);
-  const result = player.applyMove({ pos: target, yaw: 0, anim: AnimState.Fall, seq: 1 }, Date.now() + 2_000);
-  assert.equal(result, null, 'stepping off a ledge must not be corrected');
-  assert.deepEqual(player.pos, target);
+  // A land cliff: walkable, with ground 3 m ahead that is refused for *steepness* — not for
+  // depth, or this finds the shoreline and tests that the sea stops you, which it should.
+  let edge: { x: number; z: number; ux: number; uz: number } | null = null;
+  for (let ring = 24; ring < 150 && !edge; ring += 2) {
+    for (let i = 0; i < 240; i++) {
+      const a = (i / 240) * Math.PI * 2;
+      const x = Math.cos(a) * ring;
+      const z = Math.sin(a) * ring;
+      if (!isWalkable(x, z)) continue;
+      const fx = x + Math.cos(a) * 3;
+      const fz = z + Math.sin(a) * 3;
+      const fh = heightAt(fx, fz);
+      if (isWalkable(fx, fz) || fh < -MAX_WADE_DEPTH || fh > heightAt(x, z) - 2) continue;
+      edge = { x, z, ux: Math.cos(a), uz: Math.sin(a) };
+      break;
+    }
+  }
+  assert.ok(edge, 'fixture: the island should have a land cliff with a 2 m drop');
+
+  const player = makePlayer([edge!.x, heightAt(edge!.x, edge!.z), edge!.z]);
+  let now = Date.now();
+  let travelled = 0;
+  for (let i = 0; i < 60 && travelled < 3; i++) {
+    const px = player.pos[0] + edge!.ux * STEP;
+    const pz = player.pos[2] + edge!.uz * STEP;
+    now += 20;
+    const result = player.applyMove(
+      { pos: [px, heightAt(px, pz), pz], yaw: 0, anim: AnimState.Walk, seq: i + 1 },
+      now,
+    );
+    assert.equal(result, null, `refused ${travelled.toFixed(2)} m past the edge — a cliff you cannot go down is a fence`);
+    travelled = Math.hypot(player.pos[0] - edge!.x, player.pos[2] - edge!.z);
+  }
+  assert.ok(travelled >= 3, `expected to get 3 m down the face, got ${travelled.toFixed(2)} m`);
 });
 
 test('a one-metre crease of over-steep ground can be walked across; a cliff still cannot', () => {

@@ -32,11 +32,30 @@ const MAX_TAGS = 18;
 const FADE_START = 22;
 const FADE_END = 38;
 
+/**
+ * Speech carries further than names.
+ *
+ * A name is a convenience: if you cannot read it, nothing is lost. A line someone just
+ * said is *addressed* to the room, and having it silently not exist past 38 m makes the
+ * island feel like six separate rooms. So bubbles keep their own, longer fade window and
+ * their own, larger budget.
+ */
+const BUBBLE_FADE_START = 34;
+const BUBBLE_FADE_END = 62;
+const MAX_BUBBLES = 12;
+
+/** Height of the bubble above the character's feet — clear of the name plate below it. */
+const BUBBLE_HEIGHT = 2.52;
+
 /** Height above the character's feet, metres. Just above the head. */
 const TAG_HEIGHT = 2.05;
 
 /** Device-pixel scale for the label canvas. 2× keeps text crisp without wasting memory. */
 const TEXTURE_SCALE = 2;
+
+/** Maximum wrapped lines in a bubble, and the height of its tail in canvas pixels. */
+const BUBBLE_LINES = 3;
+const TAIL_HEIGHT = 12;
 
 interface TagTarget {
   id: string;
@@ -44,6 +63,8 @@ interface TagTarget {
   position: THREE.Vector3;
   /** Drawn in the accent colour — used for the host of a live activity. */
   highlight?: boolean;
+  /** What this player is currently saying, if anything. See `speech.ts`. */
+  bubble?: string | null;
 }
 
 /** One pooled sprite. */
@@ -59,6 +80,7 @@ export class NameTags {
   readonly group = new THREE.Group();
 
   private readonly pool: Tag[] = [];
+  private readonly bubblePool: Tag[] = [];
   private readonly textures = new Map<string, THREE.CanvasTexture>();
 
   /** Toggled from settings. When false the whole group is simply hidden. */
@@ -128,9 +150,96 @@ export class NameTags {
     return texture;
   }
 
+  /**
+   * Render a texture for a spoken line.
+   *
+   * Inverted from the name plate — dark ink on warm paper — because that is how speech is
+   * drawn in the medium this whole renderer is imitating, and because it separates *who*
+   * from *what* at a glance without needing to read either. Wrapped to at most
+   * {@link BUBBLE_LINES} lines; `speech.ts` has already truncated anything longer.
+   */
+  private bubbleTextureFor(text: string): THREE.CanvasTexture {
+    const key = `b:${text}`;
+    const cached = this.textures.get(key);
+    if (cached) return cached;
+
+    const fontSize = 30;
+    const lineHeight = 38;
+    const padX = 20;
+    const padY = 14;
+    const maxWidth = 340;
+    const font = `500 ${fontSize}px -apple-system, "Segoe UI", "Hiragino Sans", sans-serif`;
+
+    const measure = document.createElement('canvas').getContext('2d');
+    if (!measure) throw new Error('2D canvas context unavailable');
+    measure.font = font;
+
+    // Greedy wrap. Breaks on spaces where there are any and per-character where there are
+    // not, which is what CJK needs — a Japanese line has no spaces to break on at all.
+    const lines: string[] = [];
+    let current = '';
+    const atoms = /\s/.test(text) ? text.split(/(\s+)/) : [...text];
+    for (const atom of atoms) {
+      const candidate = current + atom;
+      if (measure.measureText(candidate).width > maxWidth && current) {
+        lines.push(current.trimEnd());
+        current = atom.trimStart();
+      } else {
+        current = candidate;
+      }
+      if (lines.length >= BUBBLE_LINES) break;
+    }
+    if (current && lines.length < BUBBLE_LINES) lines.push(current.trimEnd());
+
+    const width = Math.ceil(Math.max(...lines.map((l) => measure.measureText(l).width))) + padX * 2;
+    const height = lines.length * lineHeight + padY * 2 + TAIL_HEIGHT;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width * TEXTURE_SCALE;
+    canvas.height = height * TEXTURE_SCALE;
+    const ctx = canvas.getContext('2d')!;
+    ctx.scale(TEXTURE_SCALE, TEXTURE_SCALE);
+
+    const bodyHeight = height - TAIL_HEIGHT;
+    const r = 14;
+    ctx.fillStyle = 'rgba(247, 243, 235, 0.95)';
+    ctx.strokeStyle = 'rgba(55, 63, 66, 0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(r, 0);
+    ctx.arcTo(width, 0, width, r, r);
+    ctx.arcTo(width, bodyHeight, width - r, bodyHeight, r);
+    // The tail, pointing down at the speaker's head.
+    ctx.lineTo(width / 2 + 9, bodyHeight);
+    ctx.lineTo(width / 2, height);
+    ctx.lineTo(width / 2 - 9, bodyHeight);
+    ctx.arcTo(0, bodyHeight, 0, bodyHeight - r, r);
+    ctx.arcTo(0, 0, r, 0, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#373F42';
+    ctx.font = font;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < lines.length; i++) {
+      ctx.fillText(lines[i], width / 2, padY + lineHeight * (i + 0.5));
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.minFilter = THREE.LinearFilter;
+    texture.generateMipmaps = false;
+    texture.userData.aspect = width / height;
+    texture.userData.height = height;
+    this.textures.set(key, texture);
+    return texture;
+  }
+
   /** Grow the pool on demand. Sprites are never destroyed, only hidden. */
-  private acquire(index: number): Tag {
-    let tag = this.pool[index];
+  private acquire(index: number, pool: Tag[] = this.pool): Tag {
+    let tag = pool[index];
     if (tag) return tag;
 
     const material = new THREE.SpriteMaterial({
@@ -147,7 +256,7 @@ export class NameTags {
     this.group.add(sprite);
 
     tag = { sprite, material, renderedName: null, renderedHighlight: false };
-    this.pool[index] = tag;
+    pool[index] = tag;
     return tag;
   }
 
@@ -205,14 +314,66 @@ export class NameTags {
     for (let i = ranked.length; i < this.pool.length; i++) {
       if (this.pool[i]?.sprite.visible) this.pool[i].sprite.visible = false;
     }
+
+    this.updateBubbles(targets, cameraPos);
+  }
+
+  /**
+   * Speech bubbles, ranked and faded independently of the name tags.
+   *
+   * Deliberately a second pass over the same targets rather than a field on the name pass:
+   * the two have different ranges and different budgets, so a distant player whose name is
+   * not drawn can still be seen to be talking — which is the whole point of a bubble.
+   */
+  private updateBubbles(targets: readonly TagTarget[], cameraPos: THREE.Vector3): void {
+    const speaking = targets
+      .filter((t) => !!t.bubble)
+      .map((t) => ({ t, d: t.position.distanceTo(cameraPos) }))
+      .filter((e) => e.d < BUBBLE_FADE_END)
+      .sort((a, b) => a.d - b.d)
+      .slice(0, MAX_BUBBLES);
+
+    for (let i = 0; i < speaking.length; i++) {
+      const { t, d } = speaking[i];
+      const bubble = this.acquire(i, this.bubblePool);
+      const text = t.bubble!;
+
+      if (bubble.renderedName !== text) {
+        const texture = this.bubbleTextureFor(text);
+        bubble.material.map = texture;
+        bubble.material.needsUpdate = true;
+        bubble.renderedName = text;
+        // Sized from the texture's own pixel height so a two-line bubble is twice as tall
+        // rather than twice as squashed.
+        const aspect = (texture.userData.aspect as number) || 3;
+        const worldHeight = (((texture.userData.height as number) || 60) / 60) * 0.5;
+        bubble.sprite.scale.set(worldHeight * aspect, worldHeight, 1);
+      }
+
+      // The tail sits at the bottom of the sprite, so the sprite's centre is half its own
+      // height above the anchor point.
+      bubble.sprite.position.set(
+        t.position.x,
+        t.position.y + BUBBLE_HEIGHT + bubble.sprite.scale.y / 2,
+        t.position.z,
+      );
+      const fade = 1 - Math.max(0, Math.min(1, (d - BUBBLE_FADE_START) / (BUBBLE_FADE_END - BUBBLE_FADE_START)));
+      bubble.material.opacity = fade;
+      bubble.sprite.visible = fade > 0.02;
+    }
+
+    for (let i = speaking.length; i < this.bubblePool.length; i++) {
+      if (this.bubblePool[i]?.sprite.visible) this.bubblePool[i].sprite.visible = false;
+    }
   }
 
   dispose(): void {
-    for (const tag of this.pool) {
+    for (const tag of [...this.pool, ...this.bubblePool]) {
       tag.material.dispose();
       tag.sprite.removeFromParent();
     }
     this.pool.length = 0;
+    this.bubblePool.length = 0;
     for (const texture of this.textures.values()) texture.dispose();
     this.textures.clear();
   }

@@ -199,6 +199,100 @@ export function notify(text: string, tone: LocalNotice['tone'] = 'neutral', ttlM
   }, ttlMs);
 }
 
+/**
+ * The local player's transform, as a plain mutable object.
+ *
+ * Deliberately **not** a store. The minimap needs the player's position and heading every
+ * frame, and a Svelte store written at 60 Hz re-runs every subscriber and every reactive
+ * statement that touches it — for a value whose only consumer already has its own
+ * `requestAnimationFrame` loop and can simply read the current value when it draws.
+ *
+ * The same reasoning as `stickState` in reverse: that one crosses the boundary as a store
+ * because the interface must *react* to it; this one does not, because the interface polls.
+ *
+ * Written by `App` each frame. Read, never mutated, by everything else.
+ */
+export const selfPose = { x: 0, y: 0, z: 0, yaw: 0 };
+
+// ---------------------------------------------------------------------------
+// Chat
+// ---------------------------------------------------------------------------
+
+/** One line in the chat log. */
+export interface ChatLine {
+  /** Monotonic, local. Used as the keyed-each key; server messages carry no id. */
+  readonly seq: number;
+  readonly playerId: string;
+  readonly name: string;
+  readonly text: string;
+  /** Local receipt time, for the timestamp and for bubble expiry. */
+  readonly at: number;
+  /** True for lines the local player sent — styled differently, never bubbled. */
+  readonly self: boolean;
+  /** System lines (arrivals, departures, errors) have no author. */
+  readonly system?: boolean;
+}
+
+/**
+ * The chat log.
+ *
+ * Capped at {@link CHAT_HISTORY} lines. A chat room that keeps everything eventually
+ * spends more memory on text nobody will scroll back to than on the island itself, and an
+ * unbounded keyed-each is a rendering cost that grows all session.
+ */
+export const chatLog: Writable<ChatLine[]> = writable([]);
+
+/** How many lines of scrollback to keep. */
+const CHAT_HISTORY = 200;
+
+/** Whether the composer has focus. The world stops reading movement keys while it does. */
+export const chatComposing: Writable<boolean> = writable(false);
+
+/**
+ * True when the panel is pinned open. When false the log still shows recent lines and
+ * fades them out, so conversation is visible without committing screen space to it.
+ */
+export const chatPinned: Writable<boolean> = writable(false);
+
+/** Lines the local player has not seen because the log was collapsed. */
+export const chatUnread: Writable<number> = writable(0);
+
+let chatSeq = 0;
+
+/** Append a line. The only writer — components and the net layer both come through here. */
+export function pushChat(line: Omit<ChatLine, 'seq' | 'at'> & { at?: number }): void {
+  const full: ChatLine = { ...line, seq: ++chatSeq, at: line.at ?? Date.now() };
+  chatLog.update((lines) => {
+    const next = [...lines, full];
+    return next.length > CHAT_HISTORY ? next.slice(next.length - CHAT_HISTORY) : next;
+  });
+  if (!line.self) {
+    let pinned = false;
+    chatPinned.subscribe((v) => (pinned = v))();
+    if (!pinned) chatUnread.update((n) => n + 1);
+  }
+}
+
+/** A system line: arrivals, departures, and anything the room says rather than a person. */
+export function pushSystemChat(text: string): void {
+  pushChat({ playerId: '', name: '', text, self: false, system: true });
+}
+
+// ---------------------------------------------------------------------------
+// Following
+// ---------------------------------------------------------------------------
+
+/**
+ * The player being followed, or null.
+ *
+ * Following walks you to someone and keeps you near them — the thing you actually want in
+ * a social world when a friend says "come over here" and you have no idea where "here" is.
+ * It is *not* a teleport: you travel the ground like anyone else, which keeps the island a
+ * place with distances in it. Any manual movement input cancels it, so it never feels like
+ * losing control of your own character.
+ */
+export const followTarget: Writable<{ id: string; name: string } | null> = writable(null);
+
 // ---------------------------------------------------------------------------
 // Interaction
 // ---------------------------------------------------------------------------
@@ -248,6 +342,8 @@ export interface Settings {
   muted: boolean;
   /** Show name tags above other players. */
   showNames: boolean;
+  /** Show the minimap. On by default — it is the only way to find people. */
+  minimap: boolean;
   /** Show the performance readout. Off by default; toggled with a keyboard shortcut. */
   showStats: boolean;
   /** Reduce motion: stills the camera drift and shortens transitions. */
@@ -262,6 +358,7 @@ function loadSettings(): Settings {
     quality: 'high',
     muted: true,
     showNames: true,
+    minimap: true,
     showStats: false,
     reducedMotion:
       typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -324,6 +421,10 @@ export interface WorldCommands {
   checkIn(): void;
   emote(emote: string): void;
   interact(): void;
+  /** Send a chat line. Empty or whitespace-only input is dropped here, not on the wire. */
+  say(text: string): void;
+  /** Follow a player by id, or pass null to stop. */
+  follow(id: string | null): void;
   switchRoom(id: string): void;
   setQuality(tier: QualityTier): void;
   setMuted(muted: boolean): void;
@@ -342,6 +443,8 @@ export const commands: Writable<WorldCommands> = writable({
   enterWorld: noop,
   joinActivity: noop,
   leaveActivity: noop,
+  say: noop,
+  follow: noop,
   checkIn: noop,
   emote: noop,
   interact: noop,

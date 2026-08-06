@@ -103,7 +103,7 @@ try {
   // events whose target is a text field — correctly, so typing a name does not walk you
   // into the sea — and Playwright's synthetic events go to whatever holds focus.
   await page.evaluate(() => document.activeElement?.blur?.());
-  await page.locator('canvas').click({ position: { x: 210, y: 200 } });
+  await page.locator('canvas[data-engine]').click({ position: { x: 210, y: 200 } });
   await page.waitForTimeout(500);
 
   // Count corrections by watching the player's position for discontinuities the client's

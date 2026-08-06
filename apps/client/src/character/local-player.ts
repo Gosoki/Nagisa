@@ -150,6 +150,11 @@ export class LocalPlayer {
     });
   }
 
+  /** True while a scripted walk is in progress. See {@link walkTo}. */
+  get autoWalking(): boolean {
+    return this.autoWalkTarget !== null;
+  }
+
   /** Cancel an automatic walk — any manual input does this. */
   cancelWalkTo(): void {
     this.autoWalkTarget = null;

@@ -46,14 +46,18 @@ import {
   activities,
   announcements,
   currentToast,
+  followTarget,
   latency,
   notify,
   players,
+  pushChat,
+  pushSystemChat,
   room,
   rooms,
   self,
   zonePopulation,
 } from '../state/stores.js';
+import type { Speech } from '../character/speech.js';
 
 /** Minimum movement before a transform is worth sending, metres. */
 const POSITION_DEADBAND = 0.02;
@@ -116,6 +120,7 @@ export class WorldSync {
     private readonly connection: Connection,
     private readonly remote: RemotePlayers,
     private readonly local: LocalPlayer,
+    private readonly bubbles: Speech,
   ) {
     this.unsubscribers.push(connection.on('message', this.onMessage));
     this.unsubscribers.push(connection.on('latency', (rtt) => latency.set(rtt)));
@@ -265,16 +270,29 @@ export class WorldSync {
 
     const selfId = this.selfId();
 
+    // Arrivals and departures are chat lines. In a room whose whole point is that other
+    // people are there, "someone came in" is information, and the log is where you look for
+    // it. Kept out of the toast queue, which is reserved for things addressed to you.
     if (delta.join?.length) {
       for (const view of delta.join) {
         if (view.id === selfId) continue;
+        pushSystemChat(`${view.name} arrived`);
         this.remote.add(view);
       }
       players.set(this.remote.views());
     }
 
     if (delta.leave?.length) {
-      for (const id of delta.leave) this.remote.remove(id);
+      for (const id of delta.leave) {
+        // Read the name before the removal, not after.
+        const name = this.remote.views().find((p) => p.id === id)?.name;
+        if (name) pushSystemChat(`${name} left`);
+        // Following someone who has gone would walk you to wherever they last stood and
+        // leave you standing there, so drop it here rather than letting it time out.
+        followTarget.update((f) => (f?.id === id ? null : f));
+        this.bubbles.clear(id);
+        this.remote.remove(id);
+      }
       players.set(this.remote.views());
     }
 
@@ -333,6 +351,19 @@ export class WorldSync {
         if (e.id === selfId) continue;
         const anim = EMOTE_ANIMATIONS[e.emote] ?? AnimState.Wave;
         this.remote.playEmote(e.id, anim);
+      }
+    }
+
+    if (delta.chats?.length) {
+      for (const c of delta.chats) {
+        // The server echoes our own line back. It is already in the log — appended
+        // optimistically the moment it was typed, so the composer feels instant — but the
+        // *bubble* is raised here, from the echo, so it appears exactly when everyone
+        // else's does rather than a round trip early.
+        const mine = c.id === selfId;
+        const name = mine ? this.selfName() : (this.remote.views().find((p) => p.id === c.id)?.name ?? 'Someone');
+        if (!mine) pushChat({ playerId: c.id, name, text: c.text, self: false });
+        this.bubbles.say(c.id, c.text);
       }
     }
 
@@ -439,6 +470,33 @@ export class WorldSync {
 
   private selfId(): PlayerId | null {
     return this.connection.welcome?.self ?? null;
+  }
+
+  /** The local player's server-assigned id, once the handshake has completed. */
+  get selfPlayerId(): PlayerId | null {
+    return this.selfId();
+  }
+
+  /** The local player's chosen name, read from the store at call time. */
+  private selfName(): string {
+    let name = 'You';
+    self.subscribe((s) => (name = s.name || 'You'))();
+    return name;
+  }
+
+  /**
+   * Send a line of chat.
+   *
+   * Appended to the log optimistically so the composer feels instant, but *not* bubbled —
+   * the bubble is raised when the server echoes the line back, so your own words appear
+   * over your own head at the same moment everyone else sees them. A bubble that led the
+   * room by a round trip would make your character look out of sync with its own voice.
+   */
+  say(text: string): void {
+    const trimmed = text.trim().slice(0, PROTOCOL.MAX_CHAT_LENGTH);
+    if (!trimmed) return;
+    pushChat({ playerId: this.selfId() ?? '', name: this.selfName(), text: trimmed, self: true });
+    this.connection.send({ t: 'chat', text: trimmed });
   }
 
   /**

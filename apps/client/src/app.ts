@@ -47,6 +47,7 @@ import { Input } from './input/input.js';
 import { LocalPlayer } from './character/local-player.js';
 import { RemotePlayers } from './character/remote-players.js';
 import { NameTags } from './character/name-tags.js';
+import { Speech } from './character/speech.js';
 import { Connection } from './net/connection.js';
 import { WorldSync } from './net/world-sync.js';
 import { Ambience } from './audio/ambience.js';
@@ -64,6 +65,9 @@ import {
   stats,
   stickState,
   zoneAnnounce,
+  chatLog,
+  followTarget,
+  selfPose,
   type SelfState,
   type WorldCommands,
 } from './state/stores.js';
@@ -73,6 +77,21 @@ const INTERACT_CHECK_HZ = 8;
 
 /** How long the zone title card stays up. */
 const ZONE_CARD_MS = 3500;
+
+/**
+ * How close following gets you before it stops walking. Just outside conversational
+ * distance: close enough to read a name tag and share a zone, far enough that two
+ * characters are not occupying the same metre of ground.
+ */
+const FOLLOW_STOP_DISTANCE = 2.6;
+
+/**
+ * How far the followed player must move before the walk is re-issued, squared.
+ *
+ * Re-pathing every frame toward an interpolated position produces a character that shuffles
+ * in place, because the target jitters by centimetres between network samples.
+ */
+const FOLLOW_REPATH_SQ = 1.6 * 1.6;
 
 /**
  * The running application.
@@ -93,6 +112,8 @@ export class App {
   private local: LocalPlayer;
   private readonly remote: RemotePlayers;
   private readonly nameTags: NameTags;
+  /** Who is currently saying what, for the bubbles above their heads. */
+  private readonly speech = new Speech();
   private readonly ambience = new Ambience();
 
   private connection: Connection | null = null;
@@ -103,6 +124,11 @@ export class App {
 
   /** Accumulator for the interactable proximity check. */
   private interactAccumulator = 0;
+
+  /** Id of the player being followed, mirrored from the store so the frame loop is sync. */
+  private followingId: string | null = null;
+  /** Where the followed player was when the current walk was issued. */
+  private followAnchor: THREE.Vector3 | null = null;
 
   /** Zone the player was in last frame, for change detection. */
   private lastZone: ZoneId | null = null;
@@ -118,6 +144,12 @@ export class App {
   private nearbyInteractable: { id: string; label: string; kind: 'use' | 'sit' } | null = null;
 
   constructor(container: HTMLElement) {
+    // The frame loop must read the follow target synchronously and cannot afford a store
+    // read per frame, so the subscription mirrors it into a field.
+    followTarget.subscribe((f) => {
+      if (f?.id !== this.followingId) this.followAnchor = null;
+      this.followingId = f?.id ?? null;
+    });
     const tier = detectTier();
     const quality = settingsFor(tier);
     settings.update((s) => ({ ...s, quality: tier }));
@@ -235,7 +267,7 @@ export class App {
       if (state === 'connected') notify('Connected', 'good', 1800);
     });
 
-    this.sync = new WorldSync(this.connection, this.remote, rebuilt);
+    this.sync = new WorldSync(this.connection, this.remote, rebuilt, this.speech);
     this.connection.connect();
 
     // Audio can only start from inside a gesture, and "Go ashore" is one.
@@ -274,10 +306,18 @@ export class App {
       this.camera.update(dt, this.tmpVec);
 
       this.local.update(dt);
+
+      // Publish the pose for the minimap. A plain object write, not a store — see
+      // `selfPose` in stores.ts for why this one deliberately skips reactivity.
+      selfPose.x = this.local.position.x;
+      selfPose.y = this.local.position.y;
+      selfPose.z = this.local.position.z;
+      selfPose.yaw = this.local.yaw;
       this.local.character.updateLod(this.renderer.camera.position);
       this.remote.update(dt, this.renderer.camera.position);
 
       const serverTime = this.connection?.serverNow() ?? Date.now();
+      this.updateFollow();
       this.island.update(this.elapsed, serverTime, this.local.position, dt);
       this.renderer.setBloomStrength(this.island.sky.bloomStrength());
 
@@ -290,8 +330,66 @@ export class App {
     },
   };
 
+  /**
+   * Keep walking toward whoever is being followed.
+   *
+   * Built on `walkTo` rather than on its own steering, which buys two things for free: the
+   * walk obeys the same walkability rules as every other movement (so following someone up
+   * a cliff path works and following them into the sea does not), and *any manual input
+   * cancels it* — `resolveIntent` drops the auto-walk the moment you touch the stick, and
+   * the check below notices and drops the follow with it. Following should never be
+   * something you have to fight your way out of.
+   *
+   * The target is re-issued only when they have moved a real distance. Re-pathing every
+   * frame toward a jittering interpolated position produces a character that shuffles.
+   */
+  private updateFollow(): void {
+    const target = this.followingId;
+    if (!target) return;
+
+    const position = this.remote.positionOf(target);
+    if (!position) {
+      // They left, or moved out of interest range. `world-sync` clears the store on an
+      // explicit leave; this covers everything else.
+      followTarget.set(null);
+      return;
+    }
+
+    const dx = position.x - this.local.position.x;
+    const dz = position.z - this.local.position.z;
+    const distance = Math.hypot(dx, dz);
+
+    if (distance <= FOLLOW_STOP_DISTANCE) {
+      // Close enough. Release the walk so the two of you are standing together rather than
+      // one of you jostling into the other's personal space.
+      if (this.local.autoWalking) this.local.cancelWalkTo();
+      this.followAnchor = null;
+      return;
+    }
+
+    // Manual input cancelled the walk we issued — take that as "I'll take it from here".
+    if (this.followAnchor && !this.local.autoWalking && distance > FOLLOW_STOP_DISTANCE) {
+      followTarget.set(null);
+      this.followAnchor = null;
+      notify('Stopped following', 'neutral', 1800);
+      return;
+    }
+
+    const moved = !this.followAnchor || this.followAnchor.distanceToSquared(position) > FOLLOW_REPATH_SQ;
+    if (moved) {
+      // Aim for a point short of them, so arriving does not mean standing inside them.
+      const inset = Math.max(0, distance - FOLLOW_STOP_DISTANCE * 0.8) / distance;
+      void this.local.walkTo(
+        this.local.position.x + dx * inset,
+        this.local.position.z + dz * inset,
+      );
+      this.followAnchor = (this.followAnchor ?? new THREE.Vector3()).copy(position);
+    }
+  }
+
   /** Feed the name-tag layer with everyone it might want to label. */
   private updateNameTags(): void {
+    const now = Date.now();
     const targets = [];
     for (const view of this.remote.views()) {
       const position = this.remote.positionOf(view.id);
@@ -302,8 +400,19 @@ export class App {
         position,
         // The host of whatever is running gets the accent, so you can find them.
         highlight: view.role >= Role.Host,
+        bubble: this.speech.textFor(view.id, now),
       });
     }
+
+    // Your own bubble. No name tag — you know who you are, and a plate pinned to the back
+    // of your own head is the classic way to make a third-person camera feel cluttered —
+    // but the bubble is worth having: it is the confirmation that what you typed was said.
+    const selfId = this.sync?.selfPlayerId ?? null;
+    const mine = selfId ? this.speech.textFor(selfId, now) : null;
+    if (mine) {
+      targets.push({ id: 'self', name: '', position: this.local.position, bubble: mine });
+    }
+
     this.nameTags.update(targets, this.renderer.camera);
   }
 
@@ -437,6 +546,22 @@ export class App {
         if (current) this.sync?.leaveActivity(current);
       },
 
+      say: (text) => this.sync?.say(text),
+
+      follow: (id) => {
+        if (!id) {
+          followTarget.set(null);
+          return;
+        }
+        const view = this.remote.views().find((p) => p.id === id);
+        if (!view) {
+          notify('They are no longer here', 'warn');
+          return;
+        }
+        followTarget.set({ id, name: view.name });
+        notify(`Following ${view.name}`, 'neutral');
+      },
+
       checkIn: () => {
         const current = getSelfSnapshot().activity;
         if (current) this.sync?.checkIn(current);
@@ -518,6 +643,12 @@ export class App {
       spawn: spawnPoint,
       stage: stagePosition,
       templates: ACTIVITY_TEMPLATES,
+      // Social surface, for tools/chat-smoke.mjs. The chat log and the follow target are
+      // stores; `speech` is the live bubble bookkeeping.
+      speech: this.speech,
+      chatLog: () => snapshot(chatLog),
+      following: () => snapshot(followTarget),
+      commands: () => snapshot(commands),
     };
   }
 }

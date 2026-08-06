@@ -166,7 +166,10 @@ export class Input {
       e.preventDefault();
       this.jumpQueued = true;
     }
-    if (e.code === 'KeyE' || e.code === 'Enter') this.interactQueued = true;
+    // `E` only. `Enter` used to be a second binding here, but it now opens the chat
+    // composer (Chat.svelte), which is the stronger convention in a room with a chat box —
+    // and an Enter that sometimes talks and sometimes sits on a bench is worse than either.
+    if (e.code === 'KeyE') this.interactQueued = true;
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.run = true;
     this.updateMoveFromKeys();
   };

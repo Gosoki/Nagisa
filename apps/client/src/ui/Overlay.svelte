@@ -33,6 +33,8 @@
   import Panels from './Panels.svelte';
   import EmoteWheel from './EmoteWheel.svelte';
   import Joystick from './Joystick.svelte';
+  import Chat from './Chat.svelte';
+  import Minimap from './Minimap.svelte';
 
   /**
    * Virtual-stick drag state for touch movement.
@@ -87,6 +89,8 @@
   {:else if $appPhase === 'world'}
     <Hud />
     <Joystick stick={$stick} />
+    <Minimap />
+    <Chat />
     <ZoneCard />
     <NextUp />
     <Announcements />

@@ -44,7 +44,7 @@ import type {
   ZoneId,
   ZoneKind,
 } from './map/types.js';
-import { PADS, heightAt, nearestWalkable, padById } from './terrain.js';
+import { COAST_PATH, PADS, PATHS, heightAt, nearestWalkable, padById, pathAt, pathLength } from './terrain.js';
 
 export type { ActivityTemplate, Interactable, Landmark, LandmarkKind, Zone, ZoneId, ZoneKind };
 
@@ -214,6 +214,191 @@ export function zonePad(id: ZoneId) {
 /** Every pad that has a zone of the same name. Used by `world-smoke` to check alignment. */
 export function zonedPads() {
   return PADS.filter((pad) => ZONE_INDEX.has(pad.id as ZoneId));
+}
+
+// ---------------------------------------------------------------------------
+// How much room a landmark takes up
+// ---------------------------------------------------------------------------
+
+/**
+ * Ground footprint of each landmark kind, metres, as `[width, depth]` in its own frame,
+ * including the eaves where a roof oversails.
+ *
+ * ### Why this is here and not in the tool that needed it
+ *
+ * It was in two tools, written twice, and absent from the one place that had to act on it:
+ * the client places a lantern every twenty-one metres along each road and had no idea what
+ * else was there, so four of them stood *inside* buildings — one three metres into the main
+ * pier and one one-and-a-bit into the harbour office, growing out of a wall.
+ *
+ * Sizes are the built extent rather than the wall line, because what matters to everything
+ * that reads this is "may I put something here", and a metre of eave is a metre you cannot
+ * stand under a lantern in. They are approximate on purpose: this answers a clearance
+ * question, and a clearance answer is allowed to be generous.
+ */
+const LANDMARK_FOOTPRINTS: Readonly<Record<string, readonly [number, number]>> = {
+  warehouse: [12.3, 10.3], machiya: [9.8, 11.8], minka: [12.5, 10.5], bathhouse: [15, 12],
+  teahouse: [13.6, 11.1], 'keepers-house': [11.2, 8.7], boathouse: [8.4, 11.4], stage: [14.4, 11.4],
+  'shrine-hall': [13.6, 11.6], lighthouse: [10.1, 10.1], 'market-stall': [3.9, 3.1],
+  'beach-hut': [7.4, 6.4], 'net-rack': [2, 5.6], well: [3.4, 2.4], 'notice-board': [4.4, 1.6],
+  'bell-tower': [4.4, 4.4], temizuya: [5.3, 4.7], torii: [6.6, 1.7], gate: [6.2, 1.9],
+  komainu: [1.5, 1.2], 'stone-lantern': [1.4, 1.4], 'post-lantern': [0.8, 0.8], bench: [2.4, 0.8],
+  'summit-marker': [1.6, 1.6], rock: [2, 2], boat: [2.4, 5.4], banner: [1.2, 1.2],
+  pier: [4, 22], breakwater: [3, 34], 'sea-wall': [1.4, 14], rail: [0.4, 12], steps: [3, 3],
+};
+
+/** What a kind takes up when nothing more specific is known. */
+const DEFAULT_FOOTPRINT: readonly [number, number] = [2.5, 2.5];
+
+/**
+ * The ground a landmark occupies, as half-extents in its own frame plus its yaw.
+ *
+ * An oriented rectangle rather than a circumscribed circle. The circle was tried and it is
+ * too blunt to be useful: a warehouse's circle has an eight-metre radius, so a run of them
+ * along a harbour front refuses a third of the road's lantern stations — and a pier's would
+ * be a twenty-metre no-go zone around a jetty that is four metres wide.
+ */
+export function landmarkExtent(landmark: Landmark): { hw: number; hd: number; rot: number } {
+  const [w, d] = LANDMARK_FOOTPRINTS[landmark.kind] ?? DEFAULT_FOOTPRINT;
+  const scale = landmark.scale ?? 1;
+  // An authored `w`/`d` is the wall line; the table's numbers already include the eaves, so
+  // an authored one has to be given them back.
+  const width = typeof landmark.opts?.w === 'number' ? landmark.opts.w + 2.3 : w;
+  const depth = typeof landmark.opts?.d === 'number' ? landmark.opts.d + 2.3 : d;
+  const length = typeof landmark.opts?.length === 'number' ? landmark.opts.length : null;
+  return {
+    hw: (width / 2) * scale,
+    hd: ((length ?? depth) / 2) * scale,
+    rot: landmark.rot,
+  };
+}
+
+/**
+ * Whether `(x, z)` is clear of every hand-placed landmark, with `extra` metres to spare.
+ *
+ * `extra` is the room the *new* thing needs on top of the landmark's own — a lantern is not
+ * a point. Asked by anything choosing where to put something down; `scripts/placement-audit.ts`
+ * asks the harder rectangle-versus-rectangle question about things already placed.
+ */
+export function clearOfLandmarks(x: number, z: number, extra = 0): boolean {
+  for (const l of LANDMARKS) {
+    const { hw, hd, rot } = landmarkExtent(l);
+    const dx = x - l.x;
+    const dz = z - l.z;
+    // Into the landmark's frame. Its entrance faces local −z; which face is which does not
+    // matter here, only that the box is turned the same way the building is.
+    const cos = Math.cos(rot);
+    const sin = Math.sin(rot);
+    if (Math.abs(dx * cos - dz * sin) < hw + extra && Math.abs(dx * sin + dz * cos) < hd + extra) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Roadside lanterns
+// ---------------------------------------------------------------------------
+
+/** Half a lantern plus its plinth: the room the lamp itself needs, beyond the landmark's. */
+const LAMP_RADIUS = 1.2;
+/** Two lanterns closer than this read as one bad decision rather than as two lamps. */
+const LAMP_SEPARATION = 9;
+/**
+ * Ground across the base, by what stands on it.
+ *
+ * A stone tōrō is a box on a plinth and shows every centimetre it is out of level. A timber
+ * post lantern is a pole, and a pole on a sloping verge is what a mountain lane actually has
+ * — holding it to the tōrō's standard left the shrine ascent unlit for a reason no player
+ * could ever have seen.
+ */
+const LAMP_BASE_DROP = { stone: 0.3, post: 0.8 } as const;
+
+/** How level the ground is under a lantern's base, metres across its 1.4 m footprint. */
+function lampBaseDrop(x: number, z: number): number {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const [ox, oz] of [
+    [-0.7, -0.7],
+    [0.7, -0.7],
+    [-0.7, 0.7],
+    [0.7, 0.7],
+  ] as const) {
+    const h = heightAt(x + ox, z + oz);
+    lo = Math.min(lo, h);
+    hi = Math.max(hi, h);
+  }
+  return hi - lo;
+}
+
+/** One roadside lantern: where it goes, which way it faces, and which kind it is. */
+export interface RoadsideLantern {
+  readonly x: number;
+  readonly z: number;
+  readonly yaw: number;
+  /** The coast road gets matched stone tōrō; the working lanes get timber posts. */
+  readonly kind: 'stone' | 'post';
+}
+
+/**
+ * Where the roads' lanterns stand.
+ *
+ * ### Why this is world knowledge and not the renderer's
+ *
+ * It used to live in the client, next to the Three.js that draws them, as "every `spacing`
+ * metres, alternating verges". That is a rule about the *road*, and it knows nothing about
+ * what the road runs past — so it put four lanterns inside buildings (one three metres into
+ * the main pier, one growing out of the harbour office wall), left thirteen leaning on
+ * embankments with up to 1.1 m of ground across their 1.4 m base, and stood two pairs two
+ * metres apart where one lane meets another and both started counting from their own zero.
+ *
+ * Fixing it means consulting the world, and once it consults the world it belongs beside the
+ * world. The audit that keeps it honest then tests the real function instead of a copy of it,
+ * which matters more than it sounds: the copy is exactly the kind of thing that agrees with
+ * the original right up until one of them is edited.
+ *
+ * Each station asks before it puts anything down, and when the answer is no it tries the
+ * other verge, then a few metres either way along the road, before giving up. A road with a
+ * lantern missing where a building meets it still reads as a lit road; a lantern inside the
+ * building does not.
+ */
+export function roadsideLanterns(spacing: number): RoadsideLantern[] {
+  const out: RoadsideLantern[] = [];
+  for (const path of PATHS) {
+    const steps = Math.floor(pathLength(path.id) / spacing);
+    const offset = path.halfWidth + 1.3;
+    const kind: RoadsideLantern['kind'] = path.id === COAST_PATH.id ? 'stone' : 'post';
+    const maxDrop = LAMP_BASE_DROP[kind];
+
+    for (let i = 0; i < steps; i++) {
+      // Preferred first — the alternating verge at the exact station — then the other verge,
+      // then either verge a few metres along. Ordered so an unobstructed road is lit exactly
+      // as it was before any of this existed, and only an obstructed one moves.
+      const preferred = i % 2 === 0 ? 1 : -1;
+      let placed: RoadsideLantern | null = null;
+      outer: for (const ds of [0, 4, -4, 8, -8]) {
+        const { x, z, tx, tz } = pathAt(path.id, i * spacing + ds);
+        for (const side of [preferred, -preferred]) {
+          const px = x - tz * offset * side;
+          const pz = z + tx * offset * side;
+          if (!clearOfLandmarks(px, pz, LAMP_RADIUS)) continue;
+          if (lampBaseDrop(px, pz) > maxDrop) continue;
+          if (out.some((l) => Math.hypot(px - l.x, pz - l.z) < LAMP_SEPARATION)) continue;
+          placed = { x: px, z: pz, yaw: Math.atan2(tx, tz), kind };
+          break outer;
+        }
+      }
+      if (placed) out.push(placed);
+    }
+  }
+  return out;
+}
+
+/** How many stations `roadsideLanterns` considered. The denominator for "are the roads lit". */
+export function roadsideLanternStations(spacing: number): number {
+  let n = 0;
+  for (const path of PATHS) n += Math.floor(pathLength(path.id) / spacing);
+  return n;
 }
 
 // ---------------------------------------------------------------------------

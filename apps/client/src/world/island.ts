@@ -32,13 +32,10 @@
 
 import * as THREE from 'three';
 import {
-  COAST_PATH,
   LANDMARKS,
-  PATHS,
   ZONES,
   heightAt,
-  pathAt,
-  pathLength,
+  roadsideLanterns,
   type Landmark,
   type LandmarkKind,
   type ZoneId,
@@ -356,41 +353,37 @@ export class Island {
    * re-routed. The coast road gets stone tōrō — a matched run of them is the real-world
    * convention and variation there would read as sloppiness — while the three inland lanes
    * get timber post lanterns, which are what a working lane would actually have.
+   *
+   * ### Where the positions come from
+   *
+   * `roadsideLanterns` in `@nagisa/shared`, not from here. Choosing the spots means asking
+   * what else is on the ground — and once it has to consult the world, it belongs beside the
+   * world, where `npm run audit:placement` can test the function itself rather than a copy of
+   * it. See that function for the four lanterns that used to stand inside buildings.
+   *
+   * What is left here is the part that is genuinely the renderer's: which mesh, how big, and
+   * yielding to the frame every so often so the loading screen keeps moving.
    */
   private async buildRoadside(): Promise<void> {
     const group = new THREE.Group();
     group.name = 'roadside';
 
     const spacing = this.quality.tier === 'low' ? 34 : 21;
-    let count = 0;
+    const lanterns = roadsideLanterns(spacing);
 
-    for (const path of PATHS) {
-      const total = pathLength(path.id);
-      const isCoast = path.id === COAST_PATH.id;
-      const steps = Math.floor(total / spacing);
+    for (let i = 0; i < lanterns.length; i++) {
+      const lamp = lanterns[i]!;
+      const prop = lamp.kind === 'stone' ? stoneLantern({ height: 2.1 }) : postLantern({ height: 3.0 });
+      prop.position.set(lamp.x, heightAt(lamp.x, lamp.z), lamp.z);
+      prop.rotation.y = lamp.yaw;
+      if (lamp.kind === 'stone') prop.scale.setScalar(0.85);
+      this.prepareForRendering(prop);
+      group.add(prop);
 
-      for (let i = 0; i < steps; i++) {
-        const s = i * spacing;
-        const { x, z, tx, tz } = pathAt(path.id, s);
-        // Offset perpendicular to the road, alternating sides.
-        const side = i % 2 === 0 ? 1 : -1;
-        const offset = path.halfWidth + 1.3;
-        const px = x - tz * offset * side;
-        const pz = z + tx * offset * side;
-
-        const prop = isCoast ? stoneLantern({ height: 2.1 }) : postLantern({ height: 3.0 });
-        prop.position.set(px, heightAt(px, pz), pz);
-        prop.rotation.y = Math.atan2(tx, tz);
-        if (isCoast) prop.scale.setScalar(0.85);
-        this.prepareForRendering(prop);
-        group.add(prop);
-        count++;
-
-        if (count % 12 === 0) await nextFrame();
-      }
+      if ((i + 1) % 12 === 0) await nextFrame();
     }
 
-    this.buildStats.roadsideProps = count;
+    this.buildStats.roadsideProps = lanterns.length;
     this.group.add(group);
     this.registerBucket('roadside', group);
   }

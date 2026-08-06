@@ -201,7 +201,7 @@ export const LANTERN_ATOLL: MapPack = {
       { id: 'at-stone-n', kind: 'stone-lantern', x: -RING_RADIUS + 9, z: -5, rot: 0 },
       { id: 'at-stone-s', kind: 'stone-lantern', x: -RING_RADIUS + 9, z: 5, rot: 0 },
       { id: 'at-wall-n', kind: 'sea-wall', x: -91, z: -23, rot: -0.2, opts: { length: 16 } },
-      { id: 'at-wall-s', kind: 'sea-wall', x: -84.5, z: 8, rot: 0.35, opts: { length: 16 } },
+      { id: 'at-wall-s', kind: 'sea-wall', x: -92, z: 9, rot: 0.35, opts: { length: 16 } },
 
       // ── North camp ──────────────────────────────────────────────────────────
       // One-sided on purpose. A ring where every place is symmetrical reads as a diagram.

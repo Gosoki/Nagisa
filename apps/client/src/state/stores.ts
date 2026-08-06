@@ -298,6 +298,17 @@ export function pushSystemChat(text: string): void {
 const MUTE_KEY = 'nagisa.muted';
 
 /**
+ * How many mutes are kept, newest first.
+ *
+ * A cap rather than none, because the list is written to `localStorage` and read on every
+ * arriving chat line, and nothing ever removes an id: the people it names have long since
+ * left, and their ids will not be issued again. Without this it is a log that grows for as
+ * long as the browser profile lives. Two hundred is far more than anyone will mute in a
+ * session and small enough that the linear scan per message stays free.
+ */
+const MUTE_LIMIT = 200;
+
+/**
  * People whose chat and speech bubbles this client drops, by player id.
  *
  * ### Why this is client-side and unilateral
@@ -327,7 +338,8 @@ function loadMuted(): string[] {
   try {
     const raw = localStorage.getItem(MUTE_KEY);
     const parsed: unknown = raw ? JSON.parse(raw) : null;
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((v): v is string => typeof v === 'string').slice(-MUTE_LIMIT);
   } catch {
     // Private browsing, or a value written by an older build. An empty list is correct.
     return [];
@@ -347,7 +359,7 @@ export function isMuted(id: string): boolean {
 /** Mute or unmute someone. Persisted immediately — this is not a preference to lose. */
 export function toggleMute(id: string, name: string): void {
   mutedIds.update((ids) => {
-    const next = ids.includes(id) ? ids.filter((v) => v !== id) : [...ids, id];
+    const next = ids.includes(id) ? ids.filter((v) => v !== id) : [...ids, id].slice(-MUTE_LIMIT);
     try {
       localStorage.setItem(MUTE_KEY, JSON.stringify(next));
     } catch {

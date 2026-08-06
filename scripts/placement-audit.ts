@@ -57,8 +57,11 @@ import {
   PATHS,
   ZONES,
   activeMap,
+  clearOfLandmarks,
   heightAt,
   resolveMapId,
+  roadsideLanternStations,
+  roadsideLanterns,
   type Landmark,
 } from '../packages/shared/src/index.js';
 
@@ -679,6 +682,53 @@ for (const [l, mean, worst] of idleWalls) {
   );
 }
 
+// --- Roadside lanterns ------------------------------------------------------------------
+//
+// The only props on the island nobody placed by hand. `roadsideLanterns` chooses the spots;
+// this checks that what it chose is standable. The function is the real one the client
+// renders from — a reimplementation here would agree with it exactly until one of the two
+// was edited, which is the failure this whole tool exists to catch elsewhere.
+const LAMP_SPACING = 21;
+const LAMP_RADIUS = 1.2;
+const LAMP_SEPARATION = 9;
+const LAMP_BASE_DROP = { stone: 0.3, post: 0.8 };
+
+function lampBaseDrop(x: number, z: number): number {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const [ox, oz] of [
+    [-0.7, -0.7],
+    [0.7, -0.7],
+    [-0.7, 0.7],
+    [0.7, 0.7],
+  ]) {
+    const h = heightAt(x + ox!, z + oz!);
+    lo = Math.min(lo, h);
+    hi = Math.max(hi, h);
+  }
+  return hi - lo;
+}
+
+const lamps = roadsideLanterns(LAMP_SPACING);
+const lampStations = roadsideLanternStations(LAMP_SPACING);
+
+const lampInBuilding = lamps.filter((l) => !clearOfLandmarks(l.x, l.z, LAMP_RADIUS));
+const lampLeaning = lamps.filter((l) => lampBaseDrop(l.x, l.z) > LAMP_BASE_DROP[l.kind]);
+const lampCrowded: Array<[number, number]> = [];
+for (let a = 0; a < lamps.length; a++) {
+  for (let b = a + 1; b < lamps.length; b++) {
+    const d = Math.hypot(lamps[a]!.x - lamps[b]!.x, lamps[a]!.z - lamps[b]!.z);
+    if (d < LAMP_SEPARATION) lampCrowded.push([a, b]);
+  }
+}
+process.stdout.write(
+  `\nroadside lanterns: ${lamps.length} placed of ${lampStations} stations` +
+    ` (${lampStations - lamps.length} skipped for want of room)\n` +
+    `    standing in a structure: ${lampInBuilding.length}\n` +
+    `    leaning on a bank:       ${lampLeaning.length}\n` +
+    `    crowding another:        ${lampCrowded.length}\n`,
+);
+
 process.stdout.write('\n');
 for (const r of reports) {
   if (!r.incoherent.length) continue;
@@ -724,6 +774,12 @@ const verdicts: Array<[string, boolean, string]> = [
   ['no building stands in a carriageway', onRoad.length === 0, `${onRoad.length} on a road`],
   ['no door turns its back on the road', backToRoad.length === 0, `${backToRoad.length} facing away`],
   ['every wall and railing holds something back', idleWalls.length === 0, `${idleWalls.length} idle`],
+  ['no lantern stands in a building', lampInBuilding.length === 0, `${lampInBuilding.length} inside`],
+  ['no lantern leans on a bank', lampLeaning.length === 0, `${lampLeaning.length} tilted`],
+  ['no two lanterns crowd each other', lampCrowded.length === 0, `${lampCrowded.length} pairs`],
+  // A road missing a lamp where a building meets it still reads as a lit road. A road that
+  // lost a third of them reads as unfinished, and would mean the rule above is too strict.
+  ['the roads are still lit', lamps.length >= lampStations * 0.7, `${lamps.length} of ${lampStations} stations`],
 ];
 
 let bad = 0;

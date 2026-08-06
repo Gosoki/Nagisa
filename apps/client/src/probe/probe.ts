@@ -74,6 +74,11 @@ function plan(cx: number, cz: number, ground: number, span: number): Viewpoint {
 }
 
 /**
+ * These are coordinates in a world that gets re-laid, so they go stale: a viewpoint whose
+ * eye ends up inside a wall renders a picture of plaster and tells you nothing. When a zone
+ * is re-composed, re-render its viewpoint and move the camera to match — `npm run plans`
+ * shows where the ground is clear.
+ *
  * Every eye height below is authored against Nagisa Island's terraces — a camera 4 m above
  * the plaza is 12 m up, because the plaza is at 8. When the island's relief was halved these
  * all moved with it; a viewpoint left at the old height ends up in the sky, or buried.
@@ -89,20 +94,20 @@ const VIEWPOINTS: Record<string, Viewpoint> = {
    * play at can be reviewed here rather than through the whole-app smoke test.
    */
   gameplay: { eye: [0, 9.5, 85], target: [0, 3.7, 74], fov: 50 },
-  /** The south quay at eye level — warehouses, stalls, boats. */
-  quay: { eye: [-20, 7, 88], target: [6, 4, 68], fov: 55 },
-  /** The plaza stage from the audience's position. */
-  plaza: { eye: [56, 13.5, 52], target: [76, 10, 44], fov: 50 },
-  /** The Old Street, looking down the row of townhouses. */
-  street: { eye: [66, 14, -16], target: [56, 11, -50], fov: 55 },
+  /** The south quay at eye level — warehouses, stalls, boats. Standing on the quay road. */
+  quay: { eye: [24.9, 6.4, 72.2], target: [-3.7, 4, 80.2], fov: 55 },
+  /** The plaza stage from the audience's position, in front of it where the crowd forms. */
+  plaza: { eye: [52.1, 12, 43.6], target: [67, 10.5, 53.7], fov: 50 },
+  /** The Old Street, standing in the road and looking down between the two rows. */
+  street: { eye: [72.5, 13, -19.5], target: [52.5, 10.5, -54], fov: 55 },
   /** The shrine approach, through the torii. */
   shrine: { eye: [-36, 15, 34], target: [-78, 13.5, 38], fov: 50 },
   /** The summit court, looking back down at the island. */
   summit: { eye: [17, 30, 15], target: [0, 26, -3], fov: 55 },
   /** The lighthouse cape against the sky. */
-  lighthouse: { eye: [-44, 18, -54], target: [-64, 20, -37], fov: 50 },
+  lighthouse: { eye: [-46, 18, -52], target: [-72, 20, -43], fov: 50 },
   /** The teahouse on the plaza's quiet side. */
-  teahouse: { eye: [68, 13, 22], target: [80, 10.5, 30], fov: 52 },
+  teahouse: { eye: [69, 12, 8], target: [85, 10.5, 18.5], fov: 52 },
   /** The north fishing harbour, from the quay approach looking out over the bay. */
   north: { eye: [20, 10, -50], target: [-16, 3, -82], fov: 55 },
   /** Sunset beach, low and level with the water. */

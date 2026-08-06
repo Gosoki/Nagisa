@@ -32,6 +32,7 @@ import {
   ZONES,
   crowdSlot,
   heightAt,
+  illegality,
   isWalkable,
   normalAt,
   spawnPoint,
@@ -296,9 +297,8 @@ console.log('\nWalkability contract');
   // moving only where the client's rule (`canOccupy` — reproduced here as `isWalkable`
   // plus the strictly-improving escape hatch) allows, and assert the server would have
   // accepted every single position the client committed to.
-  const illegality = (x: number, z: number): number =>
-    Math.max(0, -heightAt(x, z) - MAX_WADE_DEPTH) + Math.max(0, slopeAt(x, z) - MAX_WALKABLE_SLOPE) * 10;
-
+  // `illegality` is imported, not restated. It used to be copied here, which meant this
+  // test could only ever confirm that the copy agreed with itself.
   const canOccupy = (fromX: number, fromZ: number, x: number, z: number): boolean => {
     if (isWalkable(x, z)) return true;
     const here = illegality(fromX, fromZ);

@@ -155,8 +155,15 @@ const PADS: MapPack['terrain']['pads'] = [
   { id: 'south-harbor', x: 0, z: 74, height: 2.4, inner: 21, outer: 35 },
   /** The main plaza, on the eastern shelf. */
   { id: 'plaza', x: 64, z: 37, height: 8.0, inner: 25, outer: 37 },
-  /** The old street, sharing that shelf — see SHELVES for why there is no dip between them. */
-  { id: 'village', x: 64, z: -37, height: 9.0, inner: 25, outer: 37 },
+  /**
+   * The old street, sharing that shelf — see SHELVES for why there is no dip between them.
+   *
+   * `inner` is 21 rather than 25 so the summit road's embankment has somewhere to land. The
+   * flat was claiming four metres it had no building on, and those four metres were the
+   * difference between a 56° bank across the north end of the street and no bank at all.
+   * `npm run audit:terrain` is what measures it.
+   */
+  { id: 'village', x: 64, z: -37, height: 9.0, inner: 21, outer: 37 },
   /** Sunset beach, on the sand east of the south quay. */
   { id: 'beach', x: 46, z: 92, height: 1.6, inner: 16, outer: 28 },
   /** The working fishing harbour. */
@@ -224,7 +231,12 @@ const PATHS: MapPack['terrain']['paths'] = [
       // near-direct line holds about 22%, and the four turns that used to be needed to keep
       // the grade legal only made the climb long.
       [82, 0],
-      [58, -8],
+      // z = -5, not -8. At -8 this waypoint ran thirty metres from the old street's terrace
+      // while sitting five and a half metres above it, and no embankment shape can absorb
+      // that much drop across that little ground — the bank across the north end of the
+      // street came out at 56°, which is a wall you cannot climb in the middle of a village.
+      // Three metres of clearance is the whole fix. See `npm run audit:terrain`.
+      [58, -5],
       [36, -6],
       [16, 3],
       [0, 0], // summit
@@ -507,7 +519,10 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'ov-machiya-5', kind: 'machiya', x: 75, z: -37, rot: -Math.PI * 0.5, opts: { w: 8, d: 10, floors: 1, sign: true } },
   { id: 'ov-machiya-6', kind: 'machiya', x: 75, z: -26, rot: -Math.PI * 0.5, opts: { w: 8, d: 10, floors: 2 } },
   { id: 'ov-bathhouse', kind: 'bathhouse', x: 64, z: -53, rot: Math.PI, opts: { w: 13, d: 10 } },
-  { id: 'ov-warehouse', kind: 'warehouse', x: 76, z: -22, rot: -0.3, opts: { w: 10, d: 8 } },
+  // Pulled in from (76, -22): a 10 × 8 shed centred 19 m out reached its far corner past the
+  // terrace rim, and a building placed at one height sample with a corner over the blend ring
+  // stands on a 1.45 m plinth. `world-smoke`'s level-ground check is what caught it.
+  { id: 'ov-warehouse', kind: 'warehouse', x: 73, z: -26, rot: -0.3, opts: { w: 10, d: 8 } },
   { id: 'ov-gate-s', kind: 'gate', x: 64, z: -22, rot: 0 },
   { id: 'ov-gate-n', kind: 'gate', x: 64, z: -57, rot: Math.PI },
   { id: 'ov-well', kind: 'well', x: 64, z: -37, rot: 0 },

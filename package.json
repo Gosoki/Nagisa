@@ -29,7 +29,8 @@
     "test:app": "node tools/app-smoke.mjs",
     "shots": "node tools/shot.mjs",
     "map": "node scripts/world-map.mjs",
-    "test:roam": "node tools/roam-smoke.mjs"
+    "test:roam": "node tools/roam-smoke.mjs",
+    "audit:terrain": "node scripts/terrain-audit.mjs"
   },
   "allowScripts": {
     "esbuild@0.25.12": true

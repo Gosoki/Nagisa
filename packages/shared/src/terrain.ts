@@ -385,7 +385,11 @@ function buildPathIndex(): (Segment[] | undefined)[] {
   const grid: (Segment[] | undefined)[] = new Array(PATH_GRID_SIZE * PATH_GRID_SIZE);
 
   for (const path of PATHS) {
-    const reach = path.halfWidth + path.shoulder;
+    // Registered at the *widest* the blend can ever get, because a segment that is not in
+    // a cell cannot be found from it, and `blendWidth` may reach further than `shoulder`.
+    // Over-registering costs a few extra distance tests; under-registering silently drops
+    // the far half of a deep cut's embankment and leaves a step in the ground.
+    const reach = path.halfWidth + path.shoulder * MAX_BLEND_GROWTH;
     let acc = 0;
     for (let i = 0; i < path.points.length - 1; i++) {
       const [ax, az] = path.points[i];
@@ -436,9 +440,14 @@ export interface PathHit {
   readonly dist: number;
   /** Arc length along that path of the closest point. */
   readonly s: number;
+  /**
+   * Width of the blend from the cut back to the surrounding ground *here*, metres.
+   * Never narrower than `path.shoulder`; see {@link blendWidth}.
+   */
+  readonly blend: number;
 }
 
-const NO_PATH: PathHit = { path: null, dist: Infinity, s: 0 };
+const NO_PATH: PathHit = { path: null, dist: Infinity, s: 0, blend: 0 };
 
 /**
  * The nearest path to a point, and how far away it is.
@@ -468,8 +477,10 @@ export function nearestPath(x: number, z: number, excludeId?: WorldPath['id']): 
     }
   }
 
-  if (!bestPath || best > bestPath.halfWidth + bestPath.shoulder) return NO_PATH;
-  return { path: bestPath, dist: best, s: bestS };
+  if (!bestPath) return NO_PATH;
+  const blend = blendWidth(bestPath, bestS);
+  if (best > bestPath.halfWidth + blend) return NO_PATH;
+  return { path: bestPath, dist: best, s: bestS, blend };
 }
 
 /** Total length of a path, metres. Computed once when the index is built. */
@@ -708,10 +719,126 @@ function isClosedLoop(path: WorldPath): boolean {
 }
 
 /**
+ * Most a blend may widen beyond the path's authored `shoulder`.
+ *
+ * A ceiling is needed because a bad profile could otherwise ask for an embankment fifty
+ * metres wide and quietly reshape half the island to hide its own mistake. At 3× the
+ * authored shoulder a 5 m cut blends comfortably and a 20 m one still shows up in the audit
+ * as the design error it is.
+ */
+const MAX_BLEND_GROWTH = 3;
+
+/**
+ * How steep an embankment is allowed to get, as a fraction of the walkable limit.
+ *
+ * Not 1.0, and the margin is not timidity — a bank is never the only thing shaping the
+ * ground it lands on. The terrace's own blend ring, the shelf under it and the surface
+ * detail on top all contribute gradient in the same direction, and they add. Sized at the
+ * limit exactly, the village bank came out at 49.6° against a 49.3° ceiling: correct in
+ * isolation, wrong in place.
+ */
+const EMBANKMENT_GRADE_FRACTION = 0.86;
+
+/**
+ * `Math.tan(MAX_WALKABLE_SLOPE * EMBANKMENT_GRADE_FRACTION)`, computed on first use.
+ *
+ * Lazily, because `MAX_WALKABLE_SLOPE` is declared further down the file with the rest of
+ * the walkability contract, where it belongs; evaluating this at module scope would read it
+ * in the temporal dead zone.
+ */
+let maxEmbankmentGradient = 0;
+
+/**
+ * Peak gradient of a `smoothstep` ramp, relative to its mean.
+ *
+ * `smoothstep`'s derivative is `6t(1-t)`, which peaks at 1.5 in the middle of the ramp. This
+ * factor is the whole reason the shoulders were mis-sized: they were chosen as if the blend
+ * were linear, so a cut that "should" have graded out at 44° actually reached 56° halfway
+ * down — comfortably over the 49° walkable limit, and exactly the measured slope of the bank
+ * between the old street and the lane above it.
+ */
+const SMOOTHSTEP_PEAK = 1.5;
+
+/** Per-station depth of each path's cut, metres. Parallel to `pathProfiles`. */
+const pathCuts = new Map<string, Float64Array>();
+
+/**
+ * How wide the blend from the cut back to the surrounding ground must be at arc length `s`.
+ *
+ * A constant shoulder is a constant *distance* asked to absorb a variable *drop*. Where the
+ * lane runs level with its surroundings it has nothing to absorb and the authored width is
+ * generous; where the lane is filled five metres above the terrace beside it, that same
+ * width becomes a bank far too steep to walk — a wall along the road, in the middle of a
+ * village, that no amount of smoothing the terrain would ever have removed because the
+ * terrain was not what made it.
+ *
+ * So the width is derived from the drop it has to absorb, and the authored `shoulder`
+ * becomes the *minimum* rather than the answer. Because the depth is a property of the
+ * station and not of the sample, the resulting field stays smooth: every point at the same
+ * arc length blends over the same width.
+ */
+function blendWidth(path: WorldPath, s: number): number {
+  maxEmbankmentGradient ||= Math.tan(MAX_WALKABLE_SLOPE * EMBANKMENT_GRADE_FRACTION);
+  const cut = cutDepth(path, s) * path.carve;
+  const needed = (SMOOTHSTEP_PEAK * cut) / maxEmbankmentGradient;
+  return Math.min(path.shoulder * MAX_BLEND_GROWTH, Math.max(path.shoulder, needed));
+}
+
+/**
+ * The height difference the blend at arc length `s` actually has to absorb, metres.
+ *
+ * ### Why this is measured sideways and not on the centreline
+ *
+ * The obvious reading of "how deep is the cut" is the difference between the designed
+ * surface and the ground beneath it, on the centreline. That number is useless here, and
+ * the case that proves it is the old street.
+ *
+ * The lane climbing to the summit passes about thirty metres from the village terrace,
+ * sitting on natural ground — nothing cut, nothing filled, centreline difference ≈ 0. Five
+ * metres inboard of it, the terrace has flattened everything to 9 m. So the blend, which
+ * believed it had nothing to absorb, had five and a half metres to absorb, and put a 56°
+ * bank across the middle of a street.
+ *
+ * What a blend has to absorb is the drop **at its own edge**, where whatever else shaped
+ * the ground — a terrace, a shelf, a cliff — has already had its say. So sample there:
+ * perpendicular to the lane, on both sides, at the far edge of the authored shoulder.
+ */
+function cutDepth(path: WorldPath, s: number): number {
+  let cuts = pathCuts.get(path.id);
+  if (!cuts) {
+    // `ensureProfile` builds and caches the profile; this measures against it. Both are
+    // keyed on the same station spacing so one index serves both.
+    const profile = ensureProfile(path);
+    cuts = new Float64Array(profile.length);
+    // Seed the cache before filling it: `paddedHeight` is safe to call here, but seeding
+    // first means a future edit that made this reachable from `heightAt` cannot recurse.
+    pathCuts.set(path.id, cuts);
+    const edge = path.halfWidth + path.shoulder;
+    for (let i = 0; i < profile.length; i++) {
+      const { x, z, tx, tz } = pathAt(path.id, i * PROFILE_STEP);
+      // Perpendicular to the tangent, both ways.
+      let worst = 0;
+      for (const side of [-1, 1] as const) {
+        const px = x - tz * edge * side;
+        const pz = z + tx * edge * side;
+        worst = Math.max(worst, Math.abs(profile[i] - paddedHeight(px, pz)));
+      }
+      cuts[i] = worst;
+    }
+  }
+  return sampleStations(path, cuts, s);
+}
+
+/**
  * Designed surface height of a path at arc length `s`, linearly interpolated between
  * profile samples. This is the height the ground is cut or filled to.
  */
 function profileHeight(path: WorldPath, s: number): number {
+  return sampleStations(path, ensureProfile(path), s);
+}
+
+/** The path's grade profile, surveyed on first use and cached until the map changes. */
+function ensureProfile(path: WorldPath): Float64Array {
   let profile = pathProfiles.get(path.id);
   if (!profile) {
     profilesUnderConstruction.add(path.id);
@@ -719,13 +846,21 @@ function profileHeight(path: WorldPath, s: number): number {
     profilesUnderConstruction.delete(path.id);
     pathProfiles.set(path.id, profile);
   }
-  const count = profile.length;
+  return profile;
+}
+
+/**
+ * Read any per-station array at arc length `s`, interpolating between stations — wrapping
+ * on a closed loop, clamping on an open lane.
+ */
+function sampleStations(path: WorldPath, stations: Float64Array, s: number): number {
+  const count = stations.length;
   const closed = isClosedLoop(path);
   const t = s / PROFILE_STEP;
   const i0 = Math.floor(t);
   const frac = t - i0;
   const wrap = (i: number): number => (closed ? ((i % count) + count) % count : clamp(i, 0, count - 1) | 0);
-  return lerp(profile[wrap(i0)], profile[wrap(i0 + 1)], frac);
+  return lerp(stations[wrap(i0)], stations[wrap(i0 + 1)], frac);
 }
 
 /**
@@ -867,13 +1002,16 @@ export function heightAt(x: number, z: number): number {
   // which is what forms the embankment on the downhill side and the cutting on the uphill.
   const hit = nearestPath(x, z);
   if (!hit.path) return h;
-  const w = 1 - smoothstep(hit.path.halfWidth, hit.path.halfWidth + hit.path.shoulder, hit.dist);
+  // `hit.blend`, not `path.shoulder`: the width the drop here actually needs. See `blendWidth`.
+  const w = 1 - smoothstep(hit.path.halfWidth, hit.path.halfWidth + hit.blend, hit.dist);
   return lerp(h, profileHeight(hit.path, hit.s), w * hit.path.carve);
 }
 
 /**
- * Surface normal, by central difference. Used for character alignment, for scattering
- * props only on gentle slopes, and for the "is this walkable" test.
+ * Surface normal, by central difference. Used for character alignment and for scattering
+ * props only on gentle slopes.
+ *
+ * **Not** for the walkability test — see {@link footingSlopeAt} for why.
  */
 export function normalAt(x: number, z: number, eps = 0.6): [number, number, number] {
   const hL = heightAt(x - eps, z);
@@ -887,9 +1025,87 @@ export function normalAt(x: number, z: number, eps = 0.6): [number, number, numb
   return [nx / len, ny / len, nz / len];
 }
 
-/** Slope in radians, 0 = flat. */
+/** Slope in radians, 0 = flat. A point measurement of the surface. */
 export function slopeAt(x: number, z: number): number {
   return Math.acos(clamp(normalAt(x, z)[1], -1, 1));
+}
+
+/**
+ * Radius of the patch of ground a standing character is supported by, metres.
+ *
+ * Roughly a stance: wider than a footprint, narrower than a stride. What matters is that it
+ * is comfortably larger than the wavelength of the terrain's surface detail and comfortably
+ * smaller than any landform meant to stop you.
+ */
+const FOOTING_RADIUS = 1.15;
+
+/** Ring taps for the plane fit. Eight is enough to be isotropic and cheap enough to run per physics step. */
+const FOOTING_TAPS = 8;
+const FOOTING_RING: ReadonlyArray<readonly [number, number]> = Array.from(
+  { length: FOOTING_TAPS },
+  (_, k) => {
+    const a = (k / FOOTING_TAPS) * Math.PI * 2;
+    return [Math.cos(a) * FOOTING_RADIUS, Math.sin(a) * FOOTING_RADIUS] as const;
+  },
+);
+
+/**
+ * Slope of the ground **under a character's feet**, by least-squares plane fit over a disc
+ * of {@link FOOTING_RADIUS}.
+ *
+ * ### Why the walkability test cannot use `slopeAt`
+ *
+ * `slopeAt` is a point measurement over a 1.2 m central difference, and walkability is a
+ * hard threshold. A hard threshold on a noisy field produces speckle, and on this island the
+ * speckle is not rare: the slope distribution has its 90th percentile at 48.3° against a
+ * 49.3° limit, so a tenth of the island sits within one degree of illegal. The terrain's
+ * surface-detail term then flips individual square metres across the line.
+ *
+ * What that feels like is the bug this fixes. You run across an open hillside and stop dead
+ * on nothing — a 20 cm bump the movement code is obliged to treat as a cliff, because the
+ * contract said the cell was unwalkable and the contract is not allowed to be wrong. Forty-two
+ * of them were scattered over the island, every one at 49.4–49.5°, every one surrounded by
+ * ground that was legal on six or seven sides.
+ *
+ * Raising the limit does not fix it; it moves the speckle to wherever the new limit falls.
+ * Smoothing the terrain does not fix it either, and costs the island its texture. The fix is
+ * to stop asking a question about a point when the thing being decided is about a body: fit a
+ * plane to the ground the character actually stands on and use *its* slope.
+ *
+ * A real cliff is unaffected — every tap around a 70° face agrees, and the fitted plane is
+ * just as steep. A one-metre bump on a 48° hillside disappears, which is correct: you would
+ * step over it.
+ *
+ * The gradient of the least-squares plane through samples on a ring reduces to a pair of
+ * cosine-weighted sums, so this costs eight `heightAt` calls and no matrix.
+ */
+export function footingSlopeAt(x: number, z: number): number {
+  let gx = 0;
+  let gz = 0;
+  for (const [dx, dz] of FOOTING_RING) {
+    const h = heightAt(x + dx, z + dz);
+    gx += h * dx;
+    gz += h * dz;
+  }
+  // Σ h·d / Σ d² over the ring, with Σ d² = TAPS · r² / 2 per axis.
+  const norm = (FOOTING_TAPS * FOOTING_RADIUS * FOOTING_RADIUS) / 2;
+  return Math.atan(Math.hypot(gx / norm, gz / norm));
+}
+
+/**
+ * Downhill direction of the fitted footing plane, unit length in the xz plane.
+ * Used for the slide-off-a-cliff recovery, which must agree with the test that triggered it.
+ */
+export function footingDownhill(x: number, z: number): [number, number] {
+  let gx = 0;
+  let gz = 0;
+  for (const [dx, dz] of FOOTING_RING) {
+    const h = heightAt(x + dx, z + dz);
+    gx += h * dx;
+    gz += h * dz;
+  }
+  const len = Math.hypot(gx, gz) || 1;
+  return [-gx / len, -gz / len];
 }
 
 /** Steepest slope a character may stand on. Beyond this they slide. */
@@ -931,7 +1147,33 @@ export function isWalkable(x: number, z: number): boolean {
   const h = heightAt(x, z);
   // Standing in shallow water at the shoreline is fine and looks good; deep water is not.
   if (h < -MAX_WADE_DEPTH) return false;
-  return slopeAt(x, z) <= MAX_WALKABLE_SLOPE;
+  // Footing, not point slope. `footingSlopeAt` documents what goes wrong with the latter.
+  return footingSlopeAt(x, z) <= MAX_WALKABLE_SLOPE;
+}
+
+/**
+ * How far outside the walkability contract a position is, in metres of violation. Zero
+ * means legal.
+ *
+ * Needed wherever two illegal positions have to be *ordered* — "is this one less illegal
+ * than that one" is the question the client's escape hatch asks when a player has somehow
+ * ended up somewhere the contract forbids and every move would otherwise be refused,
+ * welding them in place.
+ *
+ * It lives here, next to {@link isWalkable}, because it is the same contract read as a
+ * gradient rather than as a predicate, and because it had been hand-copied into
+ * `local-player.ts` and `world-smoke.ts`. Every teleporting-player bug this project has had
+ * came from the same shape of mistake: two files agreeing about the contract until one of
+ * them was edited.
+ *
+ * Depth and excess slope are summed because a position can violate both at once and either
+ * one improving is progress. The ×10 puts a radian of overhang on the same scale as ten
+ * metres of water, which is deliberate: climbing out is more urgent than wading out.
+ */
+export function illegality(x: number, z: number): number {
+  const depth = Math.max(0, -heightAt(x, z) - MAX_WADE_DEPTH);
+  const steep = Math.max(0, footingSlopeAt(x, z) - MAX_WALKABLE_SLOPE);
+  return depth + steep * 10;
 }
 
 /**
@@ -996,5 +1238,6 @@ onMapChange((pack) => {
   pathGrid = null;
   pathLengths.clear();
   pathProfiles.clear();
+  pathCuts.clear();
   profilesUnderConstruction.clear();
 });

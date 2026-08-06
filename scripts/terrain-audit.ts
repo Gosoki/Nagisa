@@ -1,0 +1,334 @@
+/**
+ * Terrain walkability audit.
+ * ==========================
+ *
+ * "Catching your feet" is not a rendering problem and not a physics problem — it is a
+ * *terrain* problem that only shows up as a physics symptom, which is why it survives every
+ * test that looks at either layer alone. This tool looks at the ground itself.
+ *
+ *     npm run audit:terrain
+ *     NAGISA_MAP=lantern-atoll npm run audit:terrain
+ *
+ * ### What it measures
+ *
+ * The walkability contract (`isWalkable`) is a *point* test: a position is legal if the
+ * ground there is not too steep. Walking, though, is a *move* — and a point test produces
+ * two failure modes that a player feels immediately and that no point-wise assertion can
+ * see:
+ *
+ * 1. **Pinholes.** A single unwalkable cell surrounded by walkable ones. Physically it is a
+ *    20 cm bump; to the movement code it is a wall you bounce off in the middle of an open
+ *    field. These are what "catching your feet" *is*.
+ * 2. **Ledges.** A run of unwalkable cells that cuts a walkable region in two — the ground
+ *    on both sides is fine, but there is no legal cell between them, so a place you can see
+ *    is a place you cannot reach.
+ *
+ * And the converse, which matters just as much because the user asked for both halves: the
+ * ground that *should* stop you has to actually stop you. So it also reports the largest
+ * walkable region and whether every named place is inside it. A "fix" that smooths the
+ * cliffs until the whole island is one region has not fixed anything; it has removed the
+ * mountain.
+ *
+ * ### Method
+ *
+ * Sample `isWalkable` on a grid at `CELL` metres, then:
+ * - count blocked cells whose 8-neighbourhood is ≥ `PINHOLE_NEIGHBOURS` walkable,
+ * - flood-fill the walkable cells into regions from the spawn,
+ * - report which zone anchors and path waypoints fall outside the main region.
+ *
+ * The grid is the honest resolution to ask at: a character is ~0.6 m wide and moves ~0.14 m
+ * per physics step at full speed, so a 1 m cell is finer than the granularity at which the
+ * player can act, and coarser than the noise the terrain function contains.
+ */
+
+import {
+  ISLAND_EXTENT,
+  LANDMARKS,
+  MAX_WADE_DEPTH,
+  MOVE_SPEED,
+  PADS,
+  PATHS,
+  SPAWN_POINTS,
+  ZONES,
+  activeMap,
+  resolveMapId,
+  footingSlopeAt,
+  heightAt,
+  illegality,
+  isLand,
+  isWalkable,
+  slopeAt,
+} from '../packages/shared/src/index.js';
+
+/** Grid resolution, metres. Finer than the player can act at, coarser than the noise. */
+const CELL = 1;
+
+/** A blocked cell with at least this many walkable neighbours is a pinhole, not a wall. */
+const PINHOLE_NEIGHBOURS = 6;
+
+// Which map to audit. Every number below comes from the active pack, so this is the only
+// line that needs to know a map can be chosen. Without it the tool silently audited the
+// default pack whatever `NAGISA_MAP` said — reporting Nagisa Island's figures under the
+// atoll's name, which is worse than not running at all.
+const mapArg = process.argv.indexOf('--map');
+resolveMapId(mapArg >= 0 ? process.argv[mapArg + 1] : process.env.NAGISA_MAP);
+const map = activeMap();
+const half = Math.ceil(ISLAND_EXTENT / CELL);
+const size = half * 2 + 1;
+const toWorld = (i: number): number => (i - half) * CELL;
+const toGrid = (w: number): number => Math.round(w / CELL) + half;
+
+process.stdout.write(`terrain audit — ${map.name} (${map.id}), ${size}×${size} cells @ ${CELL} m\n\n`);
+
+// --- Sample -------------------------------------------------------------------------
+// 0 = sea or off-map (never walkable, never interesting), 1 = walkable, 2 = blocked land.
+const grid = new Uint8Array(size * size);
+let land = 0;
+let walkable = 0;
+const slopes: number[] = [];
+
+for (let j = 0; j < size; j++) {
+  const z = toWorld(j);
+  for (let i = 0; i < size; i++) {
+    const x = toWorld(i);
+    const h = heightAt(x, z);
+    // Below the wade line is water, not blocked ground; calling it "blocked" would drown
+    // the pinhole count in a coastline.
+    if (h < -0.9 || !isLand(x, z)) continue;
+    land++;
+    const ok = isWalkable(x, z);
+    grid[j * size + i] = ok ? 1 : 2;
+    if (ok) walkable++;
+    if ((i + j) % 7 === 0) slopes.push(slopeAt(x, z));
+  }
+}
+
+slopes.sort((a, b) => a - b);
+const pct = (p: number): string => ((slopes[Math.floor(slopes.length * p)] ?? 0) * (180 / Math.PI)).toFixed(1);
+process.stdout.write(
+  `land cells        ${land}\n` +
+    `walkable          ${walkable} (${((walkable / land) * 100).toFixed(1)}%)\n` +
+    `slope p50/p90/p99 ${pct(0.5)}° / ${pct(0.9)}° / ${pct(0.99)}°\n\n`,
+);
+
+// --- Pinholes -----------------------------------------------------------------------
+const pinholes: Array<[number, number, number]> = [];
+for (let j = 1; j < size - 1; j++) {
+  for (let i = 1; i < size - 1; i++) {
+    if (grid[j * size + i] !== 2) continue;
+    let open = 0;
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        if (di === 0 && dj === 0) continue;
+        if (grid[(j + dj) * size + (i + di)] === 1) open++;
+      }
+    }
+    if (open >= PINHOLE_NEIGHBOURS) {
+      pinholes.push([toWorld(i), toWorld(j), open]);
+    }
+  }
+}
+
+process.stdout.write(
+  `pinholes (blocked cell, ≥${PINHOLE_NEIGHBOURS}/8 neighbours open): ${pinholes.length}\n`,
+);
+for (const [x, z, open] of pinholes.slice(0, 8)) {
+  process.stdout.write(
+    `    (${x.toFixed(0).padStart(5)}, ${z.toFixed(0).padStart(5)})  ${open}/8 open  ` +
+      `point ${((slopeAt(x, z) * 180) / Math.PI).toFixed(1)}°  footing ` +
+      `${((footingSlopeAt(x, z) * 180) / Math.PI).toFixed(1)}°  h ${heightAt(x, z).toFixed(2)}\n`,
+  );
+}
+if (pinholes.length > 8) process.stdout.write(`    … and ${pinholes.length - 8} more\n`);
+process.stdout.write('\n');
+
+// --- Snags: walk the routes and count what stops you ---------------------------------
+//
+// A pinhole census says how speckled the *island* is. It does not say whether a player
+// meets any of it, and proximity to a lane is a bad proxy — the cutting beside a carved
+// path is steep by design, and counting it says the road is broken because it has verges.
+//
+// So: walk. Same step length as the client's integrator at a run, same `canOccupy` rule,
+// along every lane centreline and out along sixteen spokes inside every zone. A **snag** is
+// a step where the straight-ahead move was refused. On a surface built for walking that
+// number should be zero, and unlike a proximity heuristic it means exactly what it says.
+const STEP = MOVE_SPEED.run / 60;
+
+const canOccupy = (fromX: number, fromZ: number, x: number, z: number): boolean => {
+  if (isWalkable(x, z)) return true;
+  const here = illegality(fromX, fromZ);
+  return here > 0 && illegality(x, z) < here;
+};
+
+const snags: Array<[string, number, number]> = [];
+
+function walkLine(label: string, ax: number, az: number, bx: number, bz: number): void {
+  const span = Math.hypot(bx - ax, bz - az);
+  const steps = Math.ceil(span / STEP);
+  if (!steps) return;
+  const ux = (bx - ax) / span;
+  const uz = (bz - az) / span;
+  let x = ax;
+  let z = az;
+  for (let i = 0; i < steps; i++) {
+    const nx = x + ux * STEP;
+    const nz = z + uz * STEP;
+    // A refusal is only a snag if *slope* caused it. Deep water and the map edge are
+    // supposed to stop you, and counting them reports the sea as a terrain defect.
+    if (!canOccupy(x, z, nx, nz) && heightAt(nx, nz) >= -MAX_WADE_DEPTH) {
+      snags.push([label, nx, nz]);
+      // Keep going from the refused position, so one obstacle is one snag rather than a
+      // run of them, and the rest of the line still gets walked.
+    }
+    x = nx;
+    z = nz;
+  }
+}
+
+for (const path of PATHS) {
+  const pts = path.points;
+  for (let k = 1; k < pts.length; k++) {
+    walkLine(`lane ${path.id}`, pts[k - 1]![0], pts[k - 1]![1], pts[k]![0], pts[k]![1]);
+  }
+}
+// Terraces, not zones. A zone's radius is how far its *name* reaches — south-harbor's
+// covers the sea it looks out over and the hillside behind it — so spokes drawn at that
+// radius walk off the quay and up a 55° cliff, and report the sea for blocking them. The
+// terrace is the built ground — and `inner`, not `outer`: `outer` is where the terrace has
+// finished blending back into the hillside, so south-harbor's reaches from the quay edge at
+// z=102 to the slope behind it at z=50, neither of which is the harbour floor.
+for (const pad of PADS) {
+  for (let a = 0; a < 16; a++) {
+    const angle = (a / 16) * Math.PI * 2;
+    walkLine(
+      `pad ${pad.id}`,
+      pad.x,
+      pad.z,
+      pad.x + Math.cos(angle) * pad.inner,
+      pad.z + Math.sin(angle) * pad.inner,
+    );
+  }
+}
+
+const laneSnags = snags.filter(([label]) => label.startsWith('lane'));
+process.stdout.write(
+  `snags — straight-ahead steps the contract refused, walking the routes\n` +
+    `  on lane centrelines  ${laneSnags.length}\n` +
+    `  inside terraces      ${snags.length - laneSnags.length}\n`,
+);
+const shown = new Set<string>();
+for (const [label, x, z] of snags) {
+  const key = `${label}@${Math.round(x / 4)},${Math.round(z / 4)}`;
+  if (shown.has(key)) continue;
+  shown.add(key);
+  if (shown.size > 12) break;
+  process.stdout.write(
+    `    ${label.padEnd(22)} (${x.toFixed(0).padStart(5)}, ${z.toFixed(0).padStart(5)})  ` +
+      `footing ${((footingSlopeAt(x, z) * 180) / Math.PI).toFixed(1)}°  h ${heightAt(x, z).toFixed(2)}\n`,
+  );
+}
+process.stdout.write('\n');
+
+// --- Regions ------------------------------------------------------------------------
+// Flood-fill from the first spawn point. Everything reachable on foot is one region; the
+// question the audit answers is what is *not* in it.
+const region = new Int32Array(size * size).fill(-1);
+const [spawnX, spawnZ] = SPAWN_POINTS[0]!;
+const start = toGrid(spawnZ) * size + toGrid(spawnX);
+if (grid[start] !== 1) throw new Error(`spawn (${spawnX}, ${spawnZ}) is not on a walkable cell`);
+const stack = [start];
+region[start] = 0;
+let mainRegion = 0;
+
+while (stack.length) {
+  const at = stack.pop()!;
+  const i = at % size;
+  const j = (at - i) / size;
+  mainRegion++;
+  for (let dj = -1; dj <= 1; dj++) {
+    for (let di = -1; di <= 1; di++) {
+      const ni = i + di;
+      const nj = j + dj;
+      if (ni < 0 || nj < 0 || ni >= size || nj >= size) continue;
+      const n = nj * size + ni;
+      if (region[n] !== -1 || grid[n] !== 1) continue;
+      region[n] = 0;
+      stack.push(n);
+    }
+  }
+}
+
+const stranded = walkable - mainRegion;
+process.stdout.write(
+  `main region       ${mainRegion} cells (${((mainRegion / walkable) * 100).toFixed(1)}% of walkable)\n` +
+    `stranded          ${stranded} cells in pockets you cannot walk to\n\n`,
+);
+
+const reachable = (x: number, z: number): boolean => {
+  const i = toGrid(x);
+  const j = toGrid(z);
+  if (i < 0 || j < 0 || i >= size || j >= size) return false;
+  return region[j * size + i] === 0;
+};
+
+// --- What is cut off ----------------------------------------------------------------
+let problems = 0;
+for (const zone of ZONES) {
+  if (zone.radius > 500) continue;
+  if (!reachable(zone.x, zone.z)) {
+    problems++;
+    process.stdout.write(`  UNREACHABLE zone   ${zone.id} (${zone.x}, ${zone.z})\n`);
+  }
+}
+for (const path of PATHS) {
+  for (const [x, z] of path.points) {
+    if (!reachable(x, z)) {
+      problems++;
+      process.stdout.write(`  UNREACHABLE lane   ${path.id} waypoint (${x}, ${z})\n`);
+    }
+  }
+}
+for (const lm of LANDMARKS) {
+  // Sea torii and the like are *meant* to be out of reach — that is the whole image.
+  if (lm.opts?.inWater === true) continue;
+  // You walk *up to* a building, not into its footprint, so ask whether anywhere within a
+  // few metres is reachable. Asking about the centre point alone reports every solid
+  // structure on the island as a problem.
+  let approachable = reachable(lm.x, lm.z);
+  for (let r = 2; r <= 6 && !approachable; r += 2) {
+    for (let i = 0; i < 12 && !approachable; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      approachable = reachable(lm.x + Math.cos(a) * r, lm.z + Math.sin(a) * r);
+    }
+  }
+  if (!approachable) {
+    problems++;
+    process.stdout.write(
+      `  UNREACHABLE mark   ${lm.id} (${lm.kind}) at (${lm.x.toFixed(0)}, ${lm.z.toFixed(0)})\n`,
+    );
+  }
+}
+
+process.stdout.write(
+  problems === 0
+    ? '  every zone, lane waypoint and landmark is reachable on foot\n'
+    : `\n  ${problems} unreachable\n`,
+);
+
+// --- Verdict ------------------------------------------------------------------------
+process.stdout.write('\n');
+const verdicts: Array<[string, boolean, string]> = [
+  ['lane centrelines are snag-free', laneSnags.length === 0, `${laneSnags.length} refused steps`],
+  ['terraces are snag-free', snags.length - laneSnags.length === 0, `${snags.length - laneSnags.length} refused steps`],
+  ['pinholes are rare overall', pinholes.length <= land * 0.001, `${pinholes.length} over ${land} land cells`],
+  ['nothing important is cut off', problems === 0, `${problems} unreachable`],
+  ['stranded pockets are small', stranded <= walkable * 0.02, `${stranded} of ${walkable}`],
+  ['the island is not simply flat', walkable < land * 0.98, `${((walkable / land) * 100).toFixed(1)}% walkable`],
+];
+let bad = 0;
+for (const [name, ok, detail] of verdicts) {
+  if (!ok) bad++;
+  process.stdout.write(`  ${ok ? 'ok  ' : 'FAIL'} ${name} — ${detail}\n`);
+}
+process.stdout.write(bad === 0 ? '\nterrain audit passed\n' : `\nterrain audit failed (${bad})\n`);
+process.exit(bad === 0 ? 0 : 1);

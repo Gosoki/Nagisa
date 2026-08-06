@@ -34,11 +34,12 @@ import {
   MAX_WADE_DEPTH,
   MAX_WALKABLE_SLOPE,
   MOVE_SPEED,
+  footingDownhill,
+  footingSlopeAt,
   heightAt,
+  illegality,
   isWalkable,
   nearestWalkable,
-  normalAt,
-  slopeAt,
 } from '@nagisa/shared';
 import type { CameraRig } from '../engine/camera-rig.js';
 import type { Input } from '../input/input.js';
@@ -245,10 +246,14 @@ export class LocalPlayer {
       // can never be permanently stuck on a cliff face — but it is only ever reached when
       // the player is *already* somewhere illegal (terrain retuned under a standing
       // player, a drifted spawn), because `canOccupy` no longer lets them walk onto it.
-      if (slopeAt(this.position.x, this.position.z) > MAX_WALKABLE_SLOPE) {
-        const n = normalAt(this.position.x, this.position.z);
-        this.velocity.x += n[0] * 24 * dt;
-        this.velocity.z += n[2] * 24 * dt;
+      //
+      // Measured with the same footing fit as the contract, and pushed down the same fitted
+      // plane. A slide that disagreed with the test that triggered it would shove the player
+      // *along* a face they are not allowed to be on, one frame at a time, forever.
+      if (footingSlopeAt(this.position.x, this.position.z) > MAX_WALKABLE_SLOPE) {
+        const [dx, dz] = footingDownhill(this.position.x, this.position.z);
+        this.velocity.x += dx * 24 * dt;
+        this.velocity.z += dz * 24 * dt;
       }
     } else {
       this.grounded = false;
@@ -372,19 +377,4 @@ export class LocalPlayer {
     this.character.root.position.copy(this.position);
     this.character.root.rotation.y = this.yaw;
   }
-}
-
-/**
- * How far outside the walkability contract a position is, in metres of violation. Zero
- * means legal.
- *
- * Used only by the escape hatch in `canOccupy`: comparing two illegal positions needs an
- * ordering, and "is this one less illegal than that one" is the whole question. Water
- * depth and excess slope are summed because a position can violate both at once and either
- * one improving is progress.
- */
-function illegality(x: number, z: number): number {
-  const depth = Math.max(0, -heightAt(x, z) - MAX_WADE_DEPTH);
-  const steep = Math.max(0, slopeAt(x, z) - MAX_WALKABLE_SLOPE);
-  return depth + steep * 10;
 }

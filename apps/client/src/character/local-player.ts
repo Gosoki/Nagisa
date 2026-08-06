@@ -39,6 +39,7 @@ import {
   heightAt,
   canEnterFrom,
   illegality,
+  isSliverAt,
   nearestWalkable,
 } from '@nagisa/shared';
 import type { CameraRig } from '../engine/camera-rig.js';
@@ -250,7 +251,13 @@ export class LocalPlayer {
       // Measured with the same footing fit as the contract, and pushed down the same fitted
       // plane. A slide that disagreed with the test that triggered it would shove the player
       // *along* a face they are not allowed to be on, one frame at a time, forever.
-      if (footingSlopeAt(this.position.x, this.position.z) > MAX_WALKABLE_SLOPE) {
+      // Not on a sliver. `canEnterFrom` lets a player walk across a one-metre crease of
+      // over-steep ground with level ground on both sides; sliding them off it would be the
+      // physics contradicting the permission that got them there, and reads as being flung.
+      if (
+        footingSlopeAt(this.position.x, this.position.z) > MAX_WALKABLE_SLOPE &&
+        !isSliverAt(this.position.x, this.position.z)
+      ) {
         const [dx, dz] = footingDownhill(this.position.x, this.position.z);
         this.velocity.x += dx * 24 * dt;
         this.velocity.z += dz * 24 * dt;

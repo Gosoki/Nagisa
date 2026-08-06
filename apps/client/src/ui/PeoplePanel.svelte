@@ -7,14 +7,21 @@
    * "You" — `$players` deliberately excludes the local player (see stores.ts), and a
    * "who's here" list that silently omits you would read as a bug, not restraint.
    *
-   * Each row carries the one social affordance the world cannot express by itself:
-   * **follow**. Knowing someone is at the shrine does not help if you do not know where the
+   * Each row carries the two social affordances the world cannot express by itself.
+   *
+   * **Follow.** Knowing someone is at the shrine does not help if you do not know where the
    * shrine is from here, and asking a stranger to wait while you read a map is not a
    * feature. Following walks you there — see `App.updateFollow` for why it is a walk and
    * not a teleport.
+   *
+   * **Mute.** The one control that works with nobody watching: no host has to be present and
+   * no report has to be read. It belongs here rather than on a right-click in the world
+   * because the person you want to stop reading is often the person you are walking *away*
+   * from, and aiming at them is the last thing you should have to do. See `stores.mutedIds`
+   * for why it is unilateral, local, and does not hide them.
    */
   import { getZone } from '@nagisa/shared';
-  import { commands, followTarget, players, self } from '../state/stores.js';
+  import { commands, followTarget, mutedSet, players, self, toggleMute } from '../state/stores.js';
 </script>
 
 <ul class="list">
@@ -23,13 +30,22 @@
     <span class="zone">{getZone($self.zone)?.name ?? $self.zone}</span>
   </li>
   {#each $players as p (p.id)}
-    <li class="row" class:followed={$followTarget?.id === p.id}>
+    <li class="row" class:followed={$followTarget?.id === p.id} class:muted={$mutedSet.has(p.id)}>
       <span class="name">{p.name}</span>
       <span class="zone">{p.zone ? (getZone(p.zone)?.name ?? p.zone) : ''}</span>
+      <button
+        class="act mute"
+        class:on={$mutedSet.has(p.id)}
+        aria-pressed={$mutedSet.has(p.id)}
+        title={$mutedSet.has(p.id) ? `Unmute ${p.name}` : `Mute ${p.name}`}
+        on:click={() => toggleMute(p.id, p.name)}
+      >
+        {$mutedSet.has(p.id) ? 'Unmute' : 'Mute'}
+      </button>
       {#if $followTarget?.id === p.id}
-        <button class="follow on" on:click={() => $commands.follow(null)}>Stop</button>
+        <button class="act follow on" on:click={() => $commands.follow(null)}>Stop</button>
       {:else}
-        <button class="follow" on:click={() => $commands.follow(p.id)}>Follow</button>
+        <button class="act follow" on:click={() => $commands.follow(p.id)}>Follow</button>
       {/if}
     </li>
   {/each}
@@ -92,7 +108,16 @@
     color: var(--ui-accent);
   }
 
-  .follow {
+  /* A muted row stays legible — you still need to see them to walk away from them — but
+     reads as switched off, which is the honest picture of what the mute did. */
+  .row.muted .name,
+  .row.muted .zone {
+    opacity: 0.45;
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+  }
+
+  .act {
     all: unset;
     cursor: pointer;
     font-size: var(--fs-xs);
@@ -107,14 +132,19 @@
     transition: opacity var(--mo-quick) ease;
   }
 
-  .row:hover .follow,
-  .follow.on,
-  .follow:focus-visible {
+  .row:hover .act,
+  .act.on,
+  .act:focus-visible {
     opacity: 1;
   }
 
   .follow.on {
     border-color: var(--ui-accent);
     color: var(--ui-accent);
+  }
+
+  .mute.on {
+    border-color: var(--ui-ink-faint);
+    color: var(--ui-ink-faint);
   }
 </style>

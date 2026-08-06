@@ -291,6 +291,74 @@ export function pushSystemChat(text: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Muting
+// ---------------------------------------------------------------------------
+
+/** Where the mute list lives between reloads. */
+const MUTE_KEY = 'nagisa.muted';
+
+/**
+ * People whose chat and speech bubbles this client drops, by player id.
+ *
+ * ### Why this is client-side and unilateral
+ *
+ * It is the only thing in the room that works when nobody is watching. A report needs a
+ * moderator to read it and a kick needs a host to be present, and neither is true at three
+ * in the morning with two strangers on a beach. Mute needs no permission, takes effect on
+ * the next frame, and tells the other person nothing — which is the point, because a mute
+ * that announces itself is an escalation rather than an exit.
+ *
+ * It deliberately does **not** hide the person. You still see where they are, which is what
+ * lets you walk away from them; a mute that made someone invisible would take away the
+ * information you need most. See `world-sync` for where the drop actually happens.
+ *
+ * ### Why by id, and what that costs
+ *
+ * The id is what every message carries and what the bubbles and name tags are keyed on. It
+ * survives a reconnect, because the resume token restores the same identity — so a mute
+ * outlives the outage that a name-based one would too, without being defeated by two people
+ * choosing the same name. What it does not survive is the other person rejoining fresh, and
+ * no client-side scheme can: an anonymous room cannot promise a durable block, and
+ * pretending otherwise would be worse than the honest version.
+ */
+export const mutedIds: Writable<string[]> = writable(loadMuted());
+
+function loadMuted(): string[] {
+  try {
+    const raw = localStorage.getItem(MUTE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+  } catch {
+    // Private browsing, or a value written by an older build. An empty list is correct.
+    return [];
+  }
+}
+
+/** A set view, for the per-message check that runs on every arriving line. */
+export const mutedSet: Readable<ReadonlySet<string>> = derived(mutedIds, ($ids) => new Set($ids));
+
+/** Read the mute list outside a component. Used by the net layer, which has no `$`. */
+export function isMuted(id: string): boolean {
+  let ids: string[] = [];
+  mutedIds.subscribe((v) => (ids = v))();
+  return ids.includes(id);
+}
+
+/** Mute or unmute someone. Persisted immediately — this is not a preference to lose. */
+export function toggleMute(id: string, name: string): void {
+  mutedIds.update((ids) => {
+    const next = ids.includes(id) ? ids.filter((v) => v !== id) : [...ids, id];
+    try {
+      localStorage.setItem(MUTE_KEY, JSON.stringify(next));
+    } catch {
+      /* Non-fatal: the mute still holds for this session. */
+    }
+    notify(next.includes(id) ? `Muted ${name}` : `Unmuted ${name}`);
+    return next;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Following
 // ---------------------------------------------------------------------------
 

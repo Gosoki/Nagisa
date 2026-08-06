@@ -52,11 +52,13 @@ import {
   ZONES,
   activeMap,
   resolveMapId,
+  canEnterFrom,
   footingSlopeAt,
   heightAt,
   illegality,
   isLand,
   isWalkable,
+  nearestPath,
   slopeAt,
 } from '../packages/shared/src/index.js';
 
@@ -142,6 +144,64 @@ for (const [x, z, open] of pinholes.slice(0, 8)) {
 if (pinholes.length > 8) process.stdout.write(`    … and ${pinholes.length - 8} more\n`);
 process.stdout.write('\n');
 
+// --- Stumbles: being stopped by nothing -----------------------------------------------
+//
+// A pinhole is a fact about `isWalkable`. This is a fact about *walking*: two places you
+// may stand, two metres apart, with the contract refusing the ground between them. There
+// is no cliff there — both ends are fine — so the player walks into an obstruction they
+// cannot see and cannot name, which is the whole of the "my feet get caught" complaint.
+//
+// It is measured through `canEnterFrom`, not `isWalkable`, because the relaxations are
+// part of the rule: `isWalkable` describes where you may *stand*, and the question here is
+// what you may *cross*. See `terrain.isSliverAt`.
+const STUMBLE_SPAN = 2;
+const DIAG = Math.SQRT1_2 * STUMBLE_SPAN;
+/** Each entry: x, z, distance to the nearest lane centreline, that lane's half width. */
+const stumbles: Array<[number, number, number, number]> = [];
+for (let j = 0; j < size; j++) {
+  const z = toWorld(j);
+  for (let i = 0; i < size; i++) {
+    if (grid[j * size + i] !== 1) continue;
+    const x = toWorld(i);
+    for (const [dx, dz] of [
+      [STUMBLE_SPAN, 0],
+      [0, STUMBLE_SPAN],
+      [DIAG, DIAG],
+      [DIAG, -DIAG],
+    ]) {
+      const bx = x + dx;
+      const bz = z + dz;
+      if (!isWalkable(bx, bz)) continue;
+      const mx = x + dx / 2;
+      const mz = z + dz / 2;
+      if (canEnterFrom(x, z, mx, mz) && canEnterFrom(mx, mz, bx, bz)) continue;
+      const lane = nearestPath(mx, mz);
+      stumbles.push([mx, mz, lane.dist, lane.path?.halfWidth ?? 0]);
+    }
+  }
+}
+// Where it matters is *on the road*, not near it. A cut bank beside a lane is steep on
+// purpose — the same reason the snag walk below refuses to use proximity as a proxy — so
+// "within 10 m" flags the road's own embankment and calls the road broken for having one.
+// The carriageway and the flat shoulder either side of it are ground a player was routed
+// onto, and a refusal there is a defect. Beyond that it is a hillside, and a hillside is
+// allowed to have features.
+const ROAD_MARGIN = 3;
+const onRoad = stumbles.filter((s) => s[2] <= s[3] + ROAD_MARGIN);
+process.stdout.write(
+  `stumbles (two walkable cells ${STUMBLE_SPAN} m apart, refused between): ${stumbles.length}\n` +
+    `    on a carriageway or its shoulder: ${onRoad.length}\n`,
+);
+for (const [x, z, d] of stumbles.slice(0, 6)) {
+  const from = Number.isFinite(d) ? `${d.toFixed(0)} m from a lane` : 'open hillside';
+  process.stdout.write(
+    `    (${x.toFixed(0).padStart(5)}, ${z.toFixed(0).padStart(5)})  ` +
+      `footing ${((footingSlopeAt(x, z) * 180) / Math.PI).toFixed(1)}°  ${from}\n`,
+  );
+}
+if (stumbles.length > 6) process.stdout.write(`    … and ${stumbles.length - 6} more\n`);
+process.stdout.write('\n');
+
 // --- Snags: walk the routes and count what stops you ---------------------------------
 //
 // A pinhole census says how speckled the *island* is. It does not say whether a player
@@ -154,8 +214,11 @@ process.stdout.write('\n');
 // number should be zero, and unlike a proximity heuristic it means exactly what it says.
 const STEP = MOVE_SPEED.run / 60;
 
+// `canEnterFrom` first, exactly as `local-player.canOccupy` does — the audit walking a
+// different rule than the client walks would report snags the player never meets, and miss
+// the ones they do.
 const canOccupy = (fromX: number, fromZ: number, x: number, z: number): boolean => {
-  if (isWalkable(x, z)) return true;
+  if (canEnterFrom(fromX, fromZ, x, z)) return true;
   const here = illegality(fromX, fromZ);
   return here > 0 && illegality(x, z) < here;
 };
@@ -321,6 +384,10 @@ const verdicts: Array<[string, boolean, string]> = [
   ['lane centrelines are snag-free', laneSnags.length === 0, `${laneSnags.length} refused steps`],
   ['terraces are snag-free', snags.length - laneSnags.length === 0, `${snags.length - laneSnags.length} refused steps`],
   ['pinholes are rare overall', pinholes.length <= land * 0.001, `${pinholes.length} over ${land} land cells`],
+  // Zero, not "rare". A stumble on the road is ground a player was routed onto and then
+  // stopped by, which is the one form of this that is never a feature of the hillside.
+  ['no stumbles on a road', onRoad.length === 0, `${onRoad.length} on a carriageway or shoulder`],
+  ['stumbles are rare overall', stumbles.length <= land * 0.001, `${stumbles.length} over ${land} land cells`],
   ['nothing important is cut off', problems === 0, `${problems} unreachable`],
   ['stranded pockets are small', stranded <= walkable * 0.02, `${stranded} of ${walkable}`],
   ['the island is not simply flat', walkable < land * 0.98, `${((walkable / land) * 100).toFixed(1)}% walkable`],

@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AnimState, isWalkable, heightAt, spawnPoint } from '@nagisa/shared';
+import { AnimState, isSliverAt, isWalkable, heightAt, spawnPoint } from '@nagisa/shared';
 import { Player } from './player.js';
 
 /**
@@ -127,6 +127,51 @@ test('a move onto unwalkable terrain that is *below* the player is accepted', ()
   const result = player.applyMove({ pos: target, yaw: 0, anim: AnimState.Fall, seq: 1 }, Date.now() + 2_000);
   assert.equal(result, null, 'stepping off a ledge must not be corrected');
   assert.deepEqual(player.pos, target);
+});
+
+test('a one-metre crease of over-steep ground can be walked across; a cliff still cannot', () => {
+  // The third half of `canEnterFrom`. A hard slope threshold on a continuous field speckles
+  // wherever the field grazes it, leaving metre-wide ribbons of refused ground lying across
+  // hillsides that are otherwise walkable. Those are not terrain — they are the player being
+  // stopped by nothing — so the contract lets them be crossed, and the server has to agree
+  // or crossing one earns a correction.
+  //
+  // The second assertion is the one that matters: the relaxation must not have dissolved the
+  // cliffs. `findWalkableEdge` finds ground that is unwalkable, uphill and 13 m away, which
+  // is a face and not a crease, and it stays refused.
+  let crease: [number, number] | null = null;
+  for (let ring = 20; ring < 300 && !crease; ring += 3) {
+    for (let i = 0; i < 256; i++) {
+      const a = (i / 256) * Math.PI * 2;
+      const x = Math.cos(a) * ring;
+      const z = Math.sin(a) * ring;
+      if (isSliverAt(x, z)) {
+        crease = [x, z];
+        break;
+      }
+    }
+  }
+  assert.ok(crease, 'fixture: the island should contain at least one sliver to test');
+  const [cx, cz] = crease!;
+  assert.equal(isWalkable(cx, cz), false, 'fixture: a sliver is by definition not walkable');
+
+  // Approach it from a metre away, the way a walking player does.
+  const from: [number, number, number] = [cx - 1, heightAt(cx - 1, cz), cz];
+  const player = makePlayer(from);
+  const result = player.applyMove(
+    { pos: [cx, heightAt(cx, cz), cz], yaw: 0, anim: AnimState.Walk, seq: 1 },
+    Date.now() + 500,
+  );
+  assert.equal(result, null, 'walking across a crease must not be corrected');
+
+  const { start, target } = findWalkableEdge(13, true);
+  assert.equal(isSliverAt(target[0], target[2]), false, 'a face 13 m up is not a crease');
+  const climber = makePlayer(start);
+  const refused = climber.applyMove(
+    { pos: target, yaw: 0, anim: AnimState.Walk, seq: 1 },
+    Date.now() + 2_000,
+  );
+  assert.ok(refused, 'a cliff must still be a cliff');
 });
 
 test('out-of-order (replayed/stale) sequence numbers are silently ignored', () => {

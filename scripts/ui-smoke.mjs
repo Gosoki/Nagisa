@@ -202,6 +202,30 @@ for (const panel of ['people','activities','settings']) {
   check(panel + ' panel renders', t.includes(expected), t.slice(-260));
 }
 
+// Muting: the control has to be reachable from the list where you find people, and it has
+// to actually take effect on arriving chat. Both halves, because a button that toggles a
+// store nothing reads is the failure this would otherwise miss.
+console.log('\\nMuting');
+stores.openPanel.set('people');
+await sleep(80);
+const muteBtn = buttons().find(b => /^mute$/i.test(b.textContent.trim()));
+check('people panel offers a mute control', !!muteBtn, buttons().map(b=>b.textContent.trim()).join('|'));
+if (muteBtn) {
+  muteBtn.click();
+  await sleep(80);
+  check('muting reports it', text().includes('Muted'), text().slice(-200));
+  check('the control becomes an unmute', buttons().some(b => /^unmute$/i.test(b.textContent.trim())));
+  check('the muted player is still listed', text().includes('Keeper'));
+  let muted = [];
+  stores.mutedIds.subscribe(v => (muted = v))();
+  check('the mute is recorded against the player id', muted.includes('p2'), JSON.stringify(muted));
+  check('isMuted agrees with the store', stores.isMuted('p2') && !stores.isMuted('p3'));
+  buttons().find(b => /^unmute$/i.test(b.textContent.trim()))?.click();
+  await sleep(60);
+  check('unmuting clears it', !stores.isMuted('p2'));
+}
+stores.openPanel.set(null);
+
 stores.self.update(s => ({ ...s, role: 3 }));
 stores.openPanel.set('host');
 await sleep(80);

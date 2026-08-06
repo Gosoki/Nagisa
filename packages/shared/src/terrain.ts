@@ -1289,6 +1289,106 @@ export function isWalkable(x: number, z: number): boolean {
 export const DESCENT_STEP = 0.5;
 
 /**
+ * Longest run of over-steep ground a stride carries you across, metres.
+ *
+ * A stride, not a jump: it is the width of the obstruction, not the height of anything.
+ */
+export const SLIVER_SPAN = 1.6;
+
+/**
+ * How much a crossing may rise or fall across a sliver, metres.
+ *
+ * Both ends of the crossing have to be within this of the middle, which is what stops the
+ * rule being a way to climb: an obstruction with *level ground on both sides* is a crease
+ * in the hillside, and one with a metre of ground above it is a step.
+ */
+export const SLIVER_RISE = 0.9;
+
+/**
+ * Steepest ground that can be a sliver, as a multiple of {@link MAX_WALKABLE_SLOPE}.
+ *
+ * Purely a cheap rejection: past this the ground is a wall whatever is on the far side of
+ * it, and testing four axes through the middle of a cliff wastes ~64 height samples to
+ * conclude what one slope reading already knew.
+ */
+const SLIVER_MAX_EXCESS = 1.3;
+
+/**
+ * Where a sliver is probed: four axes, three reaches each, as half-offsets used ±.
+ *
+ * Three reaches rather than one because the sliver is not centred on the cell being tested
+ * — a metre-wide crease sampled at its edge has walkable ground half a metre one way and
+ * two metres the other, and a single fixed reach finds only the creases it happens to
+ * straddle. Ordered nearest-first so the cheapest crossing is the one that is found.
+ */
+const SLIVER_REACHES = [0.9, 1.3, SLIVER_SPAN] as const;
+const SLIVER_AXES: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = Array.from(
+  { length: 4 },
+  (_, k) => {
+    const a = (k / 4) * Math.PI;
+    return SLIVER_REACHES.map((d) => [Math.cos(a) * d, Math.sin(a) * d] as const);
+  },
+);
+
+/**
+ * Whether over-steep ground at `(x, z)` is a *sliver* — a hairline you step across rather
+ * than a face you would have to climb.
+ *
+ * ### Why the contract needs this
+ *
+ * {@link MAX_WALKABLE_SLOPE} is a hard threshold on a continuous field, and a hard threshold
+ * on a continuous field speckles wherever the field grazes it. On this island that produces
+ * one-metre ribbons of refused ground lying across hillsides that are otherwise perfectly
+ * walkable — a crease where two blend radii cross, the lip of a terrace embankment. Both
+ * sides are 48°, the ribbon is 50°, and it is a metre wide.
+ *
+ * To a player that is not terrain. It is walking along and being stopped by nothing, which
+ * is the complaint this rule exists to answer. 131 of the island's 3565 refused cells are
+ * this; the other 3434 are the cliffs, and they stay cliffs.
+ *
+ * ### Why it takes no direction
+ *
+ * The obvious formulation — "probe ahead along the way you are travelling" — cannot be
+ * made to agree between the two sides. The client's previous position is one physics step
+ * back; the server's is the last report it accepted, which is an order of magnitude
+ * further. The same move yields two different headings, so the two sides would disagree
+ * about the same step, and this project has already paid three times over for a contract
+ * whose halves disagreed. See {@link isWalkable}.
+ *
+ * So it is a pure function of position: a sliver is somewhere that has walkable ground on
+ * *both* sides along some axis, within a stride, at the same height. That is checkable from
+ * the destination alone, which means the client and server cannot come to different
+ * conclusions no matter where they think the player came from.
+ */
+function isSliver(x: number, z: number, h: number): boolean {
+  // A wall is a wall from every direction; do not pay for twelve probes to find that out.
+  if (footingSlopeAt(x, z) > MAX_WALKABLE_SLOPE * SLIVER_MAX_EXCESS) return false;
+  for (const axis of SLIVER_AXES) {
+    for (const [ux, uz] of axis) {
+      // Heights first: two cheap samples reject most probes before any footing fit is run.
+      if (Math.abs(heightAt(x + ux, z + uz) - h) > SLIVER_RISE) continue;
+      if (Math.abs(heightAt(x - ux, z - uz) - h) > SLIVER_RISE) continue;
+      if (isWalkable(x + ux, z + uz) && isWalkable(x - ux, z - uz)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether `(x, z)` is over-steep *and* a sliver — ground the contract refuses to call
+ * walkable but lets you cross anyway.
+ *
+ * The client needs to know the difference. Its downhill slide fires on anything past
+ * {@link MAX_WALKABLE_SLOPE}, and firing it on a crease the contract has just let the player
+ * walk into would shove them back out of it — a slide disagreeing with the test that
+ * permitted the step, which is the exact shape of the bugs {@link isWalkable} warns about.
+ */
+export function isSliverAt(x: number, z: number): boolean {
+  if (isWalkable(x, z)) return false;
+  return isSliver(x, z, heightAt(x, z));
+}
+
+/**
  * Whether a character standing at `(fromX, fromZ)` may move to `(x, z)`.
  *
  * {@link isWalkable} answers "may anybody stand here", and is symmetric: ground steeper than
@@ -1308,13 +1408,20 @@ export const DESCENT_STEP = 0.5;
  * Both sides call this with the same two points: the client with its previous physics
  * position, the server with the last report it accepted. A descent measured between the same
  * pair of coordinates is the same answer on both.
+ *
+ * The second relaxation, {@link isSliver}, takes no direction at all and so cannot disagree
+ * between the two sides even though their `from` points differ. It is what lets you walk
+ * across a one-metre crease of 50° ground with 48° ground on either side of it.
  */
 export function canEnterFrom(fromX: number, fromZ: number, x: number, z: number): boolean {
   if (isWalkable(x, z)) return true;
   if (Math.abs(x) > ISLAND_EXTENT || Math.abs(z) > ISLAND_EXTENT) return false;
   const h = heightAt(x, z);
+  // Deep water is never relaxed. It is the one part of the contract that is about place
+  // rather than footing, and neither a run-up nor a crease should carry you into a channel.
   if (h < -MAX_WADE_DEPTH) return false;
-  return h <= heightAt(fromX, fromZ) - DESCENT_STEP;
+  if (h <= heightAt(fromX, fromZ) - DESCENT_STEP) return true;
+  return isSliver(x, z, h);
 }
 
 /**

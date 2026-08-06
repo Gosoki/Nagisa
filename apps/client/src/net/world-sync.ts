@@ -47,6 +47,7 @@ import {
   announcements,
   currentToast,
   followTarget,
+  isMuted,
   latency,
   notify,
   players,
@@ -361,6 +362,11 @@ export class WorldSync {
         // *bubble* is raised here, from the echo, so it appears exactly when everyone
         // else's does rather than a round trip early.
         const mine = c.id === selfId;
+        // A muted person is dropped here, once, rather than filtered in two places later:
+        // the line never enters the log and no bubble is raised, so unmuting cannot make an
+        // hour of backlog appear. They stay visible on the island — mute is a way to stop
+        // reading someone, not a way to lose track of where they are. See `stores.mutedIds`.
+        if (!mine && isMuted(c.id)) continue;
         const name = mine ? this.selfName() : (this.remote.views().find((p) => p.id === c.id)?.name ?? 'Someone');
         if (!mine) pushChat({ playerId: c.id, name, text: c.text, self: false });
         this.bubbles.say(c.id, c.text);

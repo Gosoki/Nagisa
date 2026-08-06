@@ -74,7 +74,11 @@ export const LANTERN_ATOLL: MapPack = {
     shelters: [{ x: 0, z: 78, reach: 46 }],
 
     pads: [
-      { id: 'landing', x: 0, z: 62, height: 1.8, inner: 20, outer: 32 },
+      // `inner` 24, not 20: the terraces now meet the ground with a cut face rather than a
+      // smoothstep ring (see `paddedHeight`), and the two landing huts sit with their
+      // corners a couple of metres past the old flat — which the old ring barely noticed and
+      // a face does. The atoll's whole relief is 3.5 m, so a wider flat costs it nothing.
+      { id: 'landing', x: 0, z: 62, height: 1.8, inner: 24, outer: 32 },
       { id: 'lantern-house', x: -RING_RADIUS, z: 0, height: 3.2, inner: 20, outer: 32 },
       { id: 'north-camp', x: 0, z: -RING_RADIUS, height: 2.6, inner: 20, outer: 32 },
       { id: 'east-market', x: RING_RADIUS, z: 0, height: 2.4, inner: 20, outer: 32 },
@@ -196,7 +200,7 @@ export const LANTERN_ATOLL: MapPack = {
       { id: 'at-keeper', kind: 'keepers-house', x: -65.2, z: -15.6, rot: -1.959 },
       { id: 'at-stone-n', kind: 'stone-lantern', x: -RING_RADIUS + 9, z: -5, rot: 0 },
       { id: 'at-stone-s', kind: 'stone-lantern', x: -RING_RADIUS + 9, z: 5, rot: 0 },
-      { id: 'at-wall-n', kind: 'sea-wall', x: -86.4, z: -11, rot: 0.02, opts: { length: 16 } },
+      { id: 'at-wall-n', kind: 'sea-wall', x: -91, z: -23, rot: -0.2, opts: { length: 16 } },
       { id: 'at-wall-s', kind: 'sea-wall', x: -84.5, z: 8, rot: 0.35, opts: { length: 16 } },
 
       // ── North camp ──────────────────────────────────────────────────────────

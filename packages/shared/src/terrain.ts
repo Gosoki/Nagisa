@@ -779,6 +779,11 @@ const pathCuts = new Map<string, Float64Array>();
  */
 function blendWidth(path: WorldPath, s: number): number {
   maxEmbankmentGradient ||= Math.tan(MAX_WALKABLE_SLOPE * EMBANKMENT_GRADE_FRACTION);
+  // Only reachable from inside the ordered survey in `ensureProfile`, and only for a lane
+  // that pass has not reached yet. It gets the authored shoulder — what every lane had
+  // before growth existed — rather than sending the survey round the cycle again. Asking
+  // `cutDepth` here would also cache an array sized from a profile that does not exist.
+  if (!pathProfiles.has(path.id)) return path.shoulder;
   const cut = cutDepth(path, s) * path.carve;
   const needed = (SMOOTHSTEP_PEAK * cut) / maxEmbankmentGradient;
   return Math.min(path.shoulder * MAX_BLEND_GROWTH, Math.max(path.shoulder, needed));
@@ -837,17 +842,55 @@ function profileHeight(path: WorldPath, s: number): number {
   return sampleStations(path, ensureProfile(path), s);
 }
 
-/** The path's grade profile, surveyed on first use and cached until the map changes. */
+/** True while {@link ensureProfile} is walking the map's lanes. */
+let surveying = false;
+
+/**
+ * The path's grade profile, surveyed on first use and cached until the map changes.
+ *
+ * ### Why the *first* request surveys every lane, not just the one asked for
+ *
+ * Surveying a lane reads the ground beside it, and the ground beside it includes any other
+ * lane's embankment — so `buildProfile` → `nearestPath` → `blendWidth` → `cutDepth` →
+ * `ensureProfile` closes a loop through a *different* lane, which does the same thing back.
+ * Nothing broke that cycle: the per-path guard covered the junction-height lookup and not
+ * the blend-width one, so whether it terminated came down to which lane happened to be
+ * nearest the very first point anybody asked about. Change the terraces slightly and the
+ * first query lands somewhere else and it recurses until the stack runs out.
+ *
+ * Falling back mid-cycle would fix the crash and replace it with something worse. The
+ * fallback is only reached when a lane is not yet surveyed, so *which* lanes get the real
+ * blend and which get the authored one would depend on query order — and query order is not
+ * the same on the client (meshing a grid, corner first) as on the server (validating a
+ * player, wherever they stand). The two would disagree about the ground, which is the one
+ * thing this module exists to prevent.
+ *
+ * So the survey is a single ordered pass over `PATHS`, triggered by the first request and
+ * ordered by the map data. The fallback in {@link blendWidth} is then only ever reached
+ * *inside* that pass, in the same sequence, on every machine.
+ */
 function ensureProfile(path: WorldPath): Float64Array {
-  let profile = pathProfiles.get(path.id);
-  if (!profile) {
-    profilesUnderConstruction.add(path.id);
-    profile = buildProfile(path);
-    profilesUnderConstruction.delete(path.id);
-    pathProfiles.set(path.id, profile);
+  const cached = pathProfiles.get(path.id);
+  if (cached) return cached;
+  if (surveying) return EMPTY_PROFILE;
+
+  surveying = true;
+  try {
+    for (const p of PATHS) {
+      if (pathProfiles.has(p.id)) continue;
+      profilesUnderConstruction.add(p.id);
+      const built = buildProfile(p);
+      profilesUnderConstruction.delete(p.id);
+      pathProfiles.set(p.id, built);
+    }
+  } finally {
+    surveying = false;
   }
-  return profile;
+  return pathProfiles.get(path.id) ?? EMPTY_PROFILE;
 }
+
+/** Handed back to a re-entrant request during the survey. Never cached. */
+const EMPTY_PROFILE = new Float64Array(0);
 
 /**
  * Read any per-station array at arc length `s`, interpolating between stations — wrapping
@@ -965,14 +1008,95 @@ function naturalHeight(x: number, z: number): number {
  * own function for exactly that reason — see {@link heightAt} for why the order is what
  * it is.
  */
+/**
+ * How far a terrace's blend ring may grow past its authored `outer`, as a multiple of the
+ * authored ring width. The same cap, for the same reason, as {@link MAX_BLEND_GROWTH}.
+ */
+const MAX_PAD_BLEND_GROWTH = 3;
+
+/** How many directions the rim height is sampled in, per terrace. 0.7° apart. */
+const PAD_RIM_SECTORS = 512;
+
+/** Natural ground at each terrace's widest possible rim, by direction. Lazy, per pad. */
+const padRims = new Map<string, Float64Array>();
+
+/**
+ * Natural ground height at the far edge of a terrace's blend, in one direction.
+ *
+ * Sampled into a ring of {@link PAD_RIM_SECTORS} buckets and interpolated between them,
+ * because the alternative is a `naturalHeight` call — several octaves of fbm — for every pad,
+ * on every one of the hundred and sixty thousand samples the terrain mesh takes. The rim
+ * height varies smoothly with angle, so a bucket every 0.7° with linear interpolation between
+ * neighbours is indistinguishable from evaluating it exactly, and two hundred times cheaper.
+ */
+function padRimHeight(pad: Pad, angle: number): number {
+  let ring = padRims.get(pad.id);
+  if (!ring) {
+    ring = new Float64Array(PAD_RIM_SECTORS);
+    const radius = pad.inner + (pad.outer - pad.inner) * MAX_PAD_BLEND_GROWTH;
+    for (let i = 0; i < PAD_RIM_SECTORS; i++) {
+      const a = (i / PAD_RIM_SECTORS) * Math.PI * 2;
+      ring[i] = naturalHeight(pad.x + Math.cos(a) * radius, pad.z + Math.sin(a) * radius);
+    }
+    padRims.set(pad.id, ring);
+  }
+  const t = (((angle / (Math.PI * 2)) % 1) + 1) % 1 * PAD_RIM_SECTORS;
+  const i = Math.floor(t);
+  return lerp(ring[i]!, ring[(i + 1) % PAD_RIM_SECTORS]!, t - i);
+}
+
+/**
+ * Where a terrace's blend ends, in one direction — the authored `outer`, or further out if
+ * the ground on that side is too far above or below the terrace to reach in that distance.
+ *
+ * ### Why the ring cannot be a constant width
+ *
+ * A terrace is a flat disc pressed into a hillside, so the depth of the cut is a function of
+ * *direction*: the south harbour sits at 2.4 m on ground that is at sea level to seaward and
+ * thirteen metres up the mountain twenty-eight metres inland. One authored ring width has to
+ * serve both, and it was sized for the gentle side — which put a sixty-seven degree bank
+ * around the whole inland arc of the harbour, twenty-seven per cent of it flatly unwalkable.
+ *
+ * That bank is what you meet as an invisible wall. The contract refuses ground steeper than
+ * {@link MAX_WALKABLE_SLOPE} and a jump does not help, because the test is horizontal — so a
+ * cut face reads as a plane of air you cannot pass, on ground that looks like a hillside.
+ *
+ * The fix is the one the lanes already use (see {@link blendWidth}): derive the width from
+ * the drop it has to absorb and treat the authored number as a minimum. The growth is
+ * asymmetric by construction — the seaward side of a harbour has nothing to absorb and keeps
+ * its authored ring — so this widens the uphill approach into a ramp without flattening the
+ * island, which is the failure mode that would matter.
+ *
+ * ### Why it is a blend and not an excavation
+ *
+ * The obvious alternative is to model what a builder would actually do: dig the pad, and let
+ * the cut face rise from its rim at the steepest angle that still holds, until it meets the
+ * natural ground. That was tried, and it is correct, and it eats the mountain — because the
+ * harbour's flat sits ten metres *below* the hillside at its own rim, and a face climbing out
+ * of that at forty-two degrees does not catch a slope already rising at thirty-five until it
+ * is fifty metres inland. An excavation sized to a terrace this big is a quarry. The blend
+ * cuts less and leaves a steeper join, and on this island that is the better trade.
+ */
+function padBlendOuter(pad: Pad, dx: number, dz: number): number {
+  maxEmbankmentGradient ||= Math.tan(MAX_WALKABLE_SLOPE * EMBANKMENT_GRADE_FRACTION);
+  const nominal = pad.outer - pad.inner;
+  const widest = nominal * MAX_PAD_BLEND_GROWTH;
+  const drop = Math.abs(padRimHeight(pad, Math.atan2(dz, dx)) - pad.height);
+  const needed = (SMOOTHSTEP_PEAK * drop) / maxEmbankmentGradient;
+  return pad.inner + Math.min(widest, Math.max(nominal, needed));
+}
+
 function paddedHeight(x: number, z: number): number {
   let h = naturalHeight(x, z);
   for (const pad of PADS) {
     const dx = x - pad.x;
     const dz = z - pad.z;
     const dSq = dx * dx + dz * dz;
-    if (dSq > pad.outer * pad.outer) continue;
-    const w = 1 - smoothstep(pad.inner, pad.outer, Math.sqrt(dSq));
+    // Cheap reject against the widest the ring could possibly grow to, before the rim
+    // lookup that decides how wide it actually is here.
+    const reach = pad.inner + (pad.outer - pad.inner) * MAX_PAD_BLEND_GROWTH;
+    if (dSq > reach * reach) continue;
+    const w = 1 - smoothstep(pad.inner, padBlendOuter(pad, dx, dz), Math.sqrt(dSq));
     h = lerp(h, pad.height, w);
   }
   return h;
@@ -1157,6 +1281,7 @@ export function isWalkable(x: number, z: number): boolean {
   return footingSlopeAt(x, z) <= MAX_WALKABLE_SLOPE;
 }
 
+
 /**
  * How far outside the walkability contract a position is, in metres of violation. Zero
  * means legal.
@@ -1245,5 +1370,6 @@ onMapChange((pack) => {
   pathLengths.clear();
   pathProfiles.clear();
   pathCuts.clear();
+  padRims.clear();
   profilesUnderConstruction.clear();
 });

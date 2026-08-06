@@ -435,10 +435,15 @@ const WATERFRONT = new Set(['pier', 'breakwater', 'sea-wall']);
 
 /**
  * Row houses share party walls — that is what a 町屋 terrace *is*. Two of them touching is
- * the composition working, not a defect, so only a real burial counts.
+ * the composition working, not a defect.
+ *
+ * 0.6 m, not 2.5. A terrace shares walls; it does not share *roofs*, and 2.5 m of tolerance
+ * on a 9.8 m frontage let the Old Street's rows sit close enough that their eaves grew
+ * through each other — which is exactly what a row of townhouses is not supposed to look
+ * like. This is now the width of an eave meeting an eave, and no more.
  */
 const PARTY_WALL_KINDS = new Set(['machiya']);
-const PARTY_WALL_TOLERANCE = 2.5;
+const PARTY_WALL_TOLERANCE = 0.6;
 
 const overlaps: Array<[Landmark, Landmark, number]> = [];
 for (let i = 0; i < LANDMARKS.length; i++) {

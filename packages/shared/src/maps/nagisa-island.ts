@@ -173,19 +173,38 @@ const PADS: MapPack['terrain']['pads'] = [
   /** The shrine, on its own headland. */
   { id: 'shrine', x: -64, z: 37, height: 11.0, inner: 26, outer: 38 },
 
+  /**
+   * The saddle where the plaza's shelf runs into the old street's.
+   *
+   * The two are meant to be *one* shelf with no dip between them, and they are not: the
+   * natural ground between their flats humps up to 10.4 m against the plaza's 8 and the
+   * street's 9, so the ring road climbs two and a half metres and comes back down again
+   * over twenty metres — a pointless little hill in the middle of the one stretch of the
+   * island that is supposed to read as continuous.
+   *
+   * 8.6 m is the level the road wants at that station: a shade above the plaza, a shade
+   * below the street, so it runs through as a grade rather than a bump.
+   */
+  { id: 'east-saddle', x: 79, z: -3, height: 8.6, inner: 9, outer: 22 },
+
   // — Inland ————————————————————————————————————————————————————————
   /** Notice-board terrace, one step up from the plaza floor. The one deliberate nesting. */
   { id: 'noticeboard', x: 48, z: 22, height: 8.4, inner: 8, outer: 12 },
   /**
    * The summit court: a flat terrace at the true peak, around the inner shrine.
    *
-   * `inner` is 16 rather than 12 because the two mountain paths no longer run *through* the
-   * court — they meet at a junction on its southern edge — and the composition they used to
-   * be tangled with now needs the room they were taking. A hall deep enough to have a
-   * veranda, flanked by a bell and a basin, wants sixteen metres of flat before its corners
-   * are standing on the blend.
+   * `inner` is 17 rather than 12 because the road runs straight through the middle of it, so
+   * everything has to stand clear of a carriageway that takes eight of those metres. A hall
+   * deep enough to have a veranda needs the rest of them before its back corners are off the
+   * flat and onto the blend.
+   *
+   * `outer` stays at 30 even though widening it would smooth the last unwalkable band on the
+   * mountain — the one at 40–50 m out, where the harbours' blends and this one meet. At 44
+   * the ring grows far enough down the flank to reach the quays themselves and puts two
+   * metres of fall under the harbour office and stage. A steep band halfway up a mountain is
+   * a mountain; a tilted terrace is a defect.
    */
-  { id: 'summit', x: SUMMIT.x, z: SUMMIT.z, height: SUMMIT.height, inner: 16, outer: 30 },
+  { id: 'summit', x: SUMMIT.x, z: SUMMIT.z, height: SUMMIT.height, inner: 17, outer: 30 },
 ] as const;
 
 /**
@@ -246,20 +265,17 @@ const PATHS: MapPack['terrain']['paths'] = [
       // Three metres of clearance is the whole fix. See `npm run audit:terrain`.
       [58, -5],
       [36, -6],
-      [24, 2],
-      [10, 12],
-      // The road stops *below* the court, not in it.
+      [16, 3],
+      // Straight to the peak, and the court is arranged around the fact rather than around
+      // its absence. A detour that took the road *below* the summit did keep the terrace
+      // clear, but it also meant the mountain road no longer reached the mountain: you
+      // arrived at a junction and the last sixteen metres were not a road at all.
       //
-      // It used to end at (0, 0) — the peak, the middle of the terrace, the exact centre of
-      // the composition — and the shrine path left from the same point, so the summit's inner
-      // shrine had a through road running between its gate and its hall. There is no
-      // arrangement of buildings that survives that: whatever stands north of the line has
-      // its back to the road and whatever stands south of it is in the way.
-      //
-      // So the two mountain routes now meet here, sixteen metres south of the peak, and the
-      // court opens onto the junction through its torii. You arrive at a gate rather than
-      // walking through somebody's shrine.
-      [0, 16],
+      // So the road runs through, and the composition crosses it: gate and bell on the
+      // approach side, hall and its court on the far side, everything on one axis square to
+      // the carriageway. A road through a shrine's forecourt is ordinary; a shrine built
+      // along a road is what most of them are.
+      [0, 0], // summit
     ],
   },
   {
@@ -276,8 +292,8 @@ const PATHS: MapPack['terrain']['paths'] = [
       [-64, 37], // shrine courtyard, at the T
       [-46, 30],
       [-28, 20],
-      [-14, 13],
-      [0, 16], // meets the summit road below the court
+      [-12, 10],
+      [0, 0], // summit
     ],
   },
   {
@@ -464,7 +480,7 @@ const INTERACTABLES: MapPack['world']['interactables'] = [
   { id: 'notice-board', zone: 'noticeboard', dx: -3.2, dz: 2.5, range: 4.5, kind: 'use', label: 'Read', effect: 'read_announcements' },
   { id: 'plaza-post', zone: 'plaza', dx: -13, dz: 7, range: 3.5, kind: 'use', label: 'Check in', effect: 'checkin_nearby' },
   { id: 'shrine-bell', zone: 'shrine', dx: -9.5, dz: -7, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
-  { id: 'summit-bell', zone: 'summit', dx: 9.3, dz: 4.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
+  { id: 'summit-bell', zone: 'summit', dx: 0, dz: 12.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
   { id: 'south-harbor-bell', zone: 'south-harbor', dx: 10.5, dz: 3.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
   { id: 'north-harbor-bell', zone: 'north-harbor', dx: 13.1, dz: -3.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
   { id: 'lighthouse-door', zone: 'lighthouse', dx: 0, dz: 3, range: 4, kind: 'use', label: 'Look', effect: 'none' },
@@ -517,7 +533,7 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'sh-boat-2', kind: 'boat', x: -12, z: 96, rot: -0.7 },
   // On the quay *edge*, twenty-three metres further out. It used to stand in the middle of
   // the flat with 2.4 m of terrace on both sides of it, holding nothing back at all.
-  { id: 'sh-seawall', kind: 'sea-wall', x: 12.5, z: 103, rot: 1.803, opts: { length: 14 } },
+  { id: 'sh-seawall', kind: 'sea-wall', x: 14, z: 108, rot: 1.75, opts: { length: 14 } },
   { id: 'sh-warehouse-1', kind: 'warehouse', x: 19.7, z: 82.6, rot: 0.073, opts: { w: 10, d: 8, floors: 2 } },
   { id: 'sh-warehouse-2', kind: 'warehouse', x: -19.5, z: 82.6, rot: -0.073, opts: { w: 10, d: 8 } },
   { id: 'sh-office', kind: 'machiya', x: 8.6, z: 54.4, rot: -2.531, opts: { w: 10, d: 10, floors: 2, sign: true } },
@@ -577,18 +593,23 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   // before with the rows swapped, which is all it took; the sign of a yaw is the difference
   // between a village and the back of a stage set.
   //
-  // The row houses are spaced 8–9 m along the road, so their eaves touch. That is what a
-  // 町屋 terrace *is* — party walls, one continuous frontage — and the placement audit knows
-  // to allow it between machiya and nothing else.
-  { id: 'ov-machiya-1', kind: 'machiya', x: 59.7, z: -21.1, rot: -1.118, opts: { w: 8, d: 10, floors: 2, sign: true } },
-  { id: 'ov-machiya-2', kind: 'machiya', x: 56.2, z: -28.3, rot: -1.118, opts: { w: 8, d: 10, floors: 2 } },
-  { id: 'ov-machiya-3', kind: 'machiya', x: 51.9, z: -35.5, rot: -0.976, opts: { w: 8, d: 10, floors: 1, sign: true } },
-  { id: 'ov-bathhouse', kind: 'bathhouse', x: 45.4, z: -45.6, rot: -0.976, opts: { w: 10, d: 8 } },
+  // Spaced eleven metres along the road, which is the eight-metre frontage plus its eaves
+  // plus a metre of daylight. They were at eight and nine, which let the audit's party-wall
+  // tolerance carry them — correct for a 町屋 terrace on paper, and from the street a row of
+  // roofs growing through each other. A terrace shares *walls*; it does not share eaves.
+  { id: 'ov-machiya-1', kind: 'machiya', x: 61.5, z: -17.5, rot: -1.118, opts: { w: 8, d: 10, floors: 2, sign: true } },
+  { id: 'ov-machiya-2', kind: 'machiya', x: 56.7, z: -27.4, rot: -1.118, opts: { w: 8, d: 10, floors: 2 } },
+  { id: 'ov-machiya-3', kind: 'machiya', x: 51.0, z: -36.9, rot: -0.976, opts: { w: 8, d: 10, floors: 1, sign: true } },
+  // The bathhouse is on a back lane behind the east row rather than at the end of the west
+  // one. Its old place was out at the terrace rim, where the ground has a fall to it now that
+  // the blend ring widens on the uphill side — and a bathhouse is the widest building on the
+  // street, so it was the one that noticed.
+  { id: 'ov-bathhouse', kind: 'bathhouse', x: 85.7, z: -47.3, rot: 2.014, opts: { w: 10, d: 8 } },
   // The kura anchors the far end of the east row, where the street meets its north gate.
-  { id: 'ov-warehouse', kind: 'warehouse', x: 81.1, z: -24.8, rot: 2.024, opts: { w: 10, d: 8 } },
-  { id: 'ov-machiya-4', kind: 'machiya', x: 76.5, z: -35.9, rot: 2.024, opts: { w: 8, d: 10, floors: 2 } },
-  { id: 'ov-machiya-5', kind: 'machiya', x: 71.0, z: -46.0, rot: 2.166, opts: { w: 8, d: 10, floors: 1, sign: true } },
-  { id: 'ov-machiya-6', kind: 'machiya', x: 66.5, z: -52.6, rot: 2.166, opts: { w: 8, d: 10, floors: 2 } },
+  { id: 'ov-warehouse', kind: 'warehouse', x: 81.8, z: -25.1, rot: 2.024, opts: { w: 10, d: 8 } },
+  { id: 'ov-machiya-4', kind: 'machiya', x: 76.4, z: -36.3, rot: 2.024, opts: { w: 8, d: 10, floors: 2 } },
+  { id: 'ov-machiya-5', kind: 'machiya', x: 71.0, z: -45.9, rot: 2.166, opts: { w: 8, d: 10, floors: 1, sign: true } },
+  { id: 'ov-machiya-6', kind: 'machiya', x: 64.8, z: -55.0, rot: 2.166, opts: { w: 8, d: 10, floors: 2 } },
   { id: 'ov-gate-s', kind: 'gate', x: 72.9, z: -18.6, rot: -2.689 },
   { id: 'ov-gate-n', kind: 'gate', x: 49.7, z: -58.2, rot: -2.547 },
   { id: 'ov-well', kind: 'well', x: 60.9, z: -60.9, rot: 2.166 },
@@ -659,27 +680,32 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'sr-rock-2', kind: 'rock', x: -84, z: 24, rot: 2.1, scale: 1.2 },
 
   // ═══ Summit (0, 0) — the inner shrine, at the top of everything ═════════
-  // A court, now that the road has been taken out of the middle of it — see `south-approach`.
-  // North–south axis: you come up to the junction sixteen metres south, walk in through the
-  // torii, pass the summit stone at the true peak, and the hall is at the head facing you,
-  // flanked by the bell and the basin. Everything is inside the terrace's flat sixteen metres.
-  { id: 'su-torii', kind: 'torii', x: 0, z: 8.5, rot: 0, scale: 1.2 },
-  { id: 'su-marker', kind: 'summit-marker', x: 0, z: 0, rot: 0 },
-  { id: 'su-hall', kind: 'shrine-hall', x: 0, z: -9, rot: 3.142, opts: { w: 9, d: 7.5, honden: true, small: true } },
-  { id: 'su-bell', kind: 'bell-tower', x: 9.3, z: 1.5, rot: 3.142, scale: 0.85 },
-  // The bell tower's mirror. A shrine court reads as a court because the approach is flanked;
-  // with the bell alone on one side, the summit was symmetric everywhere except at eye level.
-  { id: 'su-temizuya', kind: 'temizuya', x: -9.3, z: 1.5, rot: 3.142 },
+  // The road runs straight through the court, so the court is built **across** it rather
+  // than around it: one axis at right angles to the carriageway, with the approach on the
+  // south side and the shrine proper on the north.
+  //
+  // South of the road, in the order you meet them coming up: the torii, then the bell. North
+  // of it: the hall facing back across at the gate, the basin and the summit stone flanking
+  // it, benches at the rim. Nothing stands within five metres of the centreline, so the road
+  // is a road the whole way to the top instead of ending at a junction below the terrace.
+  { id: 'su-torii', kind: 'torii', x: 0, z: 15, rot: 0, scale: 1.2 },
+  { id: 'su-bell', kind: 'bell-tower', x: 0, z: 9.5, rot: 0, scale: 0.85 },
+  { id: 'su-lantern-3', kind: 'stone-lantern', x: -5, z: 12.5, rot: 0 },
+  { id: 'su-lantern-4', kind: 'stone-lantern', x: 5, z: 12.5, rot: 0 },
+  // — north of the road ————————————————————————————————————————————
+  { id: 'su-lantern-1', kind: 'stone-lantern', x: -4.5, z: -4.5, rot: 3.142 },
+  { id: 'su-lantern-2', kind: 'stone-lantern', x: 4.5, z: -4.5, rot: 3.142 },
+  { id: 'su-hall', kind: 'shrine-hall', x: 0, z: -11, rot: 3.142, opts: { w: 7.5, d: 6, honden: true, small: true } },
+  { id: 'su-temizuya', kind: 'temizuya', x: -8.5, z: -9, rot: 3.142 },
+  { id: 'su-marker', kind: 'summit-marker', x: 8.5, z: -9, rot: 0 },
+  { id: 'su-bench-1', kind: 'bench', x: -11, z: -12, rot: 0.4 },
+  { id: 'su-bench-2', kind: 'bench', x: 11, z: -12, rot: -0.4 },
   // The belvedere, out on the western rim where the mountain actually starts to fall away.
   // A railing is a statement that there is a drop here; on the flat of the court it was
   // fencing off nothing at all.
   { id: 'su-rail', kind: 'rail', x: -23.8, z: -7.7, rot: -0.398, opts: { length: 12 } },
-  { id: 'su-lantern-1', kind: 'stone-lantern', x: -3.8, z: 4.5, rot: 3.142 },
-  { id: 'su-lantern-2', kind: 'stone-lantern', x: 3.8, z: 4.5, rot: 3.142 },
-  { id: 'su-bench-1', kind: 'bench', x: -11.5, z: -5, rot: 0.4 },
-  { id: 'su-bench-2', kind: 'bench', x: 11.5, z: -5, rot: -0.4 },
-  { id: 'su-rock-1', kind: 'rock', x: 17, z: -14, rot: 1.2, scale: 1.2 },
-  { id: 'su-rock-2', kind: 'rock', x: -16, z: -15, rot: 0.3, scale: 1.4 },
+  { id: 'su-rock-1', kind: 'rock', x: 19, z: -16, rot: 1.2, scale: 1.2 },
+  { id: 'su-rock-2', kind: 'rock', x: -18, z: -17, rot: 0.3, scale: 1.4 },
 ] as const;
 
 const ACTIVITY_TEMPLATES: MapPack['world']['activityTemplates'] = [

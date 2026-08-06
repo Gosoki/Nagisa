@@ -258,6 +258,39 @@ violations in 110 000 steps.
 The map is the one to reach for first when something looks wrong. The failure modes of a
 procedural world are spatial, and reading numbers does not catch them.
 
+### Terrace edges
+
+A terrace is a flat disc pressed into a hillside, so how deep it cuts is a function of
+*direction*: the south harbour sits at 2.4 m on ground that is at sea level to seaward and
+thirteen metres up the mountain twenty-eight metres inland. The authored `outer` is one ring
+width for all of it, and it was sized for the gentle side — which put a sixty-seven degree
+bank around the whole inland arc, twenty-seven per cent of it unwalkable.
+
+That bank is what you meet as an invisible wall. `isWalkable` refuses ground steeper than
+`MAX_WALKABLE_SLOPE` and a jump does not help, because the test is horizontal — so a cut face
+reads as a plane of air on ground that looks like a hillside.
+
+So `outer` is now a *minimum*: the ring grows, per direction, to whatever width the drop on
+that side needs at a walkable grade, capped at three times the authored one. The growth is
+asymmetric by construction, so a harbour's seaward side keeps its authored ring and only the
+uphill approach becomes a ramp.
+
+Two things this deliberately does **not** do:
+
+- **It does not excavate.** Modelling what a builder would actually do — dig the pad, run a
+  cut face out from its rim at the steepest angle that holds — is correct and eats the
+  mountain, because the harbour's flat is ten metres below the hillside at its own rim and a
+  face climbing out of that does not catch a slope already rising at thirty-five degrees until
+  it is fifty metres inland. The blend cuts less and leaves a steeper join.
+- **It does not make cliffs jumpable.** Relaxing the contract to "steep ground may be passed
+  over while your feet are clear of it" was tried and cannot be validated: the server sees
+  positions, not velocities, so it cannot tell a jump arc from a client reporting itself half
+  a metre above a cliff face and walking up it. Steep ground a player wants to jump is a
+  terrain defect, and is fixed as one.
+
+What remains is a band of steep ground round the mountain's foot, forty to fifty metres out
+from each harbour. That is a mountain, and the roads are how you get past it.
+
 ### Placing a building beside a road
 
 Author it in road coordinates and let `scripts/layout-solve.mjs` do the trigonometry. Two

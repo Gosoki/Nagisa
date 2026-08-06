@@ -195,6 +195,12 @@ export class Player {
     // Walkability is checked in the horizontal plane only — `isWalkable` cares about
     // place (on land, not too steep), not the reported altitude, which the client owns
     // for the duration of a jump arc.
+    //
+    // Relaxing it to "steep ground may be passed over while your feet are clear of it" was
+    // tried, to make a jump worth pressing at a bank. It cannot be validated: the server
+    // sees positions, not velocities, so it cannot tell a jump arc from a client that
+    // simply reports itself half a metre above a cliff face and walks up it. Steep ground
+    // that a player wants to jump is a terrain defect, and is fixed as one.
     if (!isWalkable(pos[0], pos[2])) {
       return this.correctionTo(nowMs, 'bounds');
     }

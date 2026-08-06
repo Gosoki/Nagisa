@@ -60,6 +60,14 @@ export interface InkMaterialOptions {
    * between them; surfaces sharing an id read as one continuous form.
    */
   matId?: number;
+  /**
+   * Read the material id from an `aSurface` vertex attribute instead of the uniform.
+   *
+   * Only the terrain wants this: it is one mesh carrying every kind of ground there is, and
+   * a single id per mesh means the contour pass can never draw the boundary between two of
+   * them. See the `USE_SURFACE_BAND` block in the fragment shader.
+   */
+  surfaceBands?: boolean;
   /** Whether this surface participates in the contour pass at all. */
   outline?: boolean;
   /** Strength of the pen hatching on the shadow side, 0–1. */
@@ -154,6 +162,11 @@ precision highp float;
   out vec3 vVertexColor;
 #endif
 
+#ifdef USE_SURFACE_BAND
+  in vec4 aSurface;
+  out vec4 vSurface;
+#endif
+
 out vec3 vViewNormal;
 out vec3 vWorldNormal;
 out vec3 vViewPosition;
@@ -161,6 +174,9 @@ out vec3 vViewPosition;
 void main() {
   #ifdef USE_VCOLOR
     vVertexColor = color;
+  #endif
+  #ifdef USE_SURFACE_BAND
+    vSurface = aSurface;
   #endif
 
   vec3 objectNormal = normal;
@@ -224,6 +240,9 @@ uniform float uTime;
 
 #ifdef USE_VCOLOR
   in vec3 vVertexColor;
+#endif
+#ifdef USE_SURFACE_BAND
+  in vec4 vSurface;
 #endif
 in vec3 vViewNormal;
 in vec3 vWorldNormal;
@@ -316,7 +335,38 @@ void main() {
   // Material id is quantised into 16 buckets. The contour pass compares neighbouring
   // pixels' ids, so what matters is that two different ids differ by a detectable step,
   // not that the value means anything on its own.
-  gColor = vec4(lit, uMatId);
+  float matId = uMatId;
+
+  #ifdef USE_SURFACE_BAND
+    // The ground is one mesh with one material, so on a flat terrace it offers the contour
+    // pass nothing to find: no silhouette, no crease, no id change. That is why the plaza
+    // and the old street rendered as blank paper — a drawing of a paved square has the
+    // joins between its materials drawn, and this had none to draw.
+    //
+    // vSurface carries four *continuous* memberships, in the same order the ground itself
+    // is layered: an altitude coordinate that ramps 0 → 3 through water, sand, grass and
+    // upland, then how rocky, how paved and how much lane this point is.
+    //
+    // Continuous is the whole trick. A first attempt stored the band as an integer per
+    // vertex and rounded the interpolation, which put every boundary on the diagonal of a
+    // 2 m grid cell — a staircase, in a style whose entire premise is that lines are drawn
+    // by hand. Thresholding a smooth field instead puts the boundary exactly where the
+    // ground actually changes, and it curves.
+    //
+    // Tested in layer order rather than blended, because blending a scalar id from 3 to 5
+    // passes through 4 and draws a rock shoreline around every terrace that has none.
+    float alt = clamp(vSurface.x, 0.0, 3.0);
+    if (vSurface.w > 0.5) matId = 0.30;        // a lane
+    else if (vSurface.z > 0.5) matId = 0.25;   // paved terrace
+    else if (vSurface.y > 0.5) matId = 0.20;   // rock face
+    else matId = floor(alt + 0.5) * 0.05;      // water / sand / grass / upland
+    //
+    // The steps are far finer than the 1/16 the object ids use, and can afford to be: the
+    // contour pass fires from a difference of 0.002, so 0.05 apart is twenty-five times
+    // over the threshold and every ground still differs from every object material.
+  #endif
+
+  gColor = vec4(lit, matId);
 
   vec3 viewN = normalize(vViewNormal);
   #ifdef FLIP_BACKFACE
@@ -356,6 +406,7 @@ export function createInkMaterial(options: InkMaterialOptions = {}): THREE.Shade
     unlit = false,
     flatShading = true,
     depthWrite = true,
+    surfaceBands = false,
   } = options;
 
   const base = new THREE.Color(color);
@@ -363,6 +414,7 @@ export function createInkMaterial(options: InkMaterialOptions = {}): THREE.Shade
 
   const defines: Record<string, string | number | boolean> = {};
   if (vertexColors) defines.USE_VCOLOR = '';
+  if (surfaceBands) defines.USE_SURFACE_BAND = '';
   if (unlit) defines.UNLIT = '';
   if (transparent) defines.IS_TRANSPARENT = '';
   // Double-sided geometry (cloth, banners, water plants) needs its normal flipped on back

@@ -241,7 +241,17 @@ export function rockFace(): THREE.ShaderMaterial {
  * hatching an entire hillside makes the ground compete with the buildings on it.
  */
 export function terrainMaterial(): THREE.ShaderMaterial {
-  return surface('terrain', { vertexColors: true, matId: MAT_ID.ground, hatch: 0.22, flatShading: false });
+  return surface('terrain', {
+    vertexColors: true,
+    // `surfaceBands` overrides `matId` per fragment from the mesh's `aSurfaceBand`
+    // attribute. The terrain is one mesh carrying every ground on the island, and with a
+    // single id the contour pass had nothing to find on it — a paved square drew as blank
+    // paper. `matId` stays as the fallback for any build that does not supply the attribute.
+    surfaceBands: true,
+    matId: MAT_ID.ground,
+    hatch: 0.22,
+    flatShading: false,
+  });
 }
 
 // ---------------------------------------------------------------------------

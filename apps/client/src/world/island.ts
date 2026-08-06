@@ -194,6 +194,9 @@ export class Island {
     geometry.setAttribute('position', new THREE.BufferAttribute(result.positions, 3));
     geometry.setAttribute('normal', new THREE.BufferAttribute(result.normals, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(result.colors, 3));
+    // Which ground each vertex is, so the contour pass can draw the boundaries between
+    // them — the shoreline, the edge of a lane, the rim of a terrace. See SURFACE_BAND.
+    geometry.setAttribute('aSurface', new THREE.BufferAttribute(result.bands, 4));
     geometry.setIndex(new THREE.BufferAttribute(result.indices, 1));
     geometry.computeBoundingSphere();
 

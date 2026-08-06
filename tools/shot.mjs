@@ -16,11 +16,11 @@
  * the draw-call and triangle counts it prints are real, the frame rate is not.
  */
 
-import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { shutdown, start, waitForPortsFree } from './stack.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -56,29 +56,17 @@ const targets = views.length > 0 ? views : ALL_VIEWS;
 mkdirSync(outDir, { recursive: true });
 
 // --- Vite ---------------------------------------------------------------------------
+//
+// Started and stopped through `tools/stack.mjs`, like every other browser tool. Its own
+// copy used to kill the npm wrapper and leave the Vite process behind, which held :5173 and
+// made whichever smoke test ran next fail for a reason that had nothing to do with it.
 
-const vite = spawn('npm', ['run', 'dev', '-w', '@nagisa/client'], {
+await waitForPortsFree([5173]);
+const viteMatch = await start('vite', ['run', 'dev', '-w', '@nagisa/client'], /localhost:(\d+)/, {
   cwd: root,
-  stdio: ['ignore', 'pipe', 'pipe'],
-  env: { ...process.env, FORCE_COLOR: '0' },
+  timeoutMs: 60_000,
 });
-
-const port = await new Promise((resolvePort, reject) => {
-  const timer = setTimeout(() => reject(new Error('vite did not start within 60s')), 60_000);
-  let buffer = '';
-  const scan = (chunk) => {
-    // Vite colourises its banner, and the escape sequences land in the middle of the URL,
-    // so the raw text has to be stripped before the port can be matched out of it.
-    buffer += chunk.toString().replace(/\u001b\[[0-9;]*m/g, '');
-    const match = buffer.match(/localhost:(\d+)/);
-    if (match) {
-      clearTimeout(timer);
-      resolvePort(Number(match[1]));
-    }
-  };
-  vite.stdout.on('data', scan);
-  vite.stderr.on('data', scan);
-});
+const port = Number(viteMatch[1]);
 
 console.log(`vite on :${port}`);
 
@@ -138,7 +126,7 @@ try {
   }
 } finally {
   await browser.close();
-  vite.kill('SIGTERM');
+  await shutdown();
 }
 
 console.log(failures === 0 ? `\nwrote ${targets.length} shots to ${outDir}` : `\n${failures} problem(s); shots in ${outDir}`);

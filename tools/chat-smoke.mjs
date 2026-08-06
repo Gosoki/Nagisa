@@ -191,14 +191,35 @@ try {
   await alice.page.waitForTimeout(4000);
   await alice.page.keyboard.up('KeyW');
   await alice.page.keyboard.up('ShiftLeft');
-  // Bob is walking the whole time; give him a while to close the distance.
-  await bob.page.waitForTimeout(12_000);
 
-  const gapAfter = await bob.page.evaluate((id) => {
-    const me = window.nagisa?.local?.position;
-    const them = window.nagisa?.remote?.positionOf?.(id);
-    return me && them ? Math.hypot(me.x - them.x, me.z - them.z) : null;
-  }, aliceId);
+  /**
+   * Bob walks; wait until he has arrived, or until we give up.
+   *
+   * Not a fixed sleep. Following is done in frames, and the number of frames inside a wall
+   * clock second is not a constant on SwiftShader — run this immediately after two other
+   * browser tools and the machine delivers a fraction of them. A fixed twelve seconds
+   * therefore passed alone and failed in a batch, which is the worst possible behaviour for
+   * a test: it fails for a reason that is not in the code, on the runs where you are least
+   * able to tell.
+   *
+   * Polling the thing actually being asserted removes the whole class. The deadline is
+   * generous because it is a backstop, not the expectation.
+   */
+  const measureGap = () =>
+    bob.page.evaluate((id) => {
+      const me = window.nagisa?.local?.position;
+      const them = window.nagisa?.remote?.positionOf?.(id);
+      return me && them ? Math.hypot(me.x - them.x, me.z - them.z) : null;
+    }, aliceId);
+
+  let gapAfter = await measureGap();
+  const followDeadline = Date.now() + 40_000;
+  while (Date.now() < followDeadline) {
+    // Arrived: inside conversational distance and no longer closing.
+    if (gapAfter !== null && gapBefore !== null && gapAfter <= gapBefore + 1 && gapAfter < 4) break;
+    await bob.page.waitForTimeout(500);
+    gapAfter = await measureGap();
+  }
   const bobMoved = await bob.page.evaluate(() => {
     const p = window.nagisa?.local?.position;
     return p ? { x: +p.x.toFixed(1), z: +p.z.toFixed(1) } : null;

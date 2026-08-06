@@ -57,6 +57,8 @@ export interface TerrainBuildResult {
   positions: Float32Array;
   normals: Float32Array;
   colors: Float32Array;
+  /** Ground memberships, four floats per vertex. See {@link SurfaceMix}. */
+  bands: Float32Array;
   indices: Uint32Array;
   /** Wall-clock cost of the build, ms — logged so tier tuning has real numbers. */
   elapsedMs: number;
@@ -92,10 +94,18 @@ const C = {
   cliff: [0.557, 0.533, 0.478],
   /** the bare summit */
   scree: [0.62, 0.6, 0.557],
-  /** SCENE_COLORS.paving — the coast road and the terraces */
-  paving: [0.792, 0.757, 0.686],
+  /**
+   * The terraces. Cooler and greyer than `SCENE_COLORS.paving`, deliberately.
+   *
+   * At the token's own value a paved square and a beach differ by about a tenth in each
+   * channel, and at the scale a terrace is seen from that is no difference at all — the
+   * summit court, a stone court at the top of a mountain, read as sand. Built ground and
+   * natural ground want to be separable at a glance; the contour line between them now
+   * exists, and this gives it two different things to separate.
+   */
+  paving: [0.757, 0.749, 0.722],
   /** a cooler paving tone, patched into the above so a quay is not one flat sheet */
-  pavingCool: [0.729, 0.714, 0.667],
+  pavingCool: [0.702, 0.706, 0.694],
   /** SCENE_COLORS.path — the gravel lanes */
   gravel: [0.871, 0.824, 0.714],
   /** boardwalk timber */
@@ -145,8 +155,45 @@ const SURFACE_COLORS: Record<PathSurface, RGB> = {
   boardwalk: C.boardwalk,
 };
 
-/** Vertex colour for a point on the surface. See the header for the layering rule. */
-function colorAt(x: number, z: number, h: number, slope: number, out: number[]): number[] {
+/**
+ * How much of each kind of ground this point is — four *continuous* memberships.
+ *
+ * Written to an `aSurface` vertex attribute and turned into a material id per fragment, so
+ * the contour pass draws a line where one ground meets another: the shoreline, the edge of a
+ * lane, the rim of a paved terrace. Without it the ground is a single material and the
+ * contour pass finds nothing on it anywhere, which is why a paved square rendered as a sheet
+ * of blank paper.
+ *
+ * Continuous, not a band index, and that distinction is the whole thing. Storing the winning
+ * band as an integer and rounding the interpolation puts every boundary on the diagonal of a
+ * grid cell, so the shoreline comes out as a staircase — in a style whose premise is that
+ * every line looks drawn by hand. Thresholding a smooth field puts the boundary where the
+ * ground actually changes, and it curves.
+ *
+ * - `x` — altitude coordinate, ramping 0 → 3 through water, sand, grass, upland.
+ * - `y` — rockiness, `z` — pavedness, `w` — laneness. Read in that order, later winning,
+ *   which is the same order the colour is layered in below.
+ */
+export interface SurfaceMix {
+  alt: number;
+  rock: number;
+  paved: number;
+  lane: number;
+}
+
+/**
+ * Vertex colour for a point on the surface, and what kind of ground it is.
+ * See the header for the layering rule. Writes the colour into `out` and the mix into `mix4`.
+ */
+function colorAt(x: number, z: number, h: number, slope: number, out: number[], mix4: SurfaceMix): number[] {
+  // The altitude coordinate is the sum of the three transitions, which makes it monotone
+  // and continuous across the branch boundaries below even though the colour is not.
+  mix4.alt =
+    smoothstep(-7, -0.6, h) + smoothstep(2.2, 5.6, h) + smoothstep(17, 23, h);
+  mix4.rock = 0;
+  mix4.paved = 0;
+  mix4.lane = 0;
+
   // 1 — altitude bands.
   if (h < -0.6) {
     mix(C.seabed, C.sandWet, smoothstep(-7, -0.6, h), out);
@@ -175,6 +222,7 @@ function colorAt(x: number, z: number, h: number, slope: number, out: number[]):
   if (rockiness > 0) {
     mix(out, h > 10 ? C.cliff : C.rock, rockiness, out);
   }
+  mix4.rock = rockiness;
 
   // 3 — paved terraces. Applied before the roads so a lane crossing a quay still reads
   // as a lane.
@@ -190,6 +238,7 @@ function colorAt(x: number, z: number, h: number, slope: number, out: number[]):
       const tone: number[] = [0, 0, 0];
       mix(C.paving, C.pavingCool, patch(x, z, 0.05), tone);
       mix(out, tone, paved * 0.94, out);
+      mix4.paved = Math.max(mix4.paved, paved);
     }
   }
 
@@ -199,7 +248,10 @@ function colorAt(x: number, z: number, h: number, slope: number, out: number[]):
   if (hit.path && h > 0.2) {
     const edge = hit.path.halfWidth;
     const paved = 1 - smoothstep(edge, edge + 2.4, hit.dist);
-    if (paved > 0) mix(out, SURFACE_COLORS[hit.path.surface], paved * 0.9, out);
+    if (paved > 0) {
+      mix(out, SURFACE_COLORS[hit.path.surface], paved * 0.9, out);
+      mix4.lane = paved;
+    }
   }
 
   return out;
@@ -227,9 +279,12 @@ export function buildTerrain(req: TerrainBuildRequest): TerrainBuildResult {
   const positions = new Float32Array(vertexCount * 3);
   const normals = new Float32Array(vertexCount * 3);
   const colors = new Float32Array(vertexCount * 3);
+  /** Ground memberships, four per vertex. See {@link SurfaceMix}. */
+  const bands = new Float32Array(vertexCount * 4);
   const indices = new Uint32Array((res - 1) * (res - 1) * 6);
 
   const rgb: number[] = [0, 0, 0];
+  const mix4: SurfaceMix = { alt: 0, rock: 0, paved: 0, lane: 0 };
 
   for (let j = 0; j < res; j++) {
     const z = -extent + j * step;
@@ -250,10 +305,16 @@ export function buildTerrain(req: TerrainBuildRequest): TerrainBuildResult {
       normals[v + 2] = n[2];
 
       const slope = Math.acos(Math.min(1, Math.max(-1, n[1])));
-      colorAt(x, z, h, slope, rgb);
+      colorAt(x, z, h, slope, rgb, mix4);
       colors[v] = rgb[0];
       colors[v + 1] = rgb[1];
       colors[v + 2] = rgb[2];
+
+      const b = (j * res + i) * 4;
+      bands[b] = mix4.alt;
+      bands[b + 1] = mix4.rock;
+      bands[b + 2] = mix4.paved;
+      bands[b + 3] = mix4.lane;
     }
   }
 
@@ -274,7 +335,7 @@ export function buildTerrain(req: TerrainBuildRequest): TerrainBuildResult {
     }
   }
 
-  return { positions, normals, colors, indices, elapsedMs: Date.now() - started };
+  return { positions, normals, colors, bands, indices, elapsedMs: Date.now() - started };
 }
 
 // ---------------------------------------------------------------------------
@@ -288,7 +349,13 @@ if (typeof self !== 'undefined' && typeof (self as unknown as Worker).postMessag
     try {
       const result = buildTerrain(event.data);
       self.postMessage(result, {
-        transfer: [result.positions.buffer, result.normals.buffer, result.colors.buffer, result.indices.buffer],
+        transfer: [
+          result.positions.buffer,
+          result.normals.buffer,
+          result.colors.buffer,
+          result.bands.buffer,
+          result.indices.buffer,
+        ],
       });
     } catch (err) {
       // Surface the failure rather than leaving the main thread waiting forever on a

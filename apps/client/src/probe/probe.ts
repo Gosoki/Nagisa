@@ -60,9 +60,9 @@ const VIEWPOINTS: Record<string, Viewpoint> = {
   /** The south quay at eye level — warehouses, stalls, boats. */
   quay: { eye: [-20, 7, 88], target: [6, 4, 68], fov: 55 },
   /** The plaza stage from the audience's position. */
-  plaza: { eye: [64, 12.5, 49], target: [68, 10, 26], fov: 50 },
+  plaza: { eye: [56, 13.5, 52], target: [76, 10, 44], fov: 50 },
   /** The Old Street, looking down the row of townhouses. */
-  street: { eye: [64, 13.5, -12], target: [64, 11, -48], fov: 55 },
+  street: { eye: [66, 14, -16], target: [56, 11, -50], fov: 55 },
   /** The shrine approach, through the torii. */
   shrine: { eye: [-36, 15, 34], target: [-78, 13.5, 38], fov: 50 },
   /** The summit court, looking back down at the island. */
@@ -70,11 +70,19 @@ const VIEWPOINTS: Record<string, Viewpoint> = {
   /** The lighthouse cape against the sky. */
   lighthouse: { eye: [-44, 18, -54], target: [-64, 20, -37], fov: 50 },
   /** The teahouse on the plaza's quiet side. */
-  teahouse: { eye: [66, 13, 30], target: [79, 10.5, 34], fov: 52 },
+  teahouse: { eye: [68, 13, 22], target: [80, 10.5, 30], fov: 52 },
   /** The north fishing harbour, from the quay approach looking out over the bay. */
   north: { eye: [20, 10, -50], target: [-16, 3, -82], fov: 55 },
   /** Sunset beach, low and level with the water. */
   beach: { eye: [30, 5, 106], target: [56, 3, 88], fov: 55 },
+  /**
+   * The mountain, raked from above the sea with nothing built in frame.
+   *
+   * This one is about the *ground*. Faceting in the height field, terrace steps and the
+   * seams where a blend ring meets natural slope are invisible from inside a village and
+   * obvious along a silhouette, so there needs to be a viewpoint that shows only silhouette.
+   */
+  slopes: { eye: [138, 66, 104], target: [0, 12, 0], fov: 36 },
   /**
    * A close look at one character, for reviewing the rig. Framed on the plaza — the world
    * origin is the summit, and a camera at eye height there is buried inside the terrain.

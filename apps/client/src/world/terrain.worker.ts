@@ -218,7 +218,9 @@ function colorAt(x: number, z: number, h: number, slope: number, out: number[], 
   // The threshold matters more than it looks. The massif's flanks sit at 30–36° by
   // construction (see MASSIF_RADIUS in terrain.ts), so a rock threshold anywhere near
   // 23° turns the entire mountain to bare scree and the island reads as a quarry.
-  const rockiness = smoothstep(0.66, 0.95, slope);
+  // Widened from 0.66–0.95 for the same reason as the lane edge below: a transition that
+  // resolves in one mesh cell is a polygon, not a gradient.
+  const rockiness = smoothstep(0.58, 1.02, slope);
   if (rockiness > 0) {
     mix(out, h > 10 ? C.cliff : C.rock, rockiness, out);
   }
@@ -247,7 +249,12 @@ function colorAt(x: number, z: number, h: number, slope: number, out: number[], 
   const hit = nearestPath(x, z);
   if (hit.path && h > 0.2) {
     const edge = hit.path.halfWidth;
-    const paved = 1 - smoothstep(edge, edge + 2.4, hit.dist);
+    // 6 m of transition, not 2.4. Vertex colours are interpolated across a mesh whose cells
+    // are about 1.8 m, so a transition narrower than a few cells cannot be represented: the
+    // boundary snaps to the grid and the lane comes out edged in polygons. The *line* along
+    // it is drawn from a continuous field and stays a curve either way (see SurfaceMix), and
+    // a crisp line over a soft wash is what a drawn map does anyway.
+    const paved = 1 - smoothstep(edge, edge + 6, hit.dist);
     if (paved > 0) {
       mix(out, SURFACE_COLORS[hit.path.surface], paved * 0.9, out);
       mix4.lane = paved;

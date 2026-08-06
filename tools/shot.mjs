@@ -50,7 +50,7 @@ const views = args.filter((a, i) => {
   return !(previous?.startsWith('--') && FLAGS.has(previous.slice(2)));
 });
 
-const ALL_VIEWS = ['island', 'arrival', 'gameplay', 'quay', 'plaza', 'street', 'shrine', 'summit', 'lighthouse', 'teahouse', 'north', 'beach', 'figure'];
+const ALL_VIEWS = ['island', 'arrival', 'gameplay', 'quay', 'plaza', 'street', 'shrine', 'summit', 'lighthouse', 'teahouse', 'north', 'beach', 'slopes', 'figure'];
 const targets = views.length > 0 ? views : ALL_VIEWS;
 
 mkdirSync(outDir, { recursive: true });

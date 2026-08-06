@@ -38,6 +38,7 @@
 import {
   LANDMARKS,
   PADS,
+  PATHS,
   ZONES,
   activeMap,
   resolveMapId,
@@ -387,6 +388,79 @@ for (const [a, b, depth] of overlaps) {
   );
 }
 
+// --- On the road ----------------------------------------------------------------------
+//
+// The lanes are surveyed and carved before anything is placed on the terrace, so a building
+// authored at a plausible-looking coordinate can end up standing in the middle of the road.
+// Nothing in the data objects: the lane is a height profile and the building is a prop, and
+// neither knows the other exists. What you see is a road that runs straight at a wall.
+//
+// A lane's *carriageway* is `halfWidth` either side of the centreline. The shoulder beyond
+// it is the embankment blending back to the terrain, and a building may legitimately sit on
+// that — a house at the roadside stands on the verge, not in the gutter. So the test is
+// against the carriageway plus a metre of kerb.
+const KERB = 1.0;
+
+/** Distance from a point to a lane's centreline, which lane, and the closest point on it. */
+function nearestLane(x, z) {
+  let best = { id: null, dist: Infinity, halfWidth: 0, px: 0, pz: 0 };
+  for (const path of PATHS) {
+    const pts = path.points;
+    for (let k = 1; k < pts.length; k++) {
+      const [ax, az] = pts[k - 1];
+      const [bx, bz] = pts[k];
+      const vx = bx - ax;
+      const vz = bz - az;
+      const len2 = vx * vx + vz * vz || 1;
+      const t = Math.max(0, Math.min(1, ((x - ax) * vx + (z - az) * vz) / len2));
+      const px = ax + vx * t;
+      const pz = az + vz * t;
+      const d = Math.hypot(x - px, z - pz);
+      if (d < best.dist) best = { id: path.id, dist: d, halfWidth: path.halfWidth, px, pz };
+    }
+  }
+  return best;
+}
+
+/**
+ * How far a landmark's footprint reaches toward a lane, along the line to it.
+ * The oriented box again — a deep house turned side-on to the road is not in it.
+ */
+function reachToward(l, tx, tz) {
+  const b = boxOf(l);
+  const dx = tx - l.x;
+  const dz = tz - l.z;
+  const len = Math.hypot(dx, dz) || 1;
+  const nx = dx / len;
+  const nz = dz / len;
+  const s = Math.sin(b.rot);
+  const c = Math.cos(b.rot);
+  return Math.abs(b.hd * (s * nx + c * nz)) + Math.abs(b.hw * (c * nx - s * nz));
+}
+
+const onRoad = [];
+for (const l of LANDMARKS) {
+  if (FURNITURE.has(l.kind) || WATERFRONT.has(l.kind) || l.opts?.inWater === true) continue;
+  const lane = nearestLane(l.x, l.z);
+  if (lane.id === null) continue;
+  // Portals are supposed to stand across a road — that is what a gate is for.
+  if (MASSING[l.kind] === 'portal') continue;
+  // How close the *building* gets to the centreline, not how close its origin does.
+  const nearestFace = lane.dist - reachToward(l, lane.px, lane.pz);
+  const intrusion = lane.halfWidth + KERB - nearestFace;
+  if (intrusion > 0) onRoad.push([l, lane, intrusion, nearestFace]);
+}
+onRoad.sort((a, b) => b[2] - a[2]);
+
+process.stdout.write(`\nbuildings standing in a carriageway: ${onRoad.length}\n`);
+for (const [l, lane, intrusion, face] of onRoad) {
+  process.stdout.write(
+    `    ${l.id.padEnd(20)} (${l.kind.padEnd(13)}) on ${String(lane.id).padEnd(15)} ` +
+      `wall ${face.toFixed(1)} m from centreline, needs ${(lane.halfWidth + KERB).toFixed(1)} — ` +
+      `${intrusion.toFixed(1)} m into the road\n`,
+  );
+}
+
 process.stdout.write('\n');
 for (const r of reports) {
   if (!r.incoherent.length) continue;
@@ -429,6 +503,7 @@ const verdicts: Array<[string, boolean, string]> = [
   ],
   ['every building faces something', adrift === 0, `${adrift} adrift`],
   ['no structure stands inside another', overlaps.length === 0, `${overlaps.length} overlapping`],
+  ['no building stands in a carriageway', onRoad.length === 0, `${onRoad.length} on a road`],
 ];
 
 let bad = 0;

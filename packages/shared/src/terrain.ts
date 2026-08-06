@@ -1036,8 +1036,14 @@ export function slopeAt(x: number, z: number): number {
  * Roughly a stance: wider than a footprint, narrower than a stride. What matters is that it
  * is comfortably larger than the wavelength of the terrain's surface detail and comfortably
  * smaller than any landform meant to stop you.
+ *
+ * Widened from 1.15 m when the terraces grew: a bigger terrace has a bigger blend ring, and
+ * a blend ring is precisely where the ground spends its time near the walkable limit, so the
+ * speckle count nearly doubled. A cliff is unaffected — every tap around one still agrees —
+ * and the cost is that a genuine two-metre ledge now reads as passable, which on this island
+ * is the correct answer anyway.
  */
-const FOOTING_RADIUS = 1.15;
+const FOOTING_RADIUS = 1.4;
 
 /** Ring taps for the plane fit. Eight is enough to be isotropic and cheap enough to run per physics step. */
 const FOOTING_TAPS = 8;

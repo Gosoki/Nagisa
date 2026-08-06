@@ -74,10 +74,10 @@ export const LANTERN_ATOLL: MapPack = {
     shelters: [{ x: 0, z: 78, reach: 46 }],
 
     pads: [
-      { id: 'landing', x: 0, z: 62, height: 1.8, inner: 17, outer: 28 },
-      { id: 'lantern-house', x: -RING_RADIUS, z: 0, height: 3.2, inner: 15, outer: 26 },
-      { id: 'north-camp', x: 0, z: -RING_RADIUS, height: 2.6, inner: 16, outer: 27 },
-      { id: 'east-market', x: RING_RADIUS, z: 0, height: 2.4, inner: 16, outer: 27 },
+      { id: 'landing', x: 0, z: 62, height: 1.8, inner: 20, outer: 32 },
+      { id: 'lantern-house', x: -RING_RADIUS, z: 0, height: 3.2, inner: 20, outer: 32 },
+      { id: 'north-camp', x: 0, z: -RING_RADIUS, height: 2.6, inner: 20, outer: 32 },
+      { id: 'east-market', x: RING_RADIUS, z: 0, height: 2.4, inner: 20, outer: 32 },
     ],
 
     paths: [
@@ -179,8 +179,8 @@ export const LANTERN_ATOLL: MapPack = {
       // further round the ring is not.
       { id: 'at-pier', kind: 'pier', x: 0, z: 76, rot: 0 },
       { id: 'at-boat', kind: 'boat', x: -7, z: 78, rot: 0.3 },
-      { id: 'at-hut-w', kind: 'beach-hut', x: -13, z: 58, rot: Math.PI / 2 },
-      { id: 'at-hut-e', kind: 'beach-hut', x: 13, z: 58, rot: -Math.PI / 2 },
+      { id: 'at-hut-w', kind: 'beach-hut', x: -15.7, z: 64.6, rot: Math.PI / 2 },
+      { id: 'at-hut-e', kind: 'beach-hut', x: 15.7, z: 64.6, rot: -Math.PI / 2 },
       { id: 'at-board', kind: 'notice-board', x: 0, z: 54, rot: 0 },
       { id: 'at-lantern-w', kind: 'post-lantern', x: -5, z: 68, rot: 0 },
       { id: 'at-lantern-e', kind: 'post-lantern', x: 5, z: 68, rot: 0 },
@@ -190,8 +190,8 @@ export const LANTERN_ATOLL: MapPack = {
       // ── Lantern house ───────────────────────────────────────────────────────
       // The tower, its keeper's house set back and to one side, and two stone lanterns
       // flanking the approach — mirrored about z = 0, which is the lane's axis here.
-      { id: 'at-tower', kind: 'lighthouse', x: -RING_RADIUS, z: 0, rot: 0 },
-      { id: 'at-keeper', kind: 'keepers-house', x: -RING_RADIUS + 12, z: -10, rot: -0.876 },
+      { id: 'at-tower', kind: 'lighthouse', x: -52.6, z: 0.4, rot: 0 },
+      { id: 'at-keeper', kind: 'keepers-house', x: -46.8, z: -8.7, rot: -0.876 },
       { id: 'at-stone-n', kind: 'stone-lantern', x: -RING_RADIUS + 9, z: -5, rot: 0 },
       { id: 'at-stone-s', kind: 'stone-lantern', x: -RING_RADIUS + 9, z: 5, rot: 0 },
       { id: 'at-wall-n', kind: 'sea-wall', x: -RING_RADIUS - 6, z: -12, rot: 0.2 },
@@ -199,20 +199,20 @@ export const LANTERN_ATOLL: MapPack = {
 
       // ── North camp ──────────────────────────────────────────────────────────
       // One-sided on purpose. A ring where every place is symmetrical reads as a diagram.
-      { id: 'at-shelter-a', kind: 'beach-hut', x: -9, z: -RING_RADIUS - 3, rot: -0.175 },
-      { id: 'at-shelter-b', kind: 'beach-hut', x: 2, z: -RING_RADIUS - 6, rot: -0.1 },
+      { id: 'at-shelter-a', kind: 'beach-hut', x: -9.8, z: -67.0, rot: -0.175 },
+      { id: 'at-shelter-b', kind: 'beach-hut', x: 2.4, z: -69.3, rot: -0.1 },
       { id: 'at-net-rack', kind: 'net-rack', x: 13, z: -RING_RADIUS - 2, rot: -0.175 },
       { id: 'at-bench-n', kind: 'bench', x: -2, z: -RING_RADIUS + 7, rot: Math.PI },
-      { id: 'at-well', kind: 'well', x: 9, z: -RING_RADIUS + 5, rot: 0 },
+      { id: 'at-well', kind: 'well', x: 7.1, z: -52.4, rot: 0 },
 
       // ── East market ─────────────────────────────────────────────────────────
       // Two stalls facing each other across the lane, with a lantern at each end of the
       // gap between them: the one place on the atoll that is a street rather than a shore.
-      { id: 'at-stall-n', kind: 'market-stall', x: RING_RADIUS - 9, z: -7, rot: -Math.PI / 2 },
-      { id: 'at-stall-s', kind: 'market-stall', x: RING_RADIUS - 9, z: 7, rot: Math.PI / 2 },
+      { id: 'at-stall-n', kind: 'market-stall', x: 52.4, z: -6.8, rot: -Math.PI / 2 },
+      { id: 'at-stall-s', kind: 'market-stall', x: 52.4, z: 6.8, rot: Math.PI / 2 },
       { id: 'at-banner-n', kind: 'banner', x: RING_RADIUS - 3, z: -11, rot: 0 },
       { id: 'at-banner-s', kind: 'banner', x: RING_RADIUS - 3, z: 11, rot: 0 },
-      { id: 'at-warehouse', kind: 'warehouse', x: RING_RADIUS + 9, z: 2, rot: -Math.PI / 2 },
+      { id: 'at-warehouse', kind: 'warehouse', x: 71.4, z: 2.1, rot: -Math.PI / 2 },
       { id: 'at-market-bench', kind: 'bench', x: RING_RADIUS - 14, z: 0, rot: -Math.PI / 2 },
     ],
 

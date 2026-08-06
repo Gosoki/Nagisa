@@ -204,12 +204,18 @@
     }
 
     // You: an arrow, not a dot, because which way you are facing is half of what a map is
-    // for. `+z` is south and yaw 0 faces `-z`, so the triangle points at -yaw.
+    // for.
+    //
+    // `rotate(+yaw)`, not `-yaw`, and the sign was wrong: `project` sends world `+z` to
+    // canvas `+y`, so canvas-up is north and a triangle drawn pointing up is already correct
+    // at yaw 0. Yaw π/2 faces east, which is canvas-right — and because canvas y runs *down*,
+    // a positive rotation is clockwise, i.e. from up toward right. Negating it pointed the
+    // arrow west whenever you faced east, and the error was invisible standing still.
     const [sx, sz] = project(selfPose.x, selfPose.z, size);
     const yaw = selfPose.yaw;
     ctx.save();
     ctx.translate(sx, sz);
-    ctx.rotate(-yaw);
+    ctx.rotate(yaw);
     ctx.beginPath();
     ctx.moveTo(0, -6);
     ctx.lineTo(4.2, 4.5);

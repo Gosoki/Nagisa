@@ -152,9 +152,9 @@ const PADS: MapPack['terrain']['pads'] = [
   // stay as slope.
 
   /** The arrival port. Barely above the water, so the boats read as boats. */
-  { id: 'south-harbor', x: 0, z: 74, height: 2.4, inner: 21, outer: 35 },
+  { id: 'south-harbor', x: 0, z: 74, height: 2.4, inner: 28, outer: 40 },
   /** The main plaza, on the eastern shelf. */
-  { id: 'plaza', x: 64, z: 37, height: 8.0, inner: 25, outer: 37 },
+  { id: 'plaza', x: 64, z: 37, height: 8.0, inner: 34, outer: 46 },
   /**
    * The old street, sharing that shelf — see SHELVES for why there is no dip between them.
    *
@@ -163,19 +163,19 @@ const PADS: MapPack['terrain']['pads'] = [
    * difference between a 56° bank across the north end of the street and no bank at all.
    * `npm run audit:terrain` is what measures it.
    */
-  { id: 'village', x: 64, z: -37, height: 9.0, inner: 21, outer: 37 },
+  { id: 'village', x: 64, z: -37, height: 9.0, inner: 28, outer: 40 },
   /** Sunset beach, on the sand east of the south quay. */
-  { id: 'beach', x: 46, z: 92, height: 1.6, inner: 16, outer: 28 },
+  { id: 'beach', x: 46, z: 92, height: 1.6, inner: 18, outer: 26 },
   /** The working fishing harbour. */
-  { id: 'north-harbor', x: 0, z: -74, height: 2.4, inner: 20, outer: 33 },
+  { id: 'north-harbor', x: 0, z: -74, height: 2.4, inner: 28, outer: 40 },
   /** Lighthouse cape: a flat clifftop, deliberately exposed and the higher of the two. */
-  { id: 'lighthouse', x: -64, z: -37, height: 13.0, inner: 19, outer: 33 },
+  { id: 'lighthouse', x: -64, z: -37, height: 13.0, inner: 27, outer: 39 },
   /** The shrine, on its own headland. */
-  { id: 'shrine', x: -64, z: 37, height: 11.0, inner: 22, outer: 35 },
+  { id: 'shrine', x: -64, z: 37, height: 11.0, inner: 26, outer: 38 },
 
   // — Inland ————————————————————————————————————————————————————————
   /** Notice-board terrace, one step up from the plaza floor. The one deliberate nesting. */
-  { id: 'noticeboard', x: 48, z: 22, height: 8.8, inner: 8, outer: 15 },
+  { id: 'noticeboard', x: 48, z: 22, height: 8.4, inner: 8, outer: 12 },
   /** The summit court: a small flat terrace at the true peak, around the inner shrine. */
   { id: 'summit', x: SUMMIT.x, z: SUMMIT.z, height: SUMMIT.height, inner: 12, outer: 30 },
 ] as const;
@@ -466,14 +466,14 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'sh-boat-1', kind: 'boat', x: 16, z: 98, rot: 0.3, opts: { style: 'ferry', scale: 1.25 } },
   { id: 'sh-boat-2', kind: 'boat', x: -12, z: 96, rot: -0.7 },
   { id: 'sh-seawall', kind: 'sea-wall', x: 19, z: 80, rot: -0.4, opts: { length: 22 } },
-  { id: 'sh-warehouse-1', kind: 'warehouse', x: 12, z: 68, rot: -0.2, opts: { w: 10, d: 8, floors: 2 } },
-  { id: 'sh-warehouse-2', kind: 'warehouse', x: -12, z: 68, rot: 0.2, opts: { w: 10, d: 8 } },
-  { id: 'sh-office', kind: 'machiya', x: 0, z: 60, rot: Math.PI, opts: { w: 10, d: 10, floors: 2, sign: true } },
-  { id: 'sh-stall-1', kind: 'market-stall', x: -8, z: 76, rot: 0.1, opts: { cloth: 1 } },
-  { id: 'sh-stall-2', kind: 'market-stall', x: -2, z: 78, rot: 0.1, opts: { cloth: 2 } },
-  { id: 'sh-stall-3', kind: 'market-stall', x: 4, z: 79, rot: 0.1, opts: { cloth: 0 } },
-  { id: 'sh-stage', kind: 'stage', x: 0, z: 70, rot: 0, opts: { w: 12, d: 9 } },
-  { id: 'sh-bell', kind: 'bell-tower', x: 10, z: 78, rot: 0, scale: 0.8 },
+  { id: 'sh-warehouse-1', kind: 'warehouse', x: 18.8, z: 82.9, rot: -0.2, opts: { w: 10, d: 8, floors: 2 } },
+  { id: 'sh-warehouse-2', kind: 'warehouse', x: -18.8, z: 82.9, rot: 0.2, opts: { w: 10, d: 8 } },
+  { id: 'sh-office', kind: 'machiya', x: 2.2, z: 58.6, rot: 3.142, opts: { w: 10, d: 10, floors: 2, sign: true } },
+  { id: 'sh-stall-1', kind: 'market-stall', x: -8.3, z: 79.9, rot: 0.1, opts: { cloth: 1 } },
+  { id: 'sh-stall-2', kind: 'market-stall', x: -2.2, z: 80.3, rot: 0.1, opts: { cloth: 2 } },
+  { id: 'sh-stall-3', kind: 'market-stall', x: 4.1, z: 80, rot: 0.1, opts: { cloth: 0 } },
+  { id: 'sh-stage', kind: 'stage', x: -10.4, z: 61.9, rot: 1.571, opts: { w: 12, d: 9 } },
+  { id: 'sh-bell', kind: 'bell-tower', x: 10.1, z: 79.7, rot: 0, scale: 0.8 },
   { id: 'sh-lantern-1', kind: 'post-lantern', x: -8, z: 72, rot: 0 },
   { id: 'sh-lantern-2', kind: 'post-lantern', x: 8, z: 72, rot: 0 },
   { id: 'sh-banner-1', kind: 'banner', x: -14, z: 78, rot: 0.2 },
@@ -490,10 +490,11 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'bh-lantern-1', kind: 'post-lantern', x: 38, z: 96, rot: 0 },
 
   // ═══ Main Plaza (64, 37) — the civic centre ═════════════════════════════
-  { id: 'pl-stage', kind: 'stage', x: 68, z: 25, rot: 0, opts: { w: 16, d: 11, roof: true, tiers: true } },
+  { id: 'pl-stage', kind: 'stage', x: 76, z: 46, rot: -2.21, opts: { w: 12, d: 9, roof: true, tiers: true } },
   { id: 'pl-gate-s', kind: 'gate', x: 66, z: 54, rot: 0.05, scale: 1.1 },
-  { id: 'pl-gate-w', kind: 'gate', x: 48, z: 40, rot: Math.PI * 0.5 },
-  { id: 'pl-well', kind: 'well', x: 73, z: 46, rot: 0.3 },
+  { id: 'pl-gate-w', kind: 'gate', x: 60.0, z: 34.0, rot: 0.821},
+  { id: 'pl-minka', kind: 'minka', x: 62.0, z: 12.0, rot: -3.054, opts: { w: 11, d: 9 } },
+  { id: 'pl-well', kind: 'well', x: 71, z: 54, rot: 0.3},
   { id: 'pl-lantern-1', kind: 'stone-lantern', x: 58, z: 27, rot: 0.3 },
   { id: 'pl-lantern-2', kind: 'stone-lantern', x: 75, z: 28, rot: -0.3 },
   { id: 'pl-lantern-3', kind: 'stone-lantern', x: 53, z: 48, rot: 0.1 },
@@ -503,51 +504,59 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'pl-banner-1', kind: 'banner', x: 58, z: 52, rot: 0 },
   { id: 'pl-banner-2', kind: 'banner', x: 71, z: 52, rot: 0 },
   // The teahouse: a v2 zone kept as a building, on the quiet side of the plaza.
-  { id: 'pl-teahouse', kind: 'teahouse', x: 81, z: 37, rot: Math.PI * 0.5, opts: { w: 11, d: 8.5, veranda: true } },
-  { id: 'pl-minka', kind: 'minka', x: 60, z: 42, rot: 2.466, opts: { w: 11, d: 9 } },
+  { id: 'pl-teahouse', kind: 'teahouse', x: 80.2, z: 30.1, rot: -1.44, opts: { w: 11, d: 8.5, veranda: true } },
 
   // — Notice-board terrace (48, 22), one step up from the plaza ————————
-  { id: 'nb-board', kind: 'notice-board', x: 48, z: 18, rot: 0.1, scale: 1.4 },
+  { id: 'nb-board', kind: 'notice-board', x: 48, z: 16.9, rot: 0.1, scale: 1.4 },
   { id: 'nb-lantern-1', kind: 'stone-lantern', x: 42, z: 24, rot: 0 },
   { id: 'nb-bench-1', kind: 'bench', x: 53, z: 25, rot: -0.4 },
 
   // ═══ Old Street (64, -37) — two rows facing each other ══════════════════
-  { id: 'ov-machiya-1', kind: 'machiya', x: 54, z: -48, rot: Math.PI * 0.5, opts: { w: 8, d: 10, floors: 2, sign: true } },
-  { id: 'ov-machiya-2', kind: 'machiya', x: 54, z: -37, rot: Math.PI * 0.5, opts: { w: 8, d: 10, floors: 2 } },
-  { id: 'ov-machiya-3', kind: 'machiya', x: 54, z: -26, rot: Math.PI * 0.5, opts: { w: 8, d: 10, floors: 1, sign: true } },
-  { id: 'ov-machiya-4', kind: 'machiya', x: 75, z: -48, rot: -Math.PI * 0.5, opts: { w: 8, d: 10, floors: 2 } },
-  { id: 'ov-machiya-5', kind: 'machiya', x: 75, z: -37, rot: -Math.PI * 0.5, opts: { w: 8, d: 10, floors: 1, sign: true } },
-  { id: 'ov-machiya-6', kind: 'machiya', x: 75, z: -26, rot: -Math.PI * 0.5, opts: { w: 8, d: 10, floors: 2 } },
-  { id: 'ov-bathhouse', kind: 'bathhouse', x: 64, z: -52, rot: Math.PI, opts: { w: 10, d: 8 } },
-  { id: 'ov-gate-s', kind: 'gate', x: 64, z: -22, rot: 0 },
-  { id: 'ov-gate-n', kind: 'gate', x: 64, z: -57, rot: Math.PI },
-  { id: 'ov-well', kind: 'well', x: 64, z: -37, rot: 0 },
+  // Two rows of row houses, laid out **along the ring road** rather than along the z axis.
+  //
+  // The road crosses this terrace diagonally — tangent (-0.44, -0.90) — so rows squared to
+  // the world met it at 26° and their end houses stood in the carriageway. A street beside a
+  // road runs with the road: both rows are offset 10.5 m either side of the centreline and
+  // spaced 11 m apart along it, which is the same street it always was, turned to face the
+  // traffic it is beside. Their yaws follow: each row faces across at the other.
+  { id: 'ov-machiya-1', kind: 'machiya', x: 48.5, z: -41.5, rot: 2.026, opts: { w: 8, d: 10, floors: 2, sign: true } },
+  { id: 'ov-machiya-2', kind: 'machiya', x: 54.5, z: -32.3, rot: 2.026, opts: { w: 8, d: 10, floors: 2 } },
+  { id: 'ov-machiya-3', kind: 'machiya', x: 59.4, z: -22.5, rot: 2.026, opts: { w: 8, d: 10, floors: 1, sign: true } },
+  { id: 'ov-machiya-4', kind: 'machiya', x: 67.4, z: -50.7, rot: -1.115, opts: { w: 8, d: 10, floors: 2 } },
+  { id: 'ov-machiya-5', kind: 'machiya', x: 73.4, z: -41.5, rot: -1.115, opts: { w: 8, d: 10, floors: 1, sign: true } },
+  { id: 'ov-machiya-6', kind: 'machiya', x: 78.3, z: -31.7, rot: -1.115, opts: { w: 8, d: 10, floors: 2 } },
+  // Back on the terrace now that it is wide enough: behind the east row, off the road.
+  { id: 'ov-warehouse', kind: 'warehouse', x: 84.0, z: -47.0, rot: -1.115, opts: { w: 10, d: 8 } },
+  { id: 'ov-bathhouse', kind: 'bathhouse', x: 59.8, z: -61.9, rot: -2.68, opts: { w: 10, d: 8 } },
+  { id: 'ov-gate-s', kind: 'gate', x: 69.0, z: -24.5, rot: -2.68},
+  { id: 'ov-gate-n', kind: 'gate', x: 52.0, z: -60.0, rot: -2.68},
+  { id: 'ov-well', kind: 'well', x: 63.5, z: -17.0, rot: 0},
   { id: 'ov-lantern-1', kind: 'post-lantern', x: 60, z: -44, rot: 0 },
   { id: 'ov-lantern-2', kind: 'post-lantern', x: 69, z: -37, rot: 0 },
   { id: 'ov-lantern-3', kind: 'post-lantern', x: 60, z: -30, rot: 0 },
-  { id: 'ov-bench-1', kind: 'bench', x: 69, z: -44, rot: -1.4 },
+  { id: 'ov-bench-1', kind: 'bench', x: 69, z: -44, rot: -1.047},
 
   // ═══ North Harbour (0, -74) — the working fishery ═══════════════════════
   { id: 'nh-torii-sea', kind: 'torii', x: 0, z: -110, rot: 0.1, scale: 1.4, opts: { inWater: true } },
   { id: 'nh-pier-e', kind: 'pier', x: 8, z: -86, rot: Math.PI, opts: { length: 20, width: 5 } },
   { id: 'nh-pier-w', kind: 'pier', x: -16, z: -84, rot: Math.PI * 1.1, opts: { length: 16, width: 4.5 } },
-  { id: 'nh-boathouse-1', kind: 'boathouse', x: -24, z: -74, rot: Math.PI * 0.85, opts: { w: 7, d: 10 } },
-  { id: 'nh-boathouse-2', kind: 'boathouse', x: -27, z: -62, rot: Math.PI * 0.7, opts: { w: 6.5, d: 9 } },
-  { id: 'nh-shed', kind: 'warehouse', x: 12, z: -68, rot: -0.2, opts: { w: 10, d: 8 } },
-  { id: 'nh-minka', kind: 'minka', x: -12, z: -68, rot: 0.2, opts: { w: 10, d: 8 } },
+  { id: 'nh-boathouse-1', kind: 'boathouse', x: -24.7, z: -83.3, rot: Math.PI * 0.85, opts: { w: 7, d: 10 } },
+  { id: 'nh-boathouse-2', kind: 'boathouse', x: -27, z: -61.9, rot: Math.PI * 0.7, opts: { w: 6.5, d: 9 } },
+  { id: 'nh-shed', kind: 'warehouse', x: 11.7, z: -63.5, rot: -0.2, opts: { w: 10, d: 8 } },
+  { id: 'nh-minka', kind: 'minka', x: -11.7, z: -63.5, rot: 0.2, opts: { w: 10, d: 8 } },
   { id: 'nh-netrack-1', kind: 'net-rack', x: 6, z: -82, rot: -0.2 },
   { id: 'nh-netrack-2', kind: 'net-rack', x: -6, z: -82, rot: 0.2 },
   { id: 'nh-boat-1', kind: 'boat', x: -8, z: -94, rot: 0.2, scale: 0.85 },
   { id: 'nh-boat-2', kind: 'boat', x: 16, z: -96, rot: -0.4, scale: 0.8 },
   { id: 'nh-seawall', kind: 'sea-wall', x: 22, z: -77, rot: 1.2, opts: { length: 18 } },
-  { id: 'nh-bell', kind: 'bell-tower', x: -9, z: -78, rot: 0, scale: 0.75 },
+  { id: 'nh-bell', kind: 'bell-tower', x: -13.1, z: -79.4, rot: 0, scale: 0.75 },
   { id: 'nh-stage', kind: 'stage', x: 0, z: -62, rot: Math.PI, opts: { w: 11, d: 8 } },
   { id: 'nh-rock-1', kind: 'rock', x: -32, z: -88, rot: 1.4, scale: 1.4 },
 
   // ═══ Lighthouse Cape (-64, -37) — the exposed high cape ═════════════════
-  { id: 'lh-tower', kind: 'lighthouse', x: -64, z: -37, rot: 0, scale: 0.92 },
-  { id: 'lh-keepers', kind: 'keepers-house', x: -53, z: -28, rot: -0.7, opts: { w: 10, d: 7.5 } },
-  { id: 'lh-store', kind: 'warehouse', x: -75, z: -28, rot: 0.7, opts: { w: 10, d: 7.5 } },
+  { id: 'lh-tower', kind: 'lighthouse', x: -72, z: -43, rot: -0.524, scale: 0.92 },
+  { id: 'lh-keepers', kind: 'keepers-house', x: -49.0, z: -30.0, rot: -0.7, opts: { w: 10, d: 7.5 } },
+  { id: 'lh-store', kind: 'warehouse', x: -79.0, z: -30.0, rot: 1.047, opts: { w: 10, d: 7.5 } },
   { id: 'lh-rail', kind: 'rail', x: -64, z: -46, rot: 0.15, opts: { length: 16 } },
   { id: 'lh-bench-1', kind: 'bench', x: -74, z: -45, rot: 0.896 },
   { id: 'lh-lantern-1', kind: 'post-lantern', x: -55, z: -42, rot: 0 },
@@ -561,9 +570,9 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'sr-torii-3', kind: 'torii', x: -60, z: 36, rot: Math.PI * 0.5, scale: 1.15 },
   { id: 'sr-komainu-l', kind: 'komainu', x: -66, z: 30, rot: Math.PI * 0.5, opts: { side: 1 } },
   { id: 'sr-komainu-r', kind: 'komainu', x: -66, z: 44, rot: Math.PI * 0.5, opts: { side: -1 } },
-  { id: 'sr-temizuya', kind: 'temizuya', x: -61, z: 45, rot: 0 },
+  { id: 'sr-temizuya', kind: 'temizuya', x: -62.8, z: 51.1, rot: 0},
   { id: 'sr-hall', kind: 'shrine-hall', x: -78, z: 37, rot: Math.PI * 0.5, opts: { w: 12, d: 10, honden: true } },
-  { id: 'sr-bell', kind: 'bell-tower', x: -61, z: 29, rot: 0 },
+  { id: 'sr-bell', kind: 'bell-tower', x: -62.8, z: 22.9, rot: 0},
   { id: 'sr-lantern-1', kind: 'stone-lantern', x: -72, z: 29, rot: 0, scale: 1.15 },
   { id: 'sr-lantern-2', kind: 'stone-lantern', x: -72, z: 45, rot: 0, scale: 1.15 },
   { id: 'sr-lantern-3', kind: 'stone-lantern', x: -54, z: 29, rot: 0 },
@@ -574,10 +583,10 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   // ═══ Summit (0, 0) — the inner shrine, at the top of everything ═════════
   { id: 'su-torii', kind: 'torii', x: 0, z: 9, rot: 0, scale: 1.2 },
   { id: 'su-hall', kind: 'shrine-hall', x: 0, z: -9, rot: 0, opts: { w: 9, d: 7.5, honden: true, small: true } },
-  { id: 'su-bell', kind: 'bell-tower', x: 7, z: 4, rot: 0, scale: 0.85 },
+  { id: 'su-bell', kind: 'bell-tower', x: 10.9, z: -4.6, rot: 0, scale: 0.85 },
   // The bell tower's mirror. A shrine court reads as a court because the approach is flanked;
   // with the bell alone on one side, the summit was symmetric everywhere except at eye level.
-  { id: 'su-temizuya', kind: 'temizuya', x: -7, z: 4, rot: 0 },
+  { id: 'su-temizuya', kind: 'temizuya', x: -10.9, z: -4.6, rot: 0 },
   { id: 'su-marker', kind: 'summit-marker', x: -7, z: -3, rot: 0 },
   { id: 'su-rail', kind: 'rail', x: -3, z: 6, rot: 0, opts: { length: 8 } },
   { id: 'su-lantern-1', kind: 'stone-lantern', x: -7, z: -8, rot: 0 },

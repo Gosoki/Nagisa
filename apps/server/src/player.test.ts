@@ -30,7 +30,13 @@ const START: [number, number, number] = spawn.pos;
  * actually means — "somewhere on this island there is an edge, and walking off it is
  * rejected".
  */
-function findWalkableEdge(gap = 13): { start: [number, number, number]; target: [number, number, number] } {
+/**
+ * A walkable point next to an unwalkable one, `gap` metres away.
+ *
+ * `uphill` picks which kind of edge: the contract is asymmetric, so a bank you may not climb
+ * and a ledge you may step off are two different fixtures. See `canEnterFrom`.
+ */
+function findWalkableEdge(gap = 13, uphill = true): { start: [number, number, number]; target: [number, number, number] } {
   for (let ring = 40; ring < 300; ring += 7) {
     for (let i = 0; i < 64; i++) {
       const angle = (i / 64) * Math.PI * 2;
@@ -42,7 +48,9 @@ function findWalkableEdge(gap = 13): { start: [number, number, number]; target: 
         const tx = x + Math.cos(a2) * gap;
         const tz = z + Math.sin(a2) * gap;
         if (isWalkable(tx, tz)) continue;
-        return { start: [x, heightAt(x, z), z], target: [tx, heightAt(x, z), tz] };
+        const rise = heightAt(tx, tz) - heightAt(x, z);
+        if (uphill ? rise <= 1 : rise > -1) continue;
+        return { start: [x, heightAt(x, z), z], target: [tx, heightAt(tx, tz), tz] };
       }
     }
   }
@@ -90,10 +98,11 @@ test('a move that exceeds the horizontal speed budget is rejected with a speed c
 });
 
 test('a move onto unwalkable terrain within the speed budget is rejected with a bounds correction', () => {
-  // A pair 13 m apart (well within the ~14 m/2 s budget), the first walkable and the
-  // second not. This exercises the *terrain* half of validation, as distinct from the
-  // NaN/Infinity shape check above.
-  const { start, target } = findWalkableEdge(13);
+  // A pair 13 m apart (well within the ~14 m/2 s budget), the first walkable and the second
+  // not, and the second *above* the first — a bank the player is trying to climb. This
+  // exercises the terrain half of validation, as distinct from the NaN/Infinity shape check
+  // above; the descent case is the test below.
+  const { start, target } = findWalkableEdge(13, true);
   assert.equal(isWalkable(start[0], start[2]), true, 'test fixture precondition: start must be walkable');
   assert.equal(isWalkable(target[0], target[2]), false, 'test fixture precondition: target must be unwalkable');
 
@@ -104,6 +113,20 @@ test('a move onto unwalkable terrain within the speed budget is rejected with a 
   assert.ok(result, 'expected a correction');
   assert.equal(result!.reason, 'bounds');
   assert.deepEqual(player.pos, start, 'player position must be unchanged after rejection');
+});
+
+test('a move onto unwalkable terrain that is *below* the player is accepted', () => {
+  // The other half of `canEnterFrom`: steep ground may be entered on the way down. Without
+  // this a clifftop is a fence — the ground past the edge is unwalkable, so the step off it
+  // is refused, so the player cannot jump down, fall down, or walk off at all.
+  const { start, target } = findWalkableEdge(13, false);
+  assert.equal(isWalkable(target[0], target[2]), false, 'test fixture precondition: target must be unwalkable');
+  assert.ok(heightAt(target[0], target[2]) < heightAt(start[0], start[2]), 'fixture: target must be lower');
+
+  const player = makePlayer(start);
+  const result = player.applyMove({ pos: target, yaw: 0, anim: AnimState.Fall, seq: 1 }, Date.now() + 2_000);
+  assert.equal(result, null, 'stepping off a ledge must not be corrected');
+  assert.deepEqual(player.pos, target);
 });
 
 test('out-of-order (replayed/stale) sequence numbers are silently ignored', () => {

@@ -1283,6 +1283,41 @@ export function isWalkable(x: number, z: number): boolean {
 
 
 /**
+ * How much lower the ground has to be for a move onto it to count as going *down*, metres.
+ * Small — this is a threshold on "is this a descent", not on "is this a cliff".
+ */
+export const DESCENT_STEP = 0.5;
+
+/**
+ * Whether a character standing at `(fromX, fromZ)` may move to `(x, z)`.
+ *
+ * {@link isWalkable} answers "may anybody stand here", and is symmetric: ground steeper than
+ * {@link MAX_WALKABLE_SLOPE} is refused from every direction. That is right for climbing and
+ * wrong for the other one. Standing on a clifftop, the ground past the edge is unwalkable, so
+ * the contract refuses the step — and you cannot jump off, or fall off, or walk off. A cliff
+ * you cannot go *down* is not a cliff, it is a fence.
+ *
+ * So the rule gains a direction: **steep ground may be entered when it is below you.** A
+ * player can always leave an edge and never climb one, which is exactly the asymmetry the
+ * world has. Landing is unchanged — the downhill slide in `local-player.ts` runs the moment
+ * the feet touch, so a face too steep to stand on still sheds you to the bottom of it.
+ *
+ * Deep water is not relaxed. It is the one part of the contract that is about *place* rather
+ * than about footing, and a run-up off a low bank would otherwise carry you into a channel.
+ *
+ * Both sides call this with the same two points: the client with its previous physics
+ * position, the server with the last report it accepted. A descent measured between the same
+ * pair of coordinates is the same answer on both.
+ */
+export function canEnterFrom(fromX: number, fromZ: number, x: number, z: number): boolean {
+  if (isWalkable(x, z)) return true;
+  if (Math.abs(x) > ISLAND_EXTENT || Math.abs(z) > ISLAND_EXTENT) return false;
+  const h = heightAt(x, z);
+  if (h < -MAX_WADE_DEPTH) return false;
+  return h <= heightAt(fromX, fromZ) - DESCENT_STEP;
+}
+
+/**
  * How far outside the walkability contract a position is, in metres of violation. Zero
  * means legal.
  *

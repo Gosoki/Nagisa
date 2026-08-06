@@ -100,8 +100,8 @@ const VIEWPOINTS: Record<string, Viewpoint> = {
   plaza: { eye: [52.1, 12, 43.6], target: [67, 10.5, 53.7], fov: 50 },
   /** The Old Street, standing in the road and looking down between the two rows. */
   street: { eye: [72.5, 13, -19.5], target: [52.5, 10.5, -54], fov: 55 },
-  /** The shrine approach, through the torii. */
-  shrine: { eye: [-36, 15, 34], target: [-78, 13.5, 38], fov: 50 },
+  /** The shrine hall from its sandō — steps, offering box, veranda rail. */
+  shrine: { eye: [-58, 14.5, 34.5], target: [-77, 12.5, 42], fov: 50 },
   /** The summit court, from the south, straight up the axis: torii, bell, road, hall. */
   summit: { eye: [2, 30.5, 30], target: [0, 27, -9], fov: 52 },
   /** The lighthouse cape against the sky. */

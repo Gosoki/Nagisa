@@ -261,7 +261,7 @@ export function minka(opts?: Opts): THREE.Group {
   }
 
   parts.push(...lift(veranda(w * 0.86, 1.5, plinthHeight + 0.3, wood('light'), timber), 0, -d / 2 - 0.6));
-  parts.push(...lift(stoneSteps(2.0, plinthHeight + 0.3, stone()), 0, -d / 2 - 1.35));
+  parts.push(...lift(stoneSteps(2.0, plinthHeight + 0.3, stone()), 0, -d / 2 - 1.35 - 3 * 0.44));
 
   return assemble('minka', parts);
 }
@@ -390,7 +390,7 @@ export function teahouse(opts?: Opts): THREE.Group {
   for (const sx of [-1, 1] as const) {
     parts.push(...lift(paperLantern(0.22, 0.55, shoji(), wood('dark')), plinthHeight + 2.0, -d / 2 - 0.5, sx * w * 0.32));
   }
-  parts.push(...lift(stoneSteps(2.2, plinthHeight, stone()), 0, -d / 2 - 0.5));
+  parts.push(...lift(stoneSteps(2.2, plinthHeight, stone()), 0, -d / 2 - 3 * 0.44));
 
   return assemble('teahouse', parts);
 }
@@ -611,8 +611,28 @@ export function shrineHall(opts?: Opts): THREE.Group {
   parts.push(box(0.05, wallHeight * 0.8, 0.16, wood('dark'), 0, floorHeight + 0.26 + wallHeight * 0.4, -d / 2 + 0.3));
 
   parts.push(...lift(veranda(w, 1.4, floorHeight + 0.26, wood('light'), accent), 0, -d / 2 - 0.6));
-  for (const y of [0.45, 0.85]) {
-    parts.push(box(w, 0.09, 0.09, accent, 0, floorHeight + 0.26 + y, -d / 2 - 1.28));
+
+  // The veranda rail: two runs either side of the stair opening, on posts.
+  //
+  // It used to be two bare horizontals spanning the whole frontage with nothing under them,
+  // so from the steps you looked up at a pair of sticks hanging in the air across the front
+  // of the shrine. A rail is posts first and rails second, and it has to *stop* where you
+  // walk through it.
+  const railY = floorHeight + 0.26;
+  const railZ = -d / 2 - 1.28;
+  const gap = w * 0.24;
+  for (const sx of [-1, 1] as const) {
+    const inner = sx * gap;
+    const outer = sx * (w / 2);
+    const run = Math.abs(outer - inner);
+    for (const y of [0.45, 0.85]) {
+      parts.push(box(run, 0.09, 0.09, accent, (inner + outer) / 2, railY + y, railZ));
+    }
+    const posts = Math.max(2, Math.round(run / 1.1));
+    for (let i = 0; i <= posts; i++) {
+      const x = inner + ((outer - inner) * i) / posts;
+      parts.push(box(0.11, 0.95, 0.11, accent, x, railY + 0.475, railZ));
+    }
   }
 
   const roofRise = wallHeight * 0.95;
@@ -650,10 +670,16 @@ export function shrineHall(opts?: Opts): THREE.Group {
     }
   }
 
-  parts.push(...lift(stoneSteps(w * 0.3, floorHeight + 0.26, stone(), 4), 0, -d / 2 - 1.4));
-  parts.push(box(1.6, 0.9, 0.9, wood('dark'), 0, 0.45, -d / 2 - 2.6));
+  // The flight stands *in front of* the veranda rather than under it: four treads of 0.44
+  // reach 1.76 m, so the top one has to start that far out for its full-height block to
+  // finish level with the deck edge.
+  const stairRun = 4 * 0.44;
+  parts.push(...lift(stoneSteps(w * 0.3, floorHeight + 0.26, stone(), 4), 0, -d / 2 - 1.34 - stairRun));
+  // The offering box, clear of the bottom tread instead of buried in the middle of it.
+  const boxZ = -d / 2 - 2.0 - stairRun;
+  parts.push(box(1.6, 0.9, 0.9, wood('dark'), 0, 0.45, boxZ));
   for (let i = 0; i < 5; i++) {
-    parts.push(box(0.07, 0.12, 0.9, wood('light'), -0.6 + i * 0.3, 0.95, -d / 2 - 2.6));
+    parts.push(box(0.07, 0.12, 0.9, wood('light'), -0.6 + i * 0.3, 0.95, boxZ));
   }
 
   return assemble('shrine-hall', parts);

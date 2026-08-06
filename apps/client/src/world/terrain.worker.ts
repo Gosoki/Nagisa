@@ -106,8 +106,22 @@ const C = {
   paving: [0.757, 0.749, 0.722],
   /** a cooler paving tone, patched into the above so a quay is not one flat sheet */
   pavingCool: [0.702, 0.706, 0.694],
-  /** SCENE_COLORS.path — the gravel lanes */
-  gravel: [0.871, 0.824, 0.714],
+  /**
+   * The gravel lanes.
+   *
+   * Darker and greyer than the token, which sat at [0.871, 0.824, 0.714] — three per cent
+   * from `sand` in every channel. At that distance a lane crossing a beach, a lane crossing
+   * a quay and the beach itself were one continuous pale wash, and the whole island read as
+   * paths made of sand. A gravel road is *made ground*: it wants to be the same family as
+   * paving and a different one from the shore.
+   */
+  gravel: [0.741, 0.706, 0.627],
+  /**
+   * The stone lanes. Their own tone rather than `paving`, which is what they used to be —
+   * and a stone road laid across a paved terrace in the terrace's own colour is not a road
+   * you can see, only a contour line where one ought to be.
+   */
+  laneStone: [0.697, 0.688, 0.659],
   /** boardwalk timber */
   boardwalk: [0.588, 0.494, 0.376],
   /** the seabed, visible through shallow water */
@@ -150,7 +164,7 @@ function patch(x: number, z: number, scale: number): number {
 }
 
 const SURFACE_COLORS: Record<PathSurface, RGB> = {
-  stone: C.paving,
+  stone: C.laneStone,
   gravel: C.gravel,
   boardwalk: C.boardwalk,
 };

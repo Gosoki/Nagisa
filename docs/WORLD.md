@@ -254,6 +254,7 @@ violations in 110 000 steps.
 | `npm run shots` | Thirteen viewpoints rendered to PNG through the real pipeline |
 | `node tools/shot.mjs plans` | The same places again, but from directly overhead, through the real renderer |
 | `node scripts/layout-solve.mjs --intent f.json` | Turns *station along a lane, offset, facing* into `x`, `z` and a yaw |
+| `SPOT='{"id":"…","near":[x,z]}' node scripts/find-spot.mjs` | Every position a landmark could stand that satisfies all four audits at once |
 
 The map is the one to reach for first when something looks wrong. The failure modes of a
 procedural world are spatial, and reading numbers does not catch them.
@@ -285,8 +286,15 @@ Two things this deliberately does **not** do:
 - **It does not make cliffs jumpable.** Relaxing the contract to "steep ground may be passed
   over while your feet are clear of it" was tried and cannot be validated: the server sees
   positions, not velocities, so it cannot tell a jump arc from a client reporting itself half
-  a metre above a cliff face and walking up it. Steep ground a player wants to jump is a
+  a metre above a cliff face and walking up it. Steep ground a player wants to jump *up* is a
   terrain defect, and is fixed as one.
+
+Going **down** is a different question, and `canEnterFrom` answers it. `isWalkable` is
+symmetric — ground too steep to climb is refused from above as firmly as from below — so a
+clifftop used to be a fence: the ground past the edge was unwalkable, the step onto it was
+refused, and you could not jump off, fall off, or walk off. Steep ground may now be entered
+when it is *below* you. A player can always leave an edge and never climb one, which is
+validated from two coordinates, so the server checks it exactly.
 
 What remains is a band of steep ground round the mountain's foot, forty to fifty metres out
 from each harbour. That is a mountain, and the roads are how you get past it.

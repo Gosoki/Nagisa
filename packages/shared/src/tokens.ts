@@ -112,7 +112,7 @@ export const SCENE_COLORS = {
   rockShadow: 0x968f83,
   cliff: 0x8e887a,
   cliffShadow: 0x777a76,
-  path: 0xded2b6,
+  path: 0xbdb4a0,
   pathShadow: 0xbdb8a5,
   paving: 0xd2c9b2,
   pavingShadow: 0xb4b0a0,

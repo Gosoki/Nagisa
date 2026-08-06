@@ -471,8 +471,15 @@ export function stoneSteps(width: number, rise: number, material: THREE.Material
   const stepRise = rise / count;
   const tread = 0.44;
   for (let i = 0; i < count; i++) {
+    // Rising with `z`: the shallowest tread at the foot and the full-height one against
+    // whatever the flight serves. It used to be the other way round — `count - i` — so every
+    // set of steps on the island climbed the wrong way, presenting its tallest block to
+    // anyone walking up and tucking the low one under the deck. Nothing else needs changing:
+    // callers that face the other way already mirror the whole flight (see `stage`), so the
+    // one reversal here fixes the shrine halls, the minka, the teahouse and the stages at
+    // once.
     const h = stepRise * (i + 1);
-    parts.push(box(width, h, tread, material, 0, h / 2, tread * (count - i - 0.5)));
+    parts.push(box(width, h, tread, material, 0, h / 2, tread * (i + 0.5)));
   }
   return parts;
 }

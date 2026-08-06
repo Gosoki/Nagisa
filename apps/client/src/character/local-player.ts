@@ -37,8 +37,8 @@ import {
   footingDownhill,
   footingSlopeAt,
   heightAt,
+  canEnterFrom,
   illegality,
-  isWalkable,
   nearestWalkable,
 } from '@nagisa/shared';
 import type { CameraRig } from '../engine/camera-rig.js';
@@ -331,7 +331,10 @@ export class LocalPlayer {
    * "you may not enter water".
    */
   private canOccupy(x: number, z: number): boolean {
-    if (isWalkable(x, z)) return true;
+    // Not `isWalkable`: that is symmetric, and refuses the ground past a clifftop from the
+    // clifftop as firmly as it refuses the clifftop from below. `canEnterFrom` keeps the
+    // refusal for climbing and drops it for descending, which is how you get off a ledge.
+    if (canEnterFrom(this.position.x, this.position.z, x, z)) return true;
 
     // Escape hatch. If the player is *already* somewhere the contract forbids — terrain
     // retuned under a standing player, a spawn point that drifted, a correction that

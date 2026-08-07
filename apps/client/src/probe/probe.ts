@@ -108,8 +108,14 @@ const VIEWPOINTS: Record<string, Viewpoint> = {
   lighthouse: { eye: [-46, 18, -52], target: [-72, 20, -43], fov: 50 },
   /** The teahouse on the plaza's quiet side. */
   teahouse: { eye: [69, 12, 8], target: [85, 10.5, 18.5], fov: 52 },
-  /** The north fishing harbour, from the quay approach looking out over the bay. */
-  north: { eye: [20, 10, -50], target: [-16, 3, -82], fov: 55 },
+  /**
+   * The north fishing harbour's sea wall, from the quay above it.
+   *
+   * Re-aimed: the old eye at (20, −50) had ended up inside a boathouse roof as the harbour
+   * was rearranged, so the view was a wall of thatch. Probe viewpoints go stale whenever the
+   * thing they framed moves; when one stops showing its subject, move it.
+   */
+  north: { eye: [42, 8.5, -96], target: [23, 1.2, -107.8], fov: 55 },
   /** Sunset beach, low and level with the water. */
   beach: { eye: [30, 5, 106], target: [56, 3, 88], fov: 55 },
   /**

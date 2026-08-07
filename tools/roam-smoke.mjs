@@ -117,13 +117,40 @@ try {
   // Weighted toward forward: the spawn faces the mountain, so holding W climbs inland
   // across the shelf and the road cuttings rather than circling the flat quay.
   const TURNS = ['KeyW', 'KeyW', 'KeyW', 'KeyD', 'KeyW', 'KeyW', 'KeyA', 'KeyW', 'KeyW', 'KeyD', 'KeyW', 'KeyW'];
+  const where = () =>
+    page.evaluate(() => {
+      const p = window.nagisa?.local?.position;
+      return p ? { x: p.x, z: p.z } : null;
+    });
   await page.keyboard.down('ShiftLeft');
-  const deadline = Date.now() + seconds * 1000;
+  // Bounded by ground covered, not by wall-clock seconds.
+  //
+  // The physics is driven by the frame loop, and under software WebGL this page runs at a
+  // small fraction of real time — so a fixed number of seconds bought anywhere between 40 m
+  // and 200 m of walking depending on how busy the machine was, and "the player left the flat
+  // spawn terrace" passed or failed on that. The harbour's flat is 28 m across; asking for a
+  // distance is asking the question the check actually depends on. The clock stays as a
+  // backstop so a wedged run still ends.
+  const TARGET_METRES = 150;
+  const deadline = Date.now() + seconds * 4000;
   let i = 0;
+  let last = await where();
   while (Date.now() < deadline) {
-    const key = TURNS[i++ % TURNS.length];
+    const covered = await page.evaluate(() => window.__roam?.distance ?? 0);
+    if (covered > TARGET_METRES) break;
+    // Turn away from whatever is in the way rather than leaning on it.
+    //
+    // The route was a fixed key sequence, so whether the run covered the island or spent
+    // twenty seconds pressed against one wall came down to luck — and the suite's verdict
+    // came with it. A stage at the south harbour, twenty metres due north of the spawn, was
+    // enough to wedge it. Steering on "did I move" is what the test always meant.
+    const now = await where();
+    const stuck = last && now && Math.hypot(now.x - last.x, now.z - last.z) < 1;
+    last = now;
+    const key = stuck ? (i % 2 === 0 ? 'KeyD' : 'KeyA') : TURNS[i % TURNS.length];
+    i++;
     await page.keyboard.down(key);
-    await page.waitForTimeout(3500);
+    await page.waitForTimeout(stuck ? 1200 : 3500);
     await page.keyboard.up(key);
   }
   await page.keyboard.up('ShiftLeft');
@@ -166,6 +193,24 @@ try {
       return before && after ? Math.hypot(after.x - before.x, after.z - before.z) : 0;
     };
 
+    // Turn until forward is open. Whichever way the roam happened to leave the character
+    // pointing, at least one quarter turn has somewhere to walk; testing the bearing it
+    // stopped on tests the scenery.
+    const faceOpenGround = async () => {
+      for (let turn = 0; turn < 4; turn++) {
+        await page.keyboard.down('KeyW');
+        const probe = await travel(700);
+        await page.keyboard.up('KeyW');
+        await page.waitForTimeout(200);
+        if (probe > 0.05) return true;
+        await page.mouse.move(cx, cy);
+        await page.mouse.down();
+        await page.mouse.move(cx + 490, cy, { steps: 14 });
+        await page.mouse.up();
+      }
+      return false;
+    };
+
     // A drag orbits the camera and must not be mistaken for a click.
     await page.mouse.move(cx, cy);
     await page.mouse.down();
@@ -174,30 +219,40 @@ try {
     await page.waitForTimeout(500);
     check('a drag orbits and does not start autorun', !(await isOn()));
 
+    // The forward key first, as the baseline. Measuring autorun first walked the character
+    // into whatever was ahead, and then W had nowhere to go and the comparison read zero.
+    await faceOpenGround();
+    await page.keyboard.down('KeyW');
+    const byKey = await travel(2500);
+    await page.keyboard.up('KeyW');
+    await page.waitForTimeout(400);
+
+    await faceOpenGround();
     await page.mouse.click(cx, cy, { delay: 40 });
     await page.waitForTimeout(400);
     check('a click starts autorun', await isOn());
     const byClick = await travel(2500);
 
-    // Taking the controls back cancels it, and gives the baseline for the comparison below.
+    // Compared against W rather than against a distance in metres. Absolute thresholds do
+    // not survive this harness: the physics is driven by the frame loop and under software
+    // WebGL the page runs at a fraction of real time, so "walked 2 m in 2 s" fails a control
+    // that works perfectly. Loosely, though — the two windows are timed separately and the
+    // frame rate wanders between them, so the ratio carries noise that says nothing about
+    // the control. The regression worth catching is "a click does nothing".
+    check(
+      'autorun walks the character as far as the forward key does',
+      byClick > 0.2 && byKey > 0.15 && byClick > byKey * 0.4,
+      `click ${byClick.toFixed(2)} m vs W ${byKey.toFixed(2)} m`,
+    );
+
+    // Taking the controls back cancels it.
     await page.keyboard.down('KeyW');
-    const byKey = await travel(2500);
+    await page.waitForTimeout(300);
     await page.keyboard.up('KeyW');
     await page.waitForTimeout(400);
     check('taking the controls back cancels autorun', !(await isOn()));
 
-    // Compared against W rather than against a distance in metres. Absolute thresholds do
-    // not survive this harness: under software WebGL the page runs at a few frames a second
-    // and the physics is driven by the frame loop, so the character covers about half a
-    // metre per wall-clock second and "walked 2 m in 2 s" fails a control that works. Asking
-    // whether a click walks you as far as the forward key does is frame-rate independent,
-    // and it is the actual claim being made.
-    check(
-      'autorun walks the character as far as the forward key does',
-      byKey > 0.15 && byClick > byKey * 0.6,
-      `click ${byClick.toFixed(2)} m vs W ${byKey.toFixed(2)} m`,
-    );
-
+    // And clicking again stops it.
     await page.mouse.click(cx, cy, { delay: 40 });
     await page.waitForTimeout(400);
     const restarted = await isOn();

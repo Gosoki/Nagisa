@@ -87,6 +87,14 @@ const FOUNDATION_FRACTION = 0.62;
 /** Ground variation below this is inside what a prop's own plinth already covers. */
 const FOUNDATION_EPSILON = 0.12;
 
+/** How many points along a run are fitted to place it. Enough to see a curve, cheap enough. */
+const RUN_SAMPLES = 9;
+
+/** Reused axes and scratch for `layAlongGround`; allocating per landmark is needless. */
+const UP = new THREE.Vector3(0, 1, 0);
+const RIGHT = new THREE.Vector3(1, 0, 0);
+const PITCH = new THREE.Quaternion();
+
 /**
  * A group of props that is shown or hidden together.
  *
@@ -266,13 +274,100 @@ export class Island {
     if (floats) {
       object.position.set(landmark.x, 0, landmark.z);
     } else if (FOLLOWS_GROUND.has(landmark.kind)) {
-      object.position.set(landmark.x, heightAt(landmark.x, landmark.z), landmark.z);
+      this.layAlongGround(object, landmark);
     } else {
       this.groundBuilding(object, landmark);
     }
 
     this.prepareForRendering(object);
     return object;
+  }
+
+  /**
+   * Lay a long, rigid prop along the ground rather than on one sample of it.
+   *
+   * A railing, a sea wall and a flight of steps are all built running along their own local
+   * **z**, and they were all placed from a single `heightAt` at their origin and then drawn
+   * rigid and level. That is fine on the flat and wrong everywhere else: the north harbour's
+   * 14 m sea wall spans 1.56 m of ground, so it floated 0.87 m in the air at one end and was
+   * buried 0.69 m at the other.
+   *
+   * So: sample both ends, sit the middle at their mean, and pitch the run to match. A
+   * railing following a slope is exactly what a railing does, and it is far closer to right
+   * for a wall than hanging in the air is.
+   *
+   * The pitch is composed as a quaternion — yaw, then pitch about the **local** x — rather
+   * than by setting two Euler angles, because the result of combining those depends on the
+   * Euler order and the intent here is unambiguous.
+   *
+   * Props with no length (a boulder) get no pitch. They sit at the *lowest* sample under
+   * them, so they read as set into the ground rather than perched on it.
+   */
+  private layAlongGround(object: THREE.Object3D, landmark: Landmark): void {
+    const length = typeof landmark.opts?.length === 'number' ? landmark.opts.length : 0;
+    const scale = landmark.scale ?? 1;
+    const span = length * scale;
+
+    // Point-like: a boulder. Sample its own footprint and take the **mean**.
+    //
+    // Not the lowest — on the summit's slope that is 1.4 m of ground under a two-metre rock,
+    // and placing it at the bottom of that swallows it whole. Not the origin either, which is
+    // what left it perched with daylight under one side. The mean splits the difference, and
+    // a blob is irregular enough to absorb what is left.
+    if (span < 1) {
+      const bounds = new THREE.Box3().setFromObject(object);
+      const rx = Math.max(0.4, (bounds.max.x - bounds.min.x) * 0.35);
+      const rz = Math.max(0.4, (bounds.max.z - bounds.min.z) * 0.35);
+      let sum = 0;
+      for (const [ox, oz] of CORNER_OFFSETS) sum += heightAt(landmark.x + ox * rx, landmark.z + oz * rz);
+      object.position.set(landmark.x, sum / CORNER_OFFSETS.length, landmark.z);
+      return;
+    }
+
+    // A run: a railing, a sea wall, a flight of steps. All are built along their own local
+    // **z** and drawn rigid, and all were placed from a single `heightAt` at their origin —
+    // fine on the flat and wrong everywhere else. The north harbour's 14 m sea wall spans
+    // 1.56 m of ground, so it hung 0.87 m in the air at one end and was buried 0.69 m at the
+    // other.
+    //
+    // Fit a line to the ground along the run, then drop it until nothing is left in the air.
+    // Least squares gives the pitch that follows the slope; the drop is what makes "no gap
+    // underneath" true rather than approximately true, and it costs only a little burial on
+    // ground that is convex along the run.
+    const tx = Math.sin(landmark.rot);
+    const tz = Math.cos(landmark.rot);
+    const half = span / 2;
+    const samples: Array<[number, number]> = [];
+    for (let i = 0; i < RUN_SAMPLES; i++) {
+      const t = -half + (i / (RUN_SAMPLES - 1)) * span;
+      samples.push([t, heightAt(landmark.x + tx * t, landmark.z + tz * t)]);
+    }
+    let sumT = 0;
+    let sumH = 0;
+    let sumTT = 0;
+    let sumTH = 0;
+    for (const [t, h] of samples) {
+      sumT += t;
+      sumH += h;
+      sumTT += t * t;
+      sumTH += t * h;
+    }
+    const n = samples.length;
+    const denom = n * sumTT - sumT * sumT;
+    const slope = denom === 0 ? 0 : (n * sumTH - sumT * sumH) / denom;
+    let intercept = (sumH - slope * sumT) / n;
+    let highest = 0;
+    for (const [t, h] of samples) highest = Math.max(highest, intercept + slope * t - h);
+    intercept -= highest;
+
+    object.position.set(landmark.x, intercept, landmark.z);
+    // Rotating about local +x by φ moves the +z end down, so the sign is negative to raise
+    // the far end when the ground rises toward it. Composed as a quaternion — yaw, then pitch
+    // about the *local* x — rather than as two Euler angles, whose combined effect depends on
+    // the Euler order while the intent here does not.
+    object.quaternion
+      .setFromAxisAngle(UP, landmark.rot)
+      .multiply(PITCH.setFromAxisAngle(RIGHT, -Math.atan(slope)));
   }
 
   /**
@@ -295,18 +390,36 @@ export class Island {
    * buildings on retaining walls looks like a village that was placed by a script.
    */
   private groundBuilding(object: THREE.Object3D, landmark: Landmark): void {
+    // Measure the footprint **unrotated**.
+    //
+    // `setFromObject` returns an axis-aligned box in world axes, so taking it after the yaw
+    // has been applied measures the box that *circumscribes* the turned building: the harbour
+    // office's 12 × 12 m footprint came out 16.4 × 16.4 m. Those inflated half-extents were
+    // then rotated a second time, as if they had been local all along.
+    const yaw = object.rotation.y;
+    object.rotation.y = 0;
+    object.updateMatrixWorld(true);
     const bounds = new THREE.Box3().setFromObject(object);
+    object.rotation.y = yaw;
+    object.updateMatrixWorld(true);
+
     const halfW = Math.max(0.4, (bounds.max.x - bounds.min.x) * 0.5 * FOUNDATION_FRACTION);
     const halfD = Math.max(0.4, (bounds.max.z - bounds.min.z) * 0.5 * FOUNDATION_FRACTION);
 
+    // Local → world for a `rotation.y` of θ is (x·cos + z·sin, −x·sin + z·cos). This had the
+    // signs the other way round, which is a rotation by −θ: the sampled box was the
+    // building's footprint mirrored, and for the shrine hall at −69° it read the ground
+    // 16.6 m from the corner it was meant to represent. `terrain.rebuildSolids` has the same
+    // transform written correctly, and the two disagreed silently because nothing compares
+    // them. Verified against `THREE.Object3D` itself rather than derived on paper.
     const cos = Math.cos(landmark.rot);
     const sin = Math.sin(landmark.rot);
     let lowest = Infinity;
     let highest = -Infinity;
     for (const [ox, oz] of CORNER_OFFSETS) {
-      const x = landmark.x + ox * halfW * cos - oz * halfD * sin;
-      const z = landmark.z + ox * halfW * sin + oz * halfD * cos;
-      const h = heightAt(x, z);
+      const lx = ox * halfW;
+      const lz = oz * halfD;
+      const h = heightAt(landmark.x + lx * cos + lz * sin, landmark.z - lx * sin + lz * cos);
       if (h < lowest) lowest = h;
       if (h > highest) highest = h;
     }

@@ -17,6 +17,7 @@
  * that contract.
  */
 
+import { BUILDING_FOOTPRINTS } from '@nagisa/shared';
 import * as THREE from 'three';
 import { box, boolOpt, cyl, mergeByMaterial, mulberry32, numOpt, randRange } from './geometry.js';
 import { cappedPost, paperLantern, rope, stoneSteps, tiledRoof } from './kit.js';
@@ -533,8 +534,8 @@ export function netRack(opts?: Opts): THREE.Group {
  * tiled roof and a row of lanterns under the front eave.
  */
 export function stage(opts?: Opts): THREE.Group {
-  const w = numOpt(opts, 'w', 16);
-  const d = numOpt(opts, 'd', 11);
+  const w = numOpt(opts, 'w', BUILDING_FOOTPRINTS.stage![0]);
+  const d = numOpt(opts, 'd', BUILDING_FOOTPRINTS.stage![1]);
   const covered = boolOpt(opts, 'roof', false);
   const tiers = boolOpt(opts, 'tiers', false);
   const parts: THREE.Mesh[] = [];

@@ -110,12 +110,18 @@ export function zoneAt(x: number, z: number): ZoneId {
   return FALLBACK_ZONE;
 }
 
-/** World-space stage position of a venue, with terrain height applied. */
+/**
+ * Where a venue's stage is, as somewhere a person could actually be.
+ *
+ * Snapped to walkable ground, for the same reason `spawnPoint` and `crowdSlot` are: a stage
+ * anchor is a place, and three of the six landed inside a stage deck once decks became
+ * solid — a function that hands back a point inside a wall is a trap for whoever wires it up
+ * to a walk. Snapping is a no-op wherever the anchor was already clear.
+ */
 export function stagePosition(id: ZoneId): { x: number; y: number; z: number; facing: number } | null {
   const zone = getZone(id);
   if (!zone?.stage) return null;
-  const x = zone.x + zone.stage.dx;
-  const z = zone.z + zone.stage.dz;
+  const [x, z] = nearestWalkable(zone.x + zone.stage.dx, zone.z + zone.stage.dz, 14);
   return { x, y: heightAt(x, z), z, facing: zone.stage.facing };
 }
 

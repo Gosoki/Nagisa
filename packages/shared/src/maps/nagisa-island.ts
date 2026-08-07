@@ -567,7 +567,7 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   // been dropped rather than built, and the west hut stood in the middle of the breakwater.
   { id: 'bh-hut-1', kind: 'beach-hut', x: 37.3, z: 88.1, rot: 2.712, opts: { w: 6, d: 5 } },
   { id: 'bh-hut-2', kind: 'beach-hut', x: 60.1, z: 98.5, rot: 2.712, opts: { w: 6, d: 5 } },
-  { id: 'bh-stage', kind: 'stage', x: 48.7, z: 93.3, rot: 2.712, opts: { w: 11, d: 8 } },
+  { id: 'bh-stage', kind: 'stage', x: 52.2, z: 85.8, rot: 2.712, opts: { w: 11, d: 8 } },
   { id: 'bh-bench-1', kind: 'bench', x: 51, z: 99, rot: 0.62 },
   { id: 'bh-boat-1', kind: 'boat', x: 58, z: 102, rot: 1.8, scale: 0.75 },
   { id: 'bh-rock-1', kind: 'rock', x: 66, z: 90, rot: 0.7, scale: 1.5 },

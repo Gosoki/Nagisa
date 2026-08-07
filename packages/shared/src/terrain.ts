@@ -1485,8 +1485,26 @@ export const BUILDING_FOOTPRINTS: Readonly<Record<string, readonly [number, numb
   boathouse: [8, 12],
   'shrine-hall': [14, 11],
   lighthouse: [9.3, 9.3],
+  stage: [16, 11],
 };
 
+/**
+ * Why a stage is in that list.
+ *
+ * It is a boarded platform 0.85 m off the ground, and every square metre under all four of
+ * them was walkable — so a player walked *into* a stage and stood with the deck through
+ * their waist, and the crowd slots an activity deals out placed four people there on purpose.
+ *
+ * Standing *on* it would be the better answer, and it does not work. Put the deck into
+ * `heightAt` and the ground rises where the platform is; but `footingSlopeAt` fits a plane
+ * through a 1.4 m ring, and 0.85 m over 1.4 m is 31° — comfortably under the walkable limit.
+ * The deck's vertical sides would read to the contract as a gentle ramp and players would
+ * glide up the face of a wall, which is the collision-disagrees-with-what-you-see defect this
+ * pass exists to remove. Trading one for another is not progress.
+ *
+ * Solid, then. You walk around a stage rather than through it, and `nearestWalkable` moves
+ * the crowd off it without anything else being told.
+ */
 /** One solid box of a building, in its local frame: centre offset and half-extents. */
 interface SolidBox {
   cx: number;

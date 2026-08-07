@@ -1,8 +1,7 @@
 node_modules/
 dist/
-.smoke-*/
-.uismoke-*/
-.audit-*/
+# Scratch for the bundling tool runners. One directory, swept by scripts/lib/bundle-run.mjs.
+.tmp/
 *.log
 .env
 

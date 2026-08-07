@@ -18,12 +18,15 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { scratchDir } from './lib/bundle-run.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const outDir = mkdtempSync(join(root, '.uismoke-'));
+// Vite, not esbuild, so this cannot use `bundleAndRun` — but the scratch goes to the same
+// place as everything else's, which is the point of borrowing just this one function.
+const outDir = scratchDir('ui-smoke');
 /** Exit status, set inside the try so the `finally` cleanup always gets to run first. */
 let status = 1;
 

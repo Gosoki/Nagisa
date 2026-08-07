@@ -27,9 +27,12 @@
 import {
   ISLAND_EXTENT,
   PADS,
+  activeMapId,
   heightAt,
   nearestPath,
   normalAt,
+  resolveMapId,
+  setActiveMap,
   smoothstep,
   type PathSurface,
 } from '@nagisa/shared';
@@ -50,6 +53,25 @@ export interface TerrainBuildRequest {
   resolution: number;
   /** Half-extent of the meshed area in metres; matches `ISLAND_EXTENT` by default. */
   extent?: number;
+  /**
+   * Which island to mesh.
+   *
+   * **Required in practice, even though the type allows it to be absent.** A worker is a
+   * separate module graph with its own copy of the map registry, so `maps/index.ts`'s
+   * "activate the default if nothing has" runs again inside it and always fires — the main
+   * thread's `resolveMapId(?map=…)` mutates only the main thread's registry.
+   *
+   * Without this the worker meshed Nagisa Island no matter what the rest of the client was
+   * simulating. Under `?map=lantern-atoll` the player walked an atoll 118 m across while
+   * looking at an island 175 m across: 90% of the walkable ground disagreed with the picture
+   * by more than half a metre, 79% of it by more than a body height, and the middle of the
+   * lagoon was buried under 25 m of a mountain that was not there.
+   *
+   * The synchronous fallback never had the bug — it runs in the main thread's module graph,
+   * where `resolveMapId` has already run — so this only ever broke the fast path, which is
+   * to say everywhere except the constrained WebViews the fallback exists for.
+   */
+  mapId?: string;
 }
 
 /** Transferable result. Buffers are moved, not copied. */
@@ -313,7 +335,14 @@ function colorAt(x: number, z: number, h: number, slope: number, out: number[], 
  */
 export function buildTerrain(req: TerrainBuildRequest): TerrainBuildResult {
   const started = Date.now();
+  // Before anything reads the height field. In the worker this is what selects the island at
+  // all; in the main thread's fallback the map is already active and this is a no-op that
+  // asserts the two agree. See `TerrainBuildRequest.mapId`.
+  if (req.mapId && activeMapId() !== req.mapId) setActiveMap(resolveMapId(req.mapId));
   const res = Math.max(16, Math.floor(req.resolution));
+  // Read *after* the map is set: `ISLAND_EXTENT` is a live binding republished per pack, so
+  // a default argument evaluated against the previous map would mesh the right heights over
+  // the wrong area.
   const extent = req.extent ?? ISLAND_EXTENT;
   const span = extent * 2;
   const step = span / (res - 1);

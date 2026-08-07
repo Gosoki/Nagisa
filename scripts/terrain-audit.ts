@@ -129,7 +129,11 @@ for (let j = 1; j < size - 1; j++) {
         if (grid[(j + dj) * size + (i + di)] === 1) open++;
       }
     }
-    if (open >= PINHOLE_NEIGHBOURS) {
+    // A building wall is not a pinhole in the ground. The census samples `isWalkable`, which
+    // includes the structure colliders, so without this a boathouse's 0.8 m side walls read
+    // as two dozen speckles in the terrain — the same reason the stumble and snag measures
+    // below exclude them. This tool is about the ground.
+    if (open >= PINHOLE_NEIGHBOURS && !insideStructure(toWorld(i), toWorld(j))) {
       pinholes.push([toWorld(i), toWorld(j), open]);
     }
   }

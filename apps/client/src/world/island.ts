@@ -34,6 +34,7 @@ import * as THREE from 'three';
 import {
   LANDMARKS,
   ZONES,
+  activeMapId,
   heightAt,
   roadsideLanterns,
   type Landmark,
@@ -155,7 +156,10 @@ export class Island {
    * worse outcome than one that hitches for 400 ms while it builds.
    */
   private async buildTerrainMesh(): Promise<TerrainBuildResult> {
-    const request = { resolution: this.quality.terrainResolution };
+    // The map id travels with the request. A worker is a separate module graph and resolves
+    // its own default, so without this it meshes whichever island `maps/index.ts` activates
+    // rather than the one the rest of the client is simulating. See `TerrainBuildRequest`.
+    const request = { resolution: this.quality.terrainResolution, mapId: activeMapId() ?? undefined };
     let result: TerrainBuildResult;
 
     if (typeof Worker === 'function') {

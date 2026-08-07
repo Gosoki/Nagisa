@@ -42,6 +42,7 @@
  */
 
 import * as THREE from 'three';
+import { BUILDING_FOOTPRINTS } from '@nagisa/shared';
 import { box, boolOpt, cyl, mergeByMaterial, mulberry32, numOpt, randRange } from './geometry.js';
 import { framedWalls, lattice, noren, paperLantern, plinth, stoneSteps, tiledRoof, veranda } from './kit.js';
 import { cloth, glow, metal, plaster, roof as roofMaterial, shoji, stone, vermilion, whitewash, wood } from '../materials.js';
@@ -96,8 +97,8 @@ function lift(parts: THREE.Mesh[], dy: number, dz = 0, dx = 0): THREE.Mesh[] {
  * The building faces −z; the caller rotates it to face the street.
  */
 export function machiya(opts?: Opts): THREE.Group {
-  const w = numOpt(opts, 'w', 9);
-  const d = numOpt(opts, 'd', 12);
+  const w = numOpt(opts, 'w', BUILDING_FOOTPRINTS['machiya']![0]);
+  const d = numOpt(opts, 'd', BUILDING_FOOTPRINTS['machiya']![1]);
   const floors = Math.max(1, Math.round(numOpt(opts, 'floors', 2)));
   const hasSign = boolOpt(opts, 'sign', false);
   const rng = mulberry32(seedFrom(w, d, floors));
@@ -201,8 +202,8 @@ export function machiya(opts?: Opts): THREE.Group {
  * matters more than any amount of surface detail.
  */
 export function minka(opts?: Opts): THREE.Group {
-  const w = numOpt(opts, 'w', 12);
-  const d = numOpt(opts, 'd', 10);
+  const w = numOpt(opts, 'w', BUILDING_FOOTPRINTS['minka']![0]);
+  const d = numOpt(opts, 'd', BUILDING_FOOTPRINTS['minka']![1]);
   const parts: THREE.Mesh[] = [];
 
   const timber = wood('dark');
@@ -279,8 +280,8 @@ export function minka(opts?: Opts): THREE.Group {
  * architecturally wrong.
  */
 export function warehouse(opts?: Opts): THREE.Group {
-  const w = numOpt(opts, 'w', 13);
-  const d = numOpt(opts, 'd', 9);
+  const w = numOpt(opts, 'w', BUILDING_FOOTPRINTS['warehouse']![0]);
+  const d = numOpt(opts, 'd', BUILDING_FOOTPRINTS['warehouse']![1]);
   const floors = Math.max(1, Math.round(numOpt(opts, 'floors', 1)));
   const parts: THREE.Mesh[] = [];
 
@@ -323,8 +324,8 @@ export function warehouse(opts?: Opts): THREE.Group {
  * is sitting on the edge of it looking at the sea.
  */
 export function teahouse(opts?: Opts): THREE.Group {
-  const w = numOpt(opts, 'w', 12);
-  const d = numOpt(opts, 'd', 9);
+  const w = numOpt(opts, 'w', BUILDING_FOOTPRINTS['teahouse']![0]);
+  const d = numOpt(opts, 'd', BUILDING_FOOTPRINTS['teahouse']![1]);
   const wrapVeranda = boolOpt(opts, 'veranda', true);
   const parts: THREE.Mesh[] = [];
 
@@ -363,8 +364,15 @@ export function teahouse(opts?: Opts): THREE.Group {
     for (const sx of [-1, 1] as const) {
       const side = veranda(d - 1.8, 0.9, plinthHeight, timber, wood('dark'));
       for (const m of side) {
+        // Rotate the run **about the building's origin**, not each plank about its own centre.
+        // `veranda` lays its boards out along local x; setting `rotation.y` alone turned each
+        // board to face the right way but left the run still spread along x, so shifting it to
+        // the flank produced a 6.7 m ribbon of decking sticking straight out of the side of the
+        // building, 1.8 m clear of the roof, hanging in the air with no posts under it.
+        const { x: px, z: pz } = m.position;
         m.rotation.y = (sx * Math.PI) / 2;
-        m.position.x += sx * (w / 2 - 0.45);
+        m.position.x = pz * sx + sx * (w / 2 - 0.45);
+        m.position.z = -px * sx;
       }
       parts.push(...side);
     }
@@ -401,8 +409,8 @@ export function teahouse(opts?: Opts): THREE.Group {
  * Street's otherwise low roofline.
  */
 export function bathhouse(opts?: Opts): THREE.Group {
-  const w = numOpt(opts, 'w', 15);
-  const d = numOpt(opts, 'd', 12);
+  const w = numOpt(opts, 'w', BUILDING_FOOTPRINTS['bathhouse']![0]);
+  const d = numOpt(opts, 'd', BUILDING_FOOTPRINTS['bathhouse']![1]);
   const parts: THREE.Mesh[] = [];
 
   const timber = wood('dark');
@@ -448,8 +456,8 @@ export function bathhouse(opts?: Opts): THREE.Group {
  * posts and a lintel.
  */
 export function boathouse(opts?: Opts): THREE.Group {
-  const w = numOpt(opts, 'w', 8);
-  const d = numOpt(opts, 'd', 12);
+  const w = numOpt(opts, 'w', BUILDING_FOOTPRINTS['boathouse']![0]);
+  const d = numOpt(opts, 'd', BUILDING_FOOTPRINTS['boathouse']![1]);
   const parts: THREE.Mesh[] = [];
 
   const board = wood('weathered');
@@ -487,8 +495,8 @@ export function boathouse(opts?: Opts): THREE.Group {
 
 /** The lighthouse keeper's cottage: a small, sturdy, whitewashed house with a low roof. */
 export function keepersHouse(opts?: Opts): THREE.Group {
-  const w = numOpt(opts, 'w', 11);
-  const d = numOpt(opts, 'd', 8);
+  const w = numOpt(opts, 'w', BUILDING_FOOTPRINTS['keepers-house']![0]);
+  const d = numOpt(opts, 'd', BUILDING_FOOTPRINTS['keepers-house']![1]);
   const parts: THREE.Mesh[] = [];
 
   const plinthHeight = 0.4;
@@ -576,8 +584,8 @@ export function beachHut(opts?: Opts): THREE.Group {
  * floor raised clear of the ground on posts, and the offering box at the foot of the steps.
  */
 export function shrineHall(opts?: Opts): THREE.Group {
-  const w = numOpt(opts, 'w', 14);
-  const d = numOpt(opts, 'd', 11);
+  const w = numOpt(opts, 'w', BUILDING_FOOTPRINTS['shrine-hall']![0]);
+  const d = numOpt(opts, 'd', BUILDING_FOOTPRINTS['shrine-hall']![1]);
   const small = boolOpt(opts, 'small', false);
   const honden = boolOpt(opts, 'honden', true);
   const parts: THREE.Mesh[] = [];

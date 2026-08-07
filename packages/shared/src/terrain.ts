@@ -519,41 +519,95 @@ export function nearestPath(x: number, z: number, excludeId?: WorldPath['id']): 
 
   if (!bestPath) return NO_PATH;
 
-  // Second pass: everything within `CORNER_TIE` of the winner gets a say in the height and
-  // in the blend width, weighted by how close it came. Both are scalars that vary smoothly
-  // along a road, so averaging them is meaningful; the arc length is not — averaging the two
-  // sides of a closed loop's seam would put the road on the far side of the island — so `s`
-  // stays the winner's and is reported for callers that want a position, not a height.
-  //
-  // Restricted to the winning path. Two roads meeting at a junction have to agree about their
-  // height at the junction anyway, and averaging across paths would let a lane influence a
-  // road it merely passes near.
+  const { target, blend } = tieBlend(segments, x, z, bestPath, best, bestS);
+  if (best > bestPath.halfWidth + blend) return NO_PATH;
+  return { path: bestPath, dist: best, s: bestS, blend, height: target };
+}
+
+/**
+ * Designed height and blend width at a point, averaged over every segment of `path` that is
+ * within {@link CORNER_TIE} of `best`.
+ *
+ * The arc length is deliberately not averaged and is not returned: it is circular, and the
+ * mean of the two sides of a closed loop's seam is a point on the far side of the island.
+ */
+function tieBlend(
+  segments: readonly Segment[],
+  x: number,
+  z: number,
+  path: WorldPath,
+  best: number,
+  bestS: number,
+): { target: number; blend: number } {
   let weightSum = 0;
   let heightSum = 0;
   let blendSum = 0;
   for (const seg of segments) {
-    if (seg.path !== bestPath) continue;
+    if (seg.path !== path) continue;
     const t = clamp(((x - seg.ax) * seg.dx + (z - seg.az) * seg.dz) * seg.invLenSq, 0, 1);
     const d = Math.hypot(x - (seg.ax + seg.dx * t), z - (seg.az + seg.dz * t));
-    // 1 at the winner's own distance, easing to 0 at `CORNER_TIE` beyond it. Continuous in
-    // position because `d` and `best` both are, which is the whole point.
+    // 1 at the nearest foot's own distance, easing to 0 at `CORNER_TIE` beyond it. Continuous
+    // in position because `d` and `best` both are, which is the whole point.
     const w = 1 - smoothstep(0, CORNER_TIE, d - best);
     if (w <= 0) continue;
     const segS = seg.s0 + seg.length * t;
     weightSum += w;
-    heightSum += profileHeight(bestPath, segS) * w;
-    blendSum += blendWidth(bestPath, segS) * w;
+    heightSum += profileHeight(path, segS) * w;
+    blendSum += blendWidth(path, segS) * w;
+  }
+  if (weightSum <= 0) return { target: profileHeight(path, bestS), blend: blendWidth(path, bestS) };
+  return { target: heightSum / weightSum, blend: blendSum / weightSum };
+}
+
+/**
+ * Every path whose influence reaches a point, each with the height it wants the ground to be.
+ *
+ * ### Why this is a list and not "the nearest one"
+ *
+ * Because carving toward a single winner makes the ground discontinuous wherever the winner
+ * changes, and the winner changes along a line — the locus of points equidistant from two
+ * roads. Two ways that showed up:
+ *
+ * - At the ring road / summit road junction, the two roads' designed heights have diverged
+ *   0.58 m only seven metres out from where they meet, so switching between them put an 0.37 m
+ *   wall eight metres long across flat, walkable ground.
+ * - Where the nearer road's own influence had already ended but a farther road's had not,
+ *   `nearestPath` reported "no path" and switched off a carve that should still have applied,
+ *   leaving an 8 cm cliff.
+ *
+ * Both vanish if nothing switches. Each path's weight falls smoothly to zero at its own
+ * influence edge, so a path leaving the set contributes nothing by the time it goes — the
+ * same structure {@link paddedHeight} already uses for the terraces, and for the same reason.
+ */
+function pathInfluences(x: number, z: number): Array<{ path: WorldPath; dist: number; target: number; blend: number }> {
+  const segments = segmentsNear(x, z);
+  if (!segments) return [];
+
+  // Nearest foot per path. Paths near any one point are few, so a linear scan of a small
+  // array beats a Map allocated on every height query.
+  const nearest: Array<{ path: WorldPath; dist: number; s: number }> = [];
+  for (const seg of segments) {
+    const t = clamp(((x - seg.ax) * seg.dx + (z - seg.az) * seg.dz) * seg.invLenSq, 0, 1);
+    const d = Math.hypot(x - (seg.ax + seg.dx * t), z - (seg.az + seg.dz * t));
+    const existing = nearest.find((n) => n.path === seg.path);
+    if (!existing) nearest.push({ path: seg.path, dist: d, s: seg.s0 + seg.length * t });
+    else if (d < existing.dist) {
+      existing.dist = d;
+      existing.s = seg.s0 + seg.length * t;
+    }
   }
 
-  const blend = weightSum > 0 ? blendSum / weightSum : blendWidth(bestPath, bestS);
-  if (best > bestPath.halfWidth + blend) return NO_PATH;
-  return {
-    path: bestPath,
-    dist: best,
-    s: bestS,
-    blend,
-    height: weightSum > 0 ? heightSum / weightSum : profileHeight(bestPath, bestS),
-  };
+  const out: Array<{ path: WorldPath; dist: number; target: number; blend: number }> = [];
+  for (const n of nearest) {
+    const { target, blend } = tieBlend(segments, x, z, n.path, n.dist, n.s);
+    if (n.dist > n.path.halfWidth + blend) continue;
+    out.push({ path: n.path, dist: n.dist, target, blend });
+  }
+  // Deterministic order, because the carves compose and composition is not commutative.
+  // `PATHS` order is shared by client and server, which is what makes the result identical
+  // on both — the same requirement `paddedHeight` has.
+  out.sort((a, b) => PATHS.indexOf(a.path) - PATHS.indexOf(b.path));
+  return out;
 }
 
 /** Total length of a path, metres. Computed once when the index is built. */
@@ -1264,18 +1318,22 @@ function paddedHeight(x: number, z: number): number {
  * what a real road cut does anyway.
  */
 export function heightAt(x: number, z: number): number {
-  const h = paddedHeight(x, z);
+  let h = paddedHeight(x, z);
 
   // Cut the paths in to their designed grade (see the profile section above). Between
-  // `halfWidth` and `halfWidth + shoulder` the cut blends back to the surrounding ground,
-  // which is what forms the embankment on the downhill side and the cutting on the uphill.
-  const hit = nearestPath(x, z);
-  if (!hit.path) return h;
-  // `hit.blend`, not `path.shoulder`: the width the drop here actually needs. See `blendWidth`.
-  const w = 1 - smoothstep(hit.path.halfWidth, hit.path.halfWidth + hit.blend, hit.dist);
-  // `hit.height`, not `profileHeight(path, hit.s)`: the arc length jumps around the inside of
-  // a bend and the height must not. See `CORNER_TIE`.
-  return lerp(h, hit.height, w * hit.path.carve);
+  // `halfWidth` and `halfWidth + blend` the cut eases back to the surrounding ground, which
+  // is what forms the embankment on the downhill side and the cutting on the uphill.
+  //
+  // Every path in range carves, not just the nearest — see `pathInfluences` for the two
+  // discontinuities that "nearest wins" produced along the lines where the nearest changes.
+  for (const inf of pathInfluences(x, z)) {
+    // `inf.blend`, not `path.shoulder`: the width the drop here actually needs. And
+    // `inf.target`, not `profileHeight(path, s)`: the arc length jumps around the inside of a
+    // bend and the height must not. See `blendWidth` and `CORNER_TIE`.
+    const w = 1 - smoothstep(inf.path.halfWidth, inf.path.halfWidth + inf.blend, inf.dist);
+    if (w > 0) h = lerp(h, inf.target, w * inf.path.carve);
+  }
+  return h;
 }
 
 /**
@@ -1402,17 +1460,77 @@ export function footingDownhill(x: number, z: number): [number, number] {
  * step over. Blocking those would replace "you can walk through a wall" with a dozen invisible
  * posts, which is a worse bug and a harder one to see.
  */
-const SOLID_FOOTPRINTS: Readonly<Record<string, readonly [number, number]>> = {
-  warehouse: [10, 8],
-  machiya: [8, 10],
-  minka: [10, 8],
-  bathhouse: [13, 10],
-  teahouse: [11, 8.5],
-  'keepers-house': [10, 7.5],
-  boathouse: [7, 10],
-  'shrine-hall': [10, 8],
+/**
+ * Wall footprint of each building kind that blocks, `[width, depth]` in its own frame.
+ *
+ * **This is also what the client's builders draw.** `props/buildings.ts` imports it for its
+ * default `w`/`d`, so the collider and the geometry cannot describe different buildings.
+ *
+ * They used to be two tables written independently, and they disagreed about every single
+ * kind — warehouse 10×8 here against 13×9 there, shrine hall 10×8 against 14×11. Nagisa
+ * Island hid it completely because every landmark on it passes explicit `w`/`d`; Lantern
+ * Atoll places three with none, and its warehouse's plaster wall stood 1.5 m outside its own
+ * collider, so you walked into the building and stopped inside the wall.
+ *
+ * Walls, not eaves: a roof does not stop you, and standing under the overhang of a warehouse
+ * out of the rain is a thing a person does. The builders add their eaves on top of these.
+ */
+export const BUILDING_FOOTPRINTS: Readonly<Record<string, readonly [number, number]>> = {
+  warehouse: [13, 9],
+  machiya: [9, 12],
+  minka: [12, 10],
+  bathhouse: [15, 12],
+  teahouse: [12, 9],
+  'keepers-house': [11, 8],
+  boathouse: [8, 12],
+  'shrine-hall': [14, 11],
   lighthouse: [9.3, 9.3],
 };
+
+/** One solid box of a building, in its local frame: centre offset and half-extents. */
+interface SolidBox {
+  cx: number;
+  cz: number;
+  hw: number;
+  hd: number;
+}
+
+/**
+ * Which parts of a building are actually solid, given its wall footprint.
+ *
+ * A single centred rectangle is the default and is right for most of them. Two are not:
+ *
+ * - A **funaya boathouse** is open to the water — that is the entire point of the building,
+ *   a boat is pulled straight in and a slipway runs out of it. `boathouse()` walls three
+ *   sides and leaves the fourth as two posts and a lintel, but the collider was the full
+ *   prism, so the whole 7 × 5 m bay mouth was an invisible wall five metres deep with
+ *   nothing drawn in front of you. It is now the three walls it actually has.
+ * - A **bathhouse** has an entrance porch: a solid 4.4 × 1.6 m plastered box with its own
+ *   roof, projecting 1.6 m past the wall line. The collider stopped at the wall, so you could
+ *   stand inside the porch with the plaster drawn through your chest.
+ */
+const SOLID_PARTS: Readonly<Record<string, (w: number, d: number) => SolidBox[]>> = {
+  boathouse: (w, d) => [
+    // Two side walls the full depth, and the back. The −z end is the open bay.
+    { cx: -(w / 2 - 0.4), cz: 0, hw: 0.4, hd: d / 2 },
+    { cx: w / 2 - 0.4, cz: 0, hw: 0.4, hd: d / 2 },
+    { cx: 0, cz: d / 2 - 0.4, hw: w / 2, hd: 0.4 },
+  ],
+  bathhouse: (w, d) => [
+    { cx: 0, cz: 0, hw: w / 2, hd: d / 2 },
+    // The porch, drawn at local z = −d/2 − 0.7 and 1.6 m deep.
+    { cx: 0, cz: -(d / 2 + 0.7), hw: 2.2, hd: 0.8 },
+  ],
+};
+
+/**
+ * Kinds whose plan is a circle, not a rectangle.
+ *
+ * A lighthouse is a round tower. An axis-aligned square that circumscribes it over-blocks by
+ * its corners: at the four diagonals you were stopped 6.58 m from the axis with the drawn
+ * plinth ending at 4.65 m — two metres of invisible wall in front of nothing.
+ */
+const ROUND_SOLIDS: ReadonlySet<string> = new Set(['lighthouse']);
 
 /**
  * Landmarks that block, with their footprints resolved and pre-rotated.
@@ -1423,25 +1541,32 @@ const SOLID_FOOTPRINTS: Readonly<Record<string, readonly [number, number]>> = {
  * `isWalkable` is what the server validates against, and a collider the contract could not
  * see would be a wall the client drew and the server let you walk through.
  */
-let SOLIDS: Array<{ x: number; z: number; hw: number; hd: number; cos: number; sin: number; radius: number }> = [];
+let SOLIDS: Array<{ x: number; z: number; hw: number; hd: number; cos: number; sin: number; radius: number; round: boolean }> = [];
 
 function rebuildSolids(landmarks: readonly Landmark[]): void {
   SOLIDS = [];
   for (const l of landmarks) {
-    const base = SOLID_FOOTPRINTS[l.kind];
+    const base = BUILDING_FOOTPRINTS[l.kind];
     if (!base) continue;
     const scale = l.scale ?? 1;
-    const w = ((typeof l.opts?.w === 'number' ? l.opts.w : base[0]) / 2) * scale;
-    const d = ((typeof l.opts?.d === 'number' ? l.opts.d : base[1]) / 2) * scale;
-    SOLIDS.push({
-      x: l.x,
-      z: l.z,
-      hw: w,
-      hd: d,
-      cos: Math.cos(l.rot),
-      sin: Math.sin(l.rot),
-      radius: Math.hypot(w, d),
-    });
+    const w = (typeof l.opts?.w === 'number' ? l.opts.w : base[0]) * scale;
+    const d = (typeof l.opts?.d === 'number' ? l.opts.d : base[1]) * scale;
+    const cos = Math.cos(l.rot);
+    const sin = Math.sin(l.rot);
+    const parts = SOLID_PARTS[l.kind]?.(w, d) ?? [{ cx: 0, cz: 0, hw: w / 2, hd: d / 2 }];
+    for (const part of parts) {
+      SOLIDS.push({
+        // The part's own centre, rotated out of the landmark's frame into the world.
+        x: l.x + (part.cx * scale * cos + part.cz * scale * sin),
+        z: l.z + (-part.cx * scale * sin + part.cz * scale * cos),
+        hw: part.hw * scale,
+        hd: part.hd * scale,
+        cos,
+        sin,
+        radius: Math.hypot(part.hw, part.hd) * scale,
+        round: ROUND_SOLIDS.has(l.kind),
+      });
+    }
   }
 }
 
@@ -1474,6 +1599,12 @@ export function structureDepth(x: number, z: number): number {
     const dz = z - s.z;
     // Circle first: two multiplies to reject nearly everything on the island.
     if (dx * dx + dz * dz > s.radius * s.radius) continue;
+    if (s.round) {
+      // A round tower: the circle its own half-width inscribes, not the square around it.
+      const depth = s.hw - Math.sqrt(dx * dx + dz * dz);
+      if (depth > worst) worst = depth;
+      continue;
+    }
     const lx = Math.abs(dx * s.cos - dz * s.sin) - s.hw;
     const lz = Math.abs(dx * s.sin + dz * s.cos) - s.hd;
     if (lx >= 0 || lz >= 0) continue;

@@ -170,6 +170,7 @@ const PADS: MapPack['terrain']['pads'] = [
   { id: 'north-harbor', x: 0, z: -74, height: 2.4, inner: 28, outer: 40 },
   /** Lighthouse cape: a flat clifftop, deliberately exposed and the higher of the two. */
   { id: 'lighthouse', x: -64, z: -37, height: 13.0, inner: 27, outer: 39 },
+  { id: 'lighthouse-head', x: -101, z: -62, height: 24.0, inner: 6, outer: 20 },
   /** The shrine, on its own headland. */
   { id: 'shrine', x: -64, z: 37, height: 11.0, inner: 26, outer: 38 },
 
@@ -496,16 +497,21 @@ const INTERACTABLES: MapPack['world']['interactables'] = [
   // Offsets are from the zone anchor, and they follow the thing they belong to: every one of
   // these stands in front of a specific bell, board or bench, so a building that moves takes
   // its prompt with it. A prompt left behind is a "Ring" that rings nothing.
-  { id: 'notice-board', zone: 'noticeboard', dx: -3.2, dz: 2.5, range: 4.5, kind: 'use', label: 'Read', effect: 'read_announcements' },
+  // Every offset below is from its zone's anchor, and every one of them has to land within
+  // `range` of the thing it names — a prompt that reaches nothing is a label the player can
+  // never trigger, and nothing in the build said so until `placement-audit` started asking.
+  // Six of these twelve were stranded when it first did.
+  { id: 'notice-board', zone: 'noticeboard', dx: -2.4, dz: -1.9, range: 4.5, kind: 'use', label: 'Read', effect: 'read_announcements' },
   { id: 'plaza-post', zone: 'plaza', dx: -13, dz: 7, range: 3.5, kind: 'use', label: 'Check in', effect: 'checkin_nearby' },
   { id: 'shrine-bell', zone: 'shrine', dx: -13.2, dz: -8.1, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
   { id: 'summit-bell', zone: 'summit', dx: 0, dz: 12.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
-  { id: 'south-harbor-bell', zone: 'south-harbor', dx: 10.5, dz: 3.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
+  // Follows `sh-bell`, which moved out onto the quay. Left where it was, this rang a banner.
+  { id: 'south-harbor-bell', zone: 'south-harbor', dx: 12.4, dz: 23.2, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
   { id: 'north-harbor-bell', zone: 'north-harbor', dx: 13.1, dz: -3.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
   { id: 'lighthouse-door', zone: 'lighthouse', dx: 0, dz: 3, range: 4, kind: 'use', label: 'Look', effect: 'none' },
   { id: 'summit-rail', zone: 'summit', dx: -21.5, dz: -7, range: 6, kind: 'use', label: 'Look', effect: 'none' },
-  { id: 'teahouse-mat-a', zone: 'plaza', dx: 15.7, dz: -21.1, range: 2.5, kind: 'sit', label: 'Sit', effect: 'none' },
-  { id: 'teahouse-mat-b', zone: 'plaza', dx: 17.5, dz: -19.5, range: 2.5, kind: 'sit', label: 'Sit', effect: 'none' },
+  { id: 'teahouse-mat-a', zone: 'plaza', dx: 17.5, dz: -14.7, range: 2.5, kind: 'sit', label: 'Sit', effect: 'none' },
+  { id: 'teahouse-mat-b', zone: 'plaza', dx: 19.4, dz: -18.7, range: 2.5, kind: 'sit', label: 'Sit', effect: 'none' },
   { id: 'beach-log', zone: 'beach', dx: 5, dz: 7, range: 3, kind: 'sit', label: 'Sit', effect: 'none' },
   { id: 'plaza-bench', zone: 'plaza', dx: 3.6, dz: 9.9, range: 3, kind: 'sit', label: 'Sit', effect: 'none' },
 ] as const;
@@ -633,6 +639,18 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   // fine: the two stand 18 m apart across the plaza and were never a pair you read as one.
   { id: 'pl-bench-1', kind: 'bench', x: 68.0, z: 47.1, rot: -2.628 },
   { id: 'pl-bench-2', kind: 'bench', x: 53.1, z: 37.1, rot: -2.166 },
+  // The plaza's check-in post. The `plaza-post` interactable has offered "Check in" from this
+  // spot since the plaza was built with nothing standing there to check in *at* — a label
+  // hanging in the open air, 5.9 m from the nearest object of any kind.
+  //
+  // (49.6, 44) and not the obvious (51, 45.5), for a reason worth writing down: `roadsideLanterns`
+  // rejects a station via `clearOfLandmarks(LANDMARKS)`, so **any** new landmark near a lane
+  // changes the lamp layout. At (51, 45.5) this post displaces a station, the placement ladder
+  // finds it a new home, and the island grows a seventeenth lantern at (59.4, 52.2) that
+  // nobody asked for — 1.5 m from one of the fifteen vetoes a player set by hand. Here the set
+  // comes back byte-identical at both spacings. Derived props are worth their weight for
+  // exactly this reason; a hand-placed one has to be checked.
+  { id: 'pl-post', kind: 'notice-board', x: 49.6, z: 44.0, rot: -1.120 },
   { id: 'pl-banner-1', kind: 'banner', x: 77.3, z: 30.3, rot: 1.118 },
   { id: 'pl-banner-2', kind: 'banner', x: 61.1, z: 22.4, rot: -2.024 },
   // The teahouse: a v2 zone kept as a building, on the quiet side of the plaza.

@@ -61,8 +61,10 @@ import {
   heightAt,
   pathAt,
   pathLength,
+  INTERACTABLES,
   LANTERN_VETOES,
   LAMP_RADIUS,
+  getZone,
   insideStructure,
   landmarkExtent,
   isWalkable,
@@ -747,6 +749,9 @@ const lampInBuilding = lamps.filter((l) => !clearOfLandmarks(l.x, l.z, LAMP_RADI
 const HAND_LAMP_KINDS = new Set(['stone-lantern', 'post-lantern']);
 
 /** Distance from a point to a landmark's footprint rectangle; negative when inside it. */
+const footprintDistance = (l: Landmark, x: number, z: number): number => distanceToFootprint(l, x, z);
+
+/** Distance from a point to a landmark's footprint rectangle; negative when inside it. */
 function distanceToFootprint(l: Landmark, x: number, z: number): number {
   const { hw, hd, rot } = landmarkExtent(l);
   const dx = x - l.x;
@@ -837,6 +842,47 @@ if (handLampLeaning.length) {
     );
   }
 }
+
+// --- Interactables ------------------------------------------------------------------------
+//
+// A prompt has to reach the thing it names. `INTERACTABLES` are stored as offsets from a
+// zone's anchor, so a landmark that moves leaves its prompt behind — silently, because
+// nothing in the build ever compared the two. Six of the island's twelve were stranded when
+// this check was first written: a "Ring" that rang a banner, a "Read" 4.56 m from a notice
+// board with 4.5 m of range, two "Sit"s outside the teahouse they belong to, a "Look" that
+// named a keeper's house instead of the lighthouse, and a "Check in" with nothing to check in
+// at. One of them had been broken by moving a bell three commits earlier.
+//
+// The bar is the interactable's own `range` against the landmark's *footprint*, not its
+// centre: you interact with the near face of a thing, and a bell tower's centre is a metre
+// and a half inside it.
+const orphaned: Array<[string, string]> = [];
+for (const it of INTERACTABLES) {
+  const zone = getZone(it.zone);
+  if (!zone) {
+    orphaned.push([it.id, `names zone "${it.zone}", which does not exist`]);
+    continue;
+  }
+  const x = zone.x + it.dx;
+  const z = zone.z + it.dz;
+  let nearest: { id: string; kind: string; d: number } | null = null;
+  for (const l of LANDMARKS) {
+    const d = footprintDistance(l, x, z);
+    if (!nearest || d < nearest.d) nearest = { id: l.id, kind: l.kind, d };
+  }
+  if (!nearest || nearest.d > it.range) {
+    orphaned.push([
+      it.id,
+      `"${it.label}" at (${x.toFixed(1)}, ${z.toFixed(1)}) reaches nothing — nearest is ` +
+        `${nearest?.id ?? 'nothing'} at ${nearest?.d.toFixed(2) ?? '∞'} m against ${it.range} m of range`,
+    ]);
+  } else if (!isWalkable(x, z)) {
+    orphaned.push([it.id, `"${it.label}" stands on ground you cannot walk to`]);
+  }
+}
+
+process.stdout.write(`\ninteractables that reach nothing: ${orphaned.length}\n`);
+for (const [id, why] of orphaned) process.stdout.write(`    ${id.padEnd(20)} ${why}\n`);
 
 // --- Seats ------------------------------------------------------------------------------
 //
@@ -999,6 +1045,7 @@ const verdicts: Array<[string, boolean, string]> = [
     lamps.length + LANTERN_VETOES.length >= lampStations * 0.7,
     `${lamps.length} placed + ${LANTERN_VETOES.length} vetoed of ${lampStations}`,
   ],
+  ['every prompt reaches what it names', orphaned.length === 0, `${orphaned.length} of ${INTERACTABLES.length} stranded`],
   ['every seat can be sat on', seatFaults.length === 0, `${seatFaults.length} unusable`],
   // Every stage, or none. A stage carrying two of its three seats is a forecourt the rule gave
   // up on half way through, which reads worse than one with no seating at all — and without

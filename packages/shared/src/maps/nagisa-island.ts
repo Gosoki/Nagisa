@@ -608,7 +608,10 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'bh-hut-1', kind: 'beach-hut', x: 37.3, z: 88.1, rot: 2.712, opts: { w: 6, d: 5 } },
   { id: 'bh-hut-2', kind: 'beach-hut', x: 60.1, z: 98.5, rot: 2.712, opts: { w: 6, d: 5 } },
   { id: 'bh-stage', kind: 'stage', x: 52.2, z: 85.8, rot: 2.712, opts: { w: 11, d: 8 } },
-  { id: 'bh-bench-1', kind: 'bench', x: 51, z: 99, rot: 0.62 },
+  // Turned to face bh-stage, 13.3 m in front of it — it was 40.7° off. Now that a squared arc
+  // of three stands 3.5 m nearer the stage, a bench behind them pointing somewhere else is the
+  // one thing in the forecourt that is not looking at the same place.
+  { id: 'bh-bench-1', kind: 'bench', x: 51, z: 99, rot: -0.091 },
   { id: 'bh-boat-1', kind: 'boat', x: 70.5, z: 123.5, rot: 1.8, scale: 0.75 },
   { id: 'bh-rock-1', kind: 'rock', x: 66, z: 90, rot: 0.7, scale: 1.5 },
 
@@ -621,7 +624,14 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'pl-gate-w', kind: 'gate', x: 58.6, z: 32.0, rot: 0.818 },
   { id: 'pl-minka', kind: 'minka', x: 85.4, z: 38.7, rot: 1.118, opts: { w: 11, d: 9 } },
   { id: 'pl-well', kind: 'well', x: 64.8, z: 64.3, rot: 0.976 },
-  { id: 'pl-bench-1', kind: 'bench', x: 68.0, z: 47.1, rot: 0.976 },
+  // Turned round. It stands 13.4 m in front of pl-stage, in the middle of its forecourt, and
+  // carried the stage's *own* yaw — so it faced exactly the way the stage faces, which is
+  // 153.5° away from it: a bench with its back to the performance. Nothing in the repo could
+  // say so until the seating became a rule and something started asking the question.
+  //
+  // −2.628 points it at the stage dead-on. Its yaw no longer matches `pl-bench-2`'s, which is
+  // fine: the two stand 18 m apart across the plaza and were never a pair you read as one.
+  { id: 'pl-bench-1', kind: 'bench', x: 68.0, z: 47.1, rot: -2.628 },
   { id: 'pl-bench-2', kind: 'bench', x: 53.1, z: 37.1, rot: -2.166 },
   { id: 'pl-banner-1', kind: 'banner', x: 77.3, z: 30.3, rot: 1.118 },
   { id: 'pl-banner-2', kind: 'banner', x: 61.1, z: 22.4, rot: -2.024 },

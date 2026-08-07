@@ -69,6 +69,8 @@ import {
   resolveMapId,
   roadsideLanternStations,
   roadsideLanterns,
+  stageSeating,
+  stageSeatingStations,
   type Landmark,
 } from '../packages/shared/src/index.js';
 
@@ -846,7 +848,23 @@ if (handLampLeaning.length) {
 const SEAT_KINDS = new Set(['bench']);
 const SEAT_TILT = 0.25;
 const seatFaults: Array<[Landmark, string]> = [];
-for (const l of LANDMARKS) {
+
+// The stage seating is *derived* — `stageSeating()` computes it from each stage's own
+// position, rotation and size, the way `roadsideLanterns` computes lamps from the roads. So
+// it is audited the same way: fed through the questions below as if it were in the map, so
+// this file tests the function the client actually renders from rather than a copy of its
+// output. See `stageSeating` in world.ts for why it is a rule at all — the short version is
+// standing in the plaza, where a hand-placed bench faces 153° away from the stage in front of
+// it and nothing in the repo could say so.
+const derivedSeats: Landmark[] = stageSeating().map((s) => ({
+  id: `${s.stage}-seat-${s.place < 0 ? 'l' : s.place === 0 ? 'c' : 'r'}`,
+  kind: 'bench',
+  x: s.x,
+  z: s.z,
+  rot: s.yaw,
+}));
+
+for (const l of [...LANDMARKS, ...derivedSeats]) {
   if (!SEAT_KINDS.has(l.kind)) continue;
   const cos = Math.cos(l.rot);
   const sin = Math.sin(l.rot);
@@ -982,6 +1000,14 @@ const verdicts: Array<[string, boolean, string]> = [
     `${lamps.length} placed + ${LANTERN_VETOES.length} vetoed of ${lampStations}`,
   ],
   ['every seat can be sat on', seatFaults.length === 0, `${seatFaults.length} unusable`],
+  // Every stage, or none. A stage carrying two of its three seats is a forecourt the rule gave
+  // up on half way through, which reads worse than one with no seating at all — and without
+  // this line it is invisible, because two perfectly good benches fail no other check here.
+  [
+    'every stage has its three seats',
+    derivedSeats.length === stageSeatingStations(),
+    `${derivedSeats.length} of ${stageSeatingStations()}`,
+  ],
   ['the waterfront meets the water', beached.length === 0, `${beached.length} beached`],
 ];
 

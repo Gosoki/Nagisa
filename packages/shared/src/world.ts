@@ -44,7 +44,18 @@ import type {
   ZoneId,
   ZoneKind,
 } from './map/types.js';
-import { COAST_PATH, PADS, PATHS, heightAt, nearestWalkable, padById, pathAt, pathLength } from './terrain.js';
+import {
+  COAST_PATH,
+  PADS,
+  PATHS,
+  heightAt,
+  insideStructure,
+  isWalkable,
+  nearestWalkable,
+  padById,
+  pathAt,
+  pathLength,
+} from './terrain.js';
 
 export type { ActivityTemplate, Interactable, Landmark, LandmarkKind, Zone, ZoneId, ZoneKind };
 
@@ -424,6 +435,189 @@ export function roadsideLanternStations(spacing: number): number {
   let n = 0;
   for (const path of PATHS) n += Math.floor(pathLength(path.id) / spacing);
   return n;
+}
+
+// ---------------------------------------------------------------------------
+// Stage seating
+// ---------------------------------------------------------------------------
+
+/** One seat in a stage's front row: where it goes and which way it faces. */
+export interface StageSeat {
+  /** The stage it belongs to. A seat is not a thing in its own right. */
+  readonly stage: string;
+  readonly x: number;
+  readonly z: number;
+  readonly yaw: number;
+  /** −1 left flank, 0 centre, +1 right flank. */
+  readonly place: -1 | 0 | 1;
+}
+
+/** Half a bench: 2.4 × 0.8 m, the same footprint `LANDMARK_FOOTPRINTS` gives one. */
+const SEAT_HALF = [1.2, 0.4] as const;
+/** Eave plus apron in front of a stage's `d`, the same numbers `scripts/placement-audit.ts` uses. */
+const STAGE_APRON = 2.4;
+/** Clear ground the front row wants between its backs and that apron. */
+const SEAT_SETBACK = 3.4;
+/** How close the arc may be pulled when a site refuses the nominal one. */
+const SEAT_MIN_SETBACK = 1.2;
+const SEAT_SPLAY_MIN = (26 * Math.PI) / 180;
+const SEAT_SPLAY_MAX = (42 * Math.PI) / 180;
+/** Room a seat wants beyond another landmark's extent — including its own stage's. */
+const SEAT_CLEARANCE = 0.5;
+/** Room beyond a lane's carriageway. Above placement-audit's own halfWidth + 1 m seat bar. */
+const SEAT_LANE_MARGIN = 1.6;
+/** Ground across the seat. The audit's bar, not world-smoke's looser 0.45. */
+const SEAT_TILT = 0.25;
+/** Two benches closer than this read as one long bench with a kink in it. */
+const SEAT_ELBOW = 3.4;
+
+function seatTilt(x: number, z: number, yaw: number): number {
+  const cos = Math.cos(yaw);
+  const sin = Math.sin(yaw);
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const [ox, oz] of [[-1.2, -0.4], [1.2, -0.4], [-1.2, 0.4], [1.2, 0.4]] as const) {
+    const h = heightAt(x + ox * cos - oz * sin, z + ox * sin + oz * cos);
+    if (h < lo) lo = h;
+    if (h > hi) hi = h;
+  }
+  return hi - lo;
+}
+
+/** How far a point is outside the nearest lane's carriageway. Negative means on it. */
+function laneClearance(x: number, z: number): number {
+  let worst = Infinity;
+  for (const path of PATHS) {
+    const pts = path.points;
+    for (let k = 1; k < pts.length; k++) {
+      const [ax, az] = pts[k - 1]!;
+      const [bx, bz] = pts[k]!;
+      const vx = bx - ax;
+      const vz = bz - az;
+      const t = Math.max(0, Math.min(1, ((x - ax) * vx + (z - az) * vz) / (vx * vx + vz * vz || 1)));
+      const d = Math.hypot(x - (ax + vx * t), z - (az + vz * t)) - path.halfWidth;
+      if (d < worst) worst = d;
+    }
+  }
+  return worst;
+}
+
+/** Separating-axis test of a seat's footprint, grown by {@link SEAT_CLEARANCE}, against a landmark's extent. */
+function seatFouls(x: number, z: number, yaw: number, l: Landmark): boolean {
+  const e = landmarkExtent(l);
+  const boxes = [
+    { x, z, hw: SEAT_HALF[0] + SEAT_CLEARANCE, hd: SEAT_HALF[1] + SEAT_CLEARANCE, rot: yaw },
+    { x: l.x, z: l.z, hw: e.hw, hd: e.hd, rot: e.rot },
+  ];
+  for (const box of boxes) {
+    const s = Math.sin(box.rot);
+    const c = Math.cos(box.rot);
+    for (const [nx, nz] of [[s, c], [c, -s]] as const) {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (const o of boxes) {
+        const centre = o.x * nx + o.z * nz;
+        const os = Math.sin(o.rot);
+        const oc = Math.cos(o.rot);
+        const radius = Math.abs(o.hd * (os * nx + oc * nz)) + Math.abs(o.hw * (oc * nx - os * nz));
+        lo = Math.min(lo, centre + radius);
+        hi = Math.max(hi, centre - radius);
+      }
+      if (lo <= hi) return false; // a separating axis exists
+    }
+  }
+  return true;
+}
+
+/** Every bar a seat has to clear. The same questions `placement-audit` asks a hand-placed bench. */
+function seatFits(x: number, z: number, yaw: number): boolean {
+  const cos = Math.cos(yaw);
+  const sin = Math.sin(yaw);
+  if (!isWalkable(x, z) || insideStructure(x, z)) return false;
+  for (const [ox, oz] of [[-1.2, -0.4], [1.2, -0.4], [-1.2, 0.4], [1.2, 0.4]] as const) {
+    if (!isWalkable(x + ox * cos - oz * sin, z + ox * sin + oz * cos)) return false;
+  }
+  if (seatTilt(x, z, yaw) > SEAT_TILT) return false;
+  if (laneClearance(x, z) < SEAT_LANE_MARGIN) return false;
+  // You have to be able to stand in front of a bench to sit on it. Its front is local −z.
+  for (const r of [1.0, 1.6]) if (!isWalkable(x - sin * r, z - cos * r)) return false;
+  for (const l of LANDMARKS) if (seatFouls(x, z, yaw, l)) return false;
+  return true;
+}
+
+/**
+ * Three seats in front of every stage, in a shallow arc turned in toward it.
+ *
+ * ### Why this is a rule and not thirty-six numbers in the map file
+ *
+ * A stage's seating is a *function* of the stage: the arc's radius comes from its depth, its
+ * splay from its width, and every yaw from its own. Written by hand it is that function
+ * evaluated once and then left to go stale — which is what the plaza already shows.
+ * `pl-bench-1` stands 13.4 m in front of `pl-stage` in the middle of its forecourt with its
+ * back turned, 153.5° away from the thing it is pointed at, and nothing in the repo could say
+ * so. Derived, the seats follow the stage when it moves and the next stage anyone adds
+ * arrives with its own.
+ *
+ * ### The shape
+ *
+ * A stage's front is its local −z, like every other building's. The centre seat sits square on
+ * that axis; the flanks sit on the same circle, turned out by `splay` and yawed to look back
+ * at the stage — the `\ _ /` the note draws. `splay` is derived so the flanks stand off the
+ * stage's front corners: a wider stage gets a wider arc without anyone choosing a number.
+ *
+ * ### When a site refuses
+ *
+ * The same ladder `roadsideLanterns` uses, for the same reason: pull the arc in 0.1 m at a
+ * time, and at each radius narrow the splay, until every seat clears. Three of the island's
+ * four stages take the nominal arc untouched. `nh-stage` does not — the coast road crosses its
+ * forecourt 12.73 m out, so there are only six metres of usable ground between the stage's
+ * apron and the carriageway, and its arc comes in to 7.8 m at 28°. A stage with a road across
+ * its front and a tight row of seats still reads as a stage with seats; three benches in the
+ * road do not.
+ */
+export function stageSeating(): StageSeat[] {
+  const out: StageSeat[] = [];
+  for (const stage of LANDMARKS) {
+    if (stage.kind !== 'stage') continue;
+    const scale = stage.scale ?? 1;
+    const w = (typeof stage.opts?.w === 'number' ? stage.opts.w : 16) * scale;
+    const d = (typeof stage.opts?.d === 'number' ? stage.opts.d : 11) * scale;
+    const nominal = d / 2 + STAGE_APRON * scale + SEAT_SETBACK;
+    const floor = d / 2 + STAGE_APRON * scale + SEAT_MIN_SETBACK;
+    const splay = Math.min(SEAT_SPLAY_MAX, Math.max(SEAT_SPLAY_MIN, Math.asin(Math.min(1, w / 2 / nominal))));
+
+    let row: StageSeat[] | null = null;
+    // Integer-stepped so the floor is reached exactly rather than one accumulated epsilon short.
+    search: for (let i = 0; nominal - i * 0.1 >= floor - 1e-9; i++) {
+      const r = nominal - i * 0.1;
+      for (let a = splay; a >= SEAT_SPLAY_MIN - 1e-9; a -= (2 * Math.PI) / 180) {
+        if (2 * r * Math.sin(a / 2) < SEAT_ELBOW) continue;
+        const seats: StageSeat[] = [];
+        for (const [place, off] of [[-1, -a], [0, 0], [1, a]] as const) {
+          const u = stage.rot + off;
+          seats.push({
+            stage: stage.id,
+            x: stage.x - Math.sin(u) * r,
+            z: stage.z - Math.cos(u) * r,
+            // Turned to look back down the radius it stands on.
+            yaw: u + Math.PI,
+            place,
+          });
+        }
+        if (seats.every((s) => seatFits(s.x, s.z, s.yaw))) {
+          row = seats;
+          break search;
+        }
+      }
+    }
+    if (row) out.push(...row);
+  }
+  return out;
+}
+
+/** How many seats there would be if every stage's forecourt accepted an arc. The denominator. */
+export function stageSeatingStations(): number {
+  return LANDMARKS.filter((l) => l.kind === 'stage').length * 3;
 }
 
 // ---------------------------------------------------------------------------

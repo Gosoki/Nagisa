@@ -37,6 +37,7 @@ import {
   activeMapId,
   heightAt,
   roadsideLanterns,
+  stageSeating,
   type Landmark,
   type LandmarkKind,
   type ZoneId,
@@ -49,7 +50,7 @@ import { BREAKWATER_BED_SAMPLES, PIER_DECK_HEIGHT, PIER_PILE_DEPTH, TORII_SUBMER
 import { WAVE_AMPLITUDE, seaSurfaceAt } from './waves.js';
 import { Sky } from './sky.js';
 import { Scatter, disposeGroup } from './scatter.js';
-import { createLandmark, postLantern, stoneLantern } from './props/index.js';
+import { bench, createLandmark, postLantern, stoneLantern } from './props/index.js';
 import { buildTerrain, type TerrainBuildResult } from './terrain.worker.js';
 
 /** Progress callback used to drive the loading screen. */
@@ -199,7 +200,7 @@ export class Island {
   private readonly buckets: Bucket[] = [];
 
   /** Statistics reported to the debug readout after the build. */
-  buildStats = { terrainMs: 0, landmarks: 0, scatterInstances: 0, roadsideProps: 0 };
+  buildStats = { terrainMs: 0, landmarks: 0, scatterInstances: 0, roadsideProps: 0, stageSeats: 0 };
 
   constructor(private readonly quality: QualitySettings) {
     this.group.name = 'island';
@@ -228,6 +229,9 @@ export class Island {
     this.boats = null;
     this.lampCache = undefined;
     await this.buildLandmarks();
+
+    onProgress(0.78, 'Setting out the seats');
+    await this.buildStageSeating();
 
     onProgress(0.8, 'Hanging the lanterns');
     await this.buildRoadside();
@@ -612,6 +616,48 @@ export class Island {
     this.buildStats.roadsideProps = lanterns.length;
     this.group.add(group);
     this.registerBucket('roadside', group);
+  }
+
+  /**
+   * Set three benches in front of every stage.
+   *
+   * ### Where the positions come from
+   *
+   * `stageSeating` in `@nagisa/shared`, for the same reason `roadsideLanterns` is there:
+   * choosing where a bench goes means asking what else is on the ground, whether you can
+   * stand in front of it, and whether the lane is behind it — and once it has to consult
+   * the world it belongs beside the world, where `npm run audit:placement` tests the
+   * function itself instead of a copy of it.
+   *
+   * Bucketed by zone rather than dropped in one group like the roadside: seats belong to a
+   * place, so they should disappear with it when you walk away.
+   */
+  private async buildStageSeating(): Promise<void> {
+    const byZone = new Map<string, THREE.Group>();
+    const seats = stageSeating();
+
+    for (let i = 0; i < seats.length; i++) {
+      const seat = seats[i]!;
+      const prop = bench();
+      prop.position.set(seat.x, heightAt(seat.x, seat.z), seat.z);
+      prop.rotation.y = seat.yaw;
+      this.prepareForRendering(prop);
+
+      const zone = nearestZone(seat.x, seat.z);
+      let bucket = byZone.get(zone);
+      if (!bucket) {
+        bucket = new THREE.Group();
+        bucket.name = `seating:${zone}`;
+        byZone.set(zone, bucket);
+        this.group.add(bucket);
+      }
+      bucket.add(prop);
+
+      if ((i + 1) % 8 === 0) await nextFrame();
+    }
+
+    this.buildStats.stageSeats = seats.length;
+    for (const [zone, group] of byZone) this.registerBucket(zone as ZoneId, group);
   }
 
   // -------------------------------------------------------------------------

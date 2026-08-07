@@ -63,6 +63,7 @@ import {
   pathLength,
   INTERACTABLES,
   LANTERN_VETOES,
+  activeMapId,
   LAMP_RADIUS,
   getZone,
   insideStructure,
@@ -725,6 +726,45 @@ const lampStations = roadsideLanternStations(LAMP_SPACING);
 
 const lampInBuilding = lamps.filter((l) => !clearOfLandmarks(l.x, l.z, LAMP_RADIUS));
 
+// --- Are the vetoes actually honoured? ----------------------------------------------------
+//
+// This file used to answer that by printing `LANTERN_VETOES.length` — the length of the list,
+// which counts what was *asked for* and says nothing about what happened. It reported fifteen
+// vetoes honoured while one of the fifteen lamps stood 3.9 m from where a player had deleted
+// it, put back by the placement ladder after an unrelated landmark moved three metres.
+//
+// So: measure. Each note recorded where its author was standing; a lamp still within reach of
+// that spot is a note that was not carried out, whatever the list says. Both quality tiers,
+// because they station lamps at different arc lengths and a radius that works at one can miss
+// at the other — which is how the low tier kept a lamp 1.52 m from its note while the default
+// tier looked clean.
+const DELETE_NOTES: Array<[number, number, number]> = [
+  [23, -18.1, -68.1], [24, -4.9, -68.9], [25, 15.7, -77.0], [26, 28.1, -67.8], [27, 48.7, -51.0],
+  [28, 71.0, -12.2], [29, 84.6, -4.4], [30, 69.6, 16.1], [31, 68.9, 37.6], [32, 51.9, 46.6],
+  [34, -1.1, 69.9], [36, -65.1, 24.0], [37, -77.7, -1.7], [38, -80.8, -13.3], [39, -52.1, -45.7],
+];
+/** How near a lamp may stand to a delete-note's author before it is the lamp they meant. */
+const NOTE_REACH = 6;
+/**
+ * The pack these notes were written on. Coordinates do not travel between maps — (−1.1, 69.9)
+ * is a quay on one island and open ground on another — so running this list against a
+ * different pack tests nothing and fails for a reason that has nothing to do with the pack.
+ */
+const NOTES_MAP = 'nagisa-island';
+const unhonoured: string[] = [];
+for (const tier of activeMapId() === NOTES_MAP ? [LAMP_SPACING, 34] : []) {
+  const set = roadsideLanterns(tier);
+  for (const [note, nx, nz] of DELETE_NOTES) {
+    let nearest = Infinity;
+    for (const l of set) nearest = Math.min(nearest, Math.hypot(l.x - nx, l.z - nz));
+    if (nearest <= NOTE_REACH) {
+      unhonoured.push(
+        `note ${note} at (${nx}, ${nz}): a lamp still stands ${nearest.toFixed(2)} m away at spacing ${tier}`,
+      );
+    }
+  }
+}
+
 // --- The same question, asked of the *hand-placed* lamps ---------------------------------
 //
 // Everything above is about `roadsideLanterns`, which is a rule: it picks its own positions
@@ -813,7 +853,7 @@ for (const path of PATHS) {
 
 process.stdout.write(
   `\nroadside lanterns: ${lamps.length} placed of ${lampStations} stations` +
-    ` (${LANTERN_VETOES.length} vetoed by the map, ${lampStations - lamps.length - LANTERN_VETOES.length} skipped for want of room)\n` +
+    ` (${LANTERN_VETOES.length} vetoes asked for, ${unhonoured.length} not carried out)\n` +
     `    standing in a structure: ${lampInBuilding.length}\n` +
     `    leaning on a bank:       ${lampLeaning.length}\n` +
     `    crowding another:        ${lampCrowded.length}\n` +
@@ -1040,6 +1080,15 @@ const verdicts: Array<[string, boolean, string]> = [
   // roads; whether the map's author wants a given lamp is not the rule's business, and a
   // check that conflated the two would go red the moment somebody exercised the veto the
   // map file exists to give them.
+  [
+    'every deleted lamp stays deleted',
+    unhonoured.length === 0,
+    unhonoured.length === 0
+      ? activeMapId() === NOTES_MAP
+        ? `all ${DELETE_NOTES.length} notes honoured at both tiers`
+        : `no notes recorded for "${activeMapId()}"`
+      : unhonoured[0]!,
+  ],
   [
     'the placement rule still lights the roads',
     lamps.length + LANTERN_VETOES.length >= lampStations * 0.7,

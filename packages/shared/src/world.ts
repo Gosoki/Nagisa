@@ -326,14 +326,24 @@ export const LAMP_RADIUS = 1.2;
 const LAMP_SEPARATION = 9;
 
 /**
- * How close a lantern must land to a veto for the veto to apply, metres.
+ * How close a lantern may land to a veto before the veto applies, metres.
  *
- * Generous enough for a note written by somebody standing beside the lamp rather than on top
- * of it — the fifteen in `dev-notes.jsonl` were written from 0.11 m to 1.70 m away — and
- * tight enough that a veto cannot silently take out its neighbour, since the lanterns are at
- * least {@link LAMP_SEPARATION} apart, more than three times this.
+ * A veto is not a point, it is a **closed patch of verge**. It was 2.5 m — generous for a note
+ * written by somebody standing beside a lamp rather than on top of it — and that was too tight
+ * by exactly the width of the placement ladder below, which shuffles a lamp up to eight metres
+ * along the road to get it out of a building. A station nudged four metres lands outside a
+ * 2.5 m veto, and the lamp a player deleted is back.
+ *
+ * 4.5 m is where every one of the fifteen notes in `dev-notes.jsonl` is honoured at **both**
+ * quality tiers — the tiers place stations at different arc lengths, so a radius that works at
+ * 21 m spacing can miss at 34. It was measured, not chosen: at 2.5 m one note's lamp survives
+ * at each tier, at 3.5 m one survives at 21 m spacing, at 4.5 m none does.
+ *
+ * It costs two lamps on the default tier, 16 to 14. That is the price of the notes being right
+ * rather than nearly right, and a player who asked for a lamp to be gone is owed the lamp being
+ * gone. Still comfortably under {@link LAMP_SEPARATION}, so a veto cannot reach its neighbour.
  */
-const LANTERN_VETO_RADIUS = 2.5;
+const LANTERN_VETO_RADIUS = 4.5;
 /**
  * Ground across the base, by what stands on it.
  *
@@ -394,6 +404,8 @@ export interface RoadsideLantern {
  */
 export function roadsideLanterns(spacing: number): RoadsideLantern[] {
   const out: RoadsideLantern[] = [];
+  const vetoes = (x: number, z: number): boolean =>
+    LANTERN_VETOES.some(([vx, vz]) => Math.hypot(x - vx, z - vz) <= LANTERN_VETO_RADIUS);
   for (const path of PATHS) {
     const steps = Math.floor(pathLength(path.id) / spacing);
     const offset = path.halfWidth + 1.3;
@@ -405,6 +417,7 @@ export function roadsideLanterns(spacing: number): RoadsideLantern[] {
       // then either verge a few metres along. Ordered so an unobstructed road is lit exactly
       // as it was before any of this existed, and only an obstructed one moves.
       const preferred = i % 2 === 0 ? 1 : -1;
+
       let placed: RoadsideLantern | null = null;
       outer: for (const ds of [0, 4, -4, 8, -8]) {
         const { x, z, tx, tz } = pathAt(path.id, i * spacing + ds);
@@ -421,9 +434,20 @@ export function roadsideLanterns(spacing: number): RoadsideLantern[] {
       // A veto drops the station rather than relocating it: somebody stood in front of this
       // lamp and said it should not be here, and putting it four metres further along the
       // same verge answers a different complaint. See `MapWorld.lanternVetoes`.
+      //
+      // Measured against the station's **own** verges as well as against wherever the ladder
+      // finally put the lamp. Testing only the placed position asks the wrong question: the
+      // ladder exists to shuffle a lamp out of a building, so a station that has moved four
+      // metres is outside its own veto's radius — and the lamp a player deleted comes back the
+      // moment anything near it moves. That is not hypothetical. Moving `nh-gatelamp-2b` three
+      // metres in an unrelated commit freed the `ds = -4` rung of coast station 13, the lamp
+      // slid from (−18.00, −67.97) to (−21.99, −67.68), and note 23's lamp stood there again
+      // 3.9 m from where it had been deleted — with the audit still reporting fifteen vetoes
+      // honoured, because it was counting the list rather than measuring the result.
+      const home = pathAt(path.id, i * spacing);
       const vetoed =
-        placed !== null &&
-        LANTERN_VETOES.some(([vx, vz]) => Math.hypot(placed.x - vx, placed.z - vz) <= LANTERN_VETO_RADIUS);
+        (placed !== null && vetoes(placed.x, placed.z)) ||
+        [1, -1].some((side) => vetoes(home.x - home.tz * offset * side, home.z + home.tx * offset * side));
       if (placed && !vetoed) out.push(placed);
     }
   }

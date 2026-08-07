@@ -81,7 +81,49 @@ export class NameTags {
 
   private readonly pool: Tag[] = [];
   private readonly bubblePool: Tag[] = [];
+  /**
+   * Rendered plates and bubbles, by content.
+   *
+   * **Bounded, and it was not.** Bubble textures are keyed on the *text of the message*, so
+   * every distinct line anyone said left a canvas texture behind for the life of the page —
+   * a few hundred kilobytes of GPU memory per sentence, in a room whose entire purpose is
+   * people saying things. A long evening in a busy room is a leak measured in hundreds of
+   * megabytes, and the first symptom is the context loss the loader has a handler for.
+   *
+   * Least-recently-used, evicted on insert. The caps are far above the number that can be on
+   * screen at once — a handful of bubbles, a few dozen name plates — so eviction only ever
+   * reaches textures nothing is drawing, and `update` re-renders on the next frame anyway if
+   * it is wrong about that.
+   */
   private readonly textures = new Map<string, THREE.CanvasTexture>();
+
+  /** Distinct name plates kept. Names churn slowly; this is generous. */
+  private static readonly NAME_CACHE = 128;
+
+  /** Distinct speech bubbles kept. Only a handful are ever visible together. */
+  private static readonly BUBBLE_CACHE = 64;
+
+  /**
+   * Store a texture, disposing the oldest of its kind once the cache is full.
+   *
+   * `Map` iterates in insertion order, so the first matching key is the least recently
+   * *written*. Re-reading a cached texture does not refresh it, which is the cheap
+   * approximation: a phrase said once an hour ago and a phrase said constantly both age out
+   * eventually, and the cost of being wrong is one canvas redraw.
+   */
+  private remember(key: string, texture: THREE.CanvasTexture, prefix: string, cap: number): THREE.CanvasTexture {
+    this.textures.set(key, texture);
+    let live = 0;
+    for (const k of this.textures.keys()) if (k.startsWith(prefix)) live++;
+    for (const k of this.textures.keys()) {
+      if (live <= cap) break;
+      if (!k.startsWith(prefix)) continue;
+      this.textures.get(k)?.dispose();
+      this.textures.delete(k);
+      live--;
+    }
+    return texture;
+  }
 
   /** Toggled from settings. When false the whole group is simply hidden. */
   enabled = true;
@@ -146,8 +188,7 @@ export class NameTags {
     texture.generateMipmaps = false;
     // Store the plate's aspect ratio so `update` can size the sprite without re-measuring.
     texture.userData.aspect = width / height;
-    this.textures.set(key, texture);
-    return texture;
+    return this.remember(key, texture, key.slice(0, 2), NameTags.NAME_CACHE);
   }
 
   /**
@@ -233,8 +274,7 @@ export class NameTags {
     texture.generateMipmaps = false;
     texture.userData.aspect = width / height;
     texture.userData.height = height;
-    this.textures.set(key, texture);
-    return texture;
+    return this.remember(key, texture, 'b:', NameTags.BUBBLE_CACHE);
   }
 
   /** Grow the pool on demand. Sprites are never destroyed, only hidden. */

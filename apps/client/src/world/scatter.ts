@@ -96,7 +96,17 @@ const SPECIES: readonly Species[] = [
     maxSlope: 1.3,
     pathClearance: 3.4,
     allowOnPads: false,
-    scale: [0.5, 1.9],
+    // Capped at 1.15, down from 1.9.
+    //
+    // Nothing scattered has a collider and nothing scattered can have one: the stream is
+    // consumed per quality tier, so a low-tier client and a high-tier client get boulders in
+    // different places, and a collider the two halves of the game disagree about is worse
+    // than none. Which leaves one rule — **the world must not draw an obstacle it cannot
+    // enforce**. At 1.9 these stood up to 1.6 m proud of the ground and 2.85 m across, and
+    // 1852 of them on Nagisa stood over 0.8 m: waist-high rocks you walk straight through.
+    // At 1.15 the tallest is knee-high, which reads as an outcrop you step over rather than
+    // as something that ought to have stopped you.
+    scale: [0.5, 1.15],
     build: (seed) => boulder(0.8, rockFace(), seed),
   },
   {
@@ -108,7 +118,8 @@ const SPECIES: readonly Species[] = [
     maxSlope: 0.8,
     pathClearance: 2.0,
     allowOnPads: false,
-    scale: [0.35, 1.1],
+    // Same reasoning as the boulder above, though a shore rock was never the worst of it.
+    scale: [0.35, 0.85],
     build: (seed) => boulder(0.55, rockFace(), seed + 17),
   },
   {

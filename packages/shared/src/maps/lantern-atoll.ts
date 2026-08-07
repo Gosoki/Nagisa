@@ -181,8 +181,8 @@ export const LANTERN_ATOLL: MapPack = {
       // The pair of huts and the pair of lanterns are mirrored about the x = 0 lane, which
       // is the axis you arrive along: what you see first is symmetrical, and everything
       // further round the ring is not. Both huts open onto the lane rather than away from it.
-      { id: 'at-pier', kind: 'pier', x: 0, z: 76, rot: 0 },
-      { id: 'at-boat', kind: 'boat', x: -7, z: 78, rot: 0.3 },
+      { id: 'at-pier', kind: 'pier', x: 0, z: 87, rot: 0 },
+      { id: 'at-boat', kind: 'boat', x: -7, z: 92, rot: 0.3 },
       { id: 'at-hut-w', kind: 'beach-hut', x: -18.7, z: 62.7, rot: -0.388 },
       { id: 'at-hut-e', kind: 'beach-hut', x: 18.6, z: 62.7, rot: 0.388 },
       { id: 'at-board', kind: 'notice-board', x: 0, z: 54, rot: 0 },

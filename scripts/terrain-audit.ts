@@ -57,7 +57,6 @@ import {
   footingSlopeAt,
   heightAt,
   illegality,
-  isLand,
   isWalkable,
   nearestPath,
   slopeAt,
@@ -97,9 +96,17 @@ for (let j = 0; j < size; j++) {
   for (let i = 0; i < size; i++) {
     const x = toWorld(i);
     const h = heightAt(x, z);
-    // Below the wade line is water, not blocked ground; calling it "blocked" would drown
-    // the pinhole count in a coastline.
-    if (h < -0.9 || !isLand(x, z)) continue;
+    // Below the wade line is water, not blocked ground; calling it "blocked" would drown the
+    // pinhole count in a coastline.
+    //
+    // The depth test only. `isLand` used to be here too, and it is a different question:
+    // it asks the coastline mask, which knows nothing about the terraces. The harbour and
+    // landing pads hold the ground well above sea level out past the natural shoreline, so
+    // there is a ring of ground around every one of them that the contract calls walkable
+    // and the mask calls sea — 3129 cells on Lantern Atoll, 12% of everywhere you can stand.
+    // The audit was measuring a smaller island than the one the game simulates, which made
+    // its reachability check report a perfectly walkable pier as cut off.
+    if (h < -0.9) continue;
     land++;
     if (h > peak) peak = h;
     const ok = isWalkable(x, z);
@@ -425,9 +432,19 @@ for (const path of PATHS) {
     }
   }
 }
+/**
+ * Landmarks that float rather than being walked up to.
+ *
+ * A moored boat is not a destination, and once the boats were moved off the quay and into
+ * the water where they belong, the reachability check reported all four as defects. Piers
+ * and breakwaters stay in the census on purpose: you *do* walk onto those, and one you
+ * cannot get to is a real fault.
+ */
+const AFLOAT: ReadonlySet<string> = new Set(['boat']);
+
 for (const lm of LANDMARKS) {
   // Sea torii and the like are *meant* to be out of reach — that is the whole image.
-  if (lm.opts?.inWater === true) continue;
+  if (lm.opts?.inWater === true || AFLOAT.has(lm.kind)) continue;
   // You walk *up to* a building, not into its footprint, so ask whether anywhere within a
   // few metres is reachable. Asking about the centre point alone reports every solid
   // structure on the island as a problem.

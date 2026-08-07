@@ -771,6 +771,41 @@ for (const [l, why] of seatFaults) {
   process.stdout.write(`    ${l.id.padEnd(20)} (${l.kind.padEnd(13)}) ${why}\n`);
 }
 
+// --- The waterfront ---------------------------------------------------------------------
+//
+// Piers, boats and sea torii are placed at sea level or the ground, whichever is higher —
+// they are authored with piles and hulls below their origin so they meet whatever is under
+// them. That is only right if the thing under them is what the prop assumes.
+//
+// It had stopped being: the harbour terraces hold the ground at 2.4 m out to thirty-four
+// metres from their centres, well past the old shoreline, so three of the four piers ran
+// their whole length across dry quay and every boat was sitting on it. `sh-pier-west` had
+// all thirty-seven of its samples on land and was drawn 2.4 m underneath it.
+const WATER_KINDS = new Set(['pier', 'boat', 'breakwater']);
+const beached: Array<[Landmark, string]> = [];
+for (const l of LANDMARKS) {
+  const afloat = l.opts?.inWater === true || l.id.includes('torii-sea');
+  if (!WATER_KINDS.has(l.kind) && !afloat) continue;
+  const length = typeof l.opts?.length === 'number' ? l.opts.length : 6;
+  const tx = Math.sin(l.rot);
+  const tz = Math.cos(l.rot);
+
+  if (l.kind === 'boat' || afloat) {
+    // Must be over water, or it is a boat in a car park.
+    if (heightAt(l.x, l.z) > 0.2) beached.push([l, `on dry land at ${heightAt(l.x, l.z).toFixed(2)} m`]);
+    continue;
+  }
+  if (l.kind !== 'pier') continue;
+  // A pier's origin is its landward end. It has to start somewhere you can walk from and
+  // finish somewhere there is water, or it is a boardwalk with delusions.
+  if (!isWalkable(l.x, l.z)) beached.push([l, 'its landward end is not walkable']);
+  if (heightAt(l.x + tx * length, l.z + tz * length) > -1) {
+    beached.push([l, `its far end is at ${heightAt(l.x + tx * length, l.z + tz * length).toFixed(2)} m — it never reaches water`]);
+  }
+}
+process.stdout.write(`\npiers and boats that never meet the water: ${beached.length}\n`);
+for (const [l, why] of beached) process.stdout.write(`    ${l.id.padEnd(20)} (${l.kind.padEnd(13)}) ${why}\n`);
+
 process.stdout.write('\n');
 for (const r of reports) {
   if (!r.incoherent.length) continue;
@@ -823,6 +858,7 @@ const verdicts: Array<[string, boolean, string]> = [
   // lost a third of them reads as unfinished, and would mean the rule above is too strict.
   ['the roads are still lit', lamps.length >= lampStations * 0.7, `${lamps.length} of ${lampStations} stations`],
   ['every seat can be sat on', seatFaults.length === 0, `${seatFaults.length} unusable`],
+  ['the waterfront meets the water', beached.length === 0, `${beached.length} beached`],
 ];
 
 let bad = 0;

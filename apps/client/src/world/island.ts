@@ -272,7 +272,18 @@ export class Island {
 
     const floats = WATERFRONT_KINDS.has(landmark.kind) || landmark.opts?.inWater === true;
     if (floats) {
-      object.position.set(landmark.x, 0, landmark.z);
+      // Sea level *or the ground, whichever is higher*.
+      //
+      // These are authored with their piles and hulls running below the origin so they meet
+      // the seabed at whatever depth is under them, and y = 0 is right as long as there is
+      // water there. The harbour terraces hold the ground at 2.4 m out to thirty-four metres
+      // from their centres — well past the old shoreline — so "there is water there" stopped
+      // being true: `sh-pier-west` had all thirty-seven of its samples on 2.4 m of quay, and
+      // was drawn 2.4 m underneath it with only its bollard caps showing.
+      //
+      // A pier's origin is its landward end and its deck is level, so putting that end on the
+      // quay is also what makes the deck meet the quay instead of stepping down into it.
+      object.position.set(landmark.x, Math.max(0, heightAt(landmark.x, landmark.z)), landmark.z);
     } else if (FOLLOWS_GROUND.has(landmark.kind)) {
       this.layAlongGround(object, landmark);
     } else {

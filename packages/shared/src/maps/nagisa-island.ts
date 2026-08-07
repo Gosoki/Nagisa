@@ -533,13 +533,13 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'sh-torii-sea', kind: 'torii', x: 0, z: 112, rot: 0.05, scale: 1.7, opts: { inWater: true } },
   { id: 'sh-pier-main', kind: 'pier', x: 0, z: 88, rot: 0, opts: { length: 30, width: 7, lamps: true } },
   // Moved 4 m west and 2 m inland: its seaward tip used to end inside the main pier's deck.
-  { id: 'sh-pier-west', kind: 'pier', x: -24, z: 80, rot: Math.PI * 0.4, opts: { length: 18, width: 4.5 } },
+  { id: 'sh-pier-west', kind: 'pier', x: -25, z: 101, rot: 0.507, opts: { length: 18, width: 4.5 } },
   // Turned to run north–south and pulled in toward the quay. It used to lie across the top of
   // the beach at 32°, so the mole that shelters the harbour also ran between the beach huts
   // and the stage — which from the sand reads as a stone path nobody can walk on.
   { id: 'sh-breakwater', kind: 'breakwater', x: 28, z: 100, rot: -0.25, opts: { length: 34, beacon: true } },
-  { id: 'sh-boat-1', kind: 'boat', x: 16, z: 98, rot: 0.3, opts: { style: 'ferry', scale: 1.25 } },
-  { id: 'sh-boat-2', kind: 'boat', x: -12, z: 96, rot: -0.7 },
+  { id: 'sh-boat-1', kind: 'boat', x: 16, z: 113.5, rot: 0.3, opts: { style: 'ferry', scale: 1.25 } },
+  { id: 'sh-boat-2', kind: 'boat', x: -12.5, z: 113, rot: -0.7 },
   // On the quay *edge*, twenty-three metres further out. It used to stand in the middle of
   // the flat with 2.4 m of terrace on both sides of it, holding nothing back at all.
   { id: 'sh-seawall', kind: 'sea-wall', x: 14, z: 108, rot: 1.75, opts: { length: 14 } },
@@ -569,7 +569,7 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'bh-hut-2', kind: 'beach-hut', x: 60.1, z: 98.5, rot: 2.712, opts: { w: 6, d: 5 } },
   { id: 'bh-stage', kind: 'stage', x: 52.2, z: 85.8, rot: 2.712, opts: { w: 11, d: 8 } },
   { id: 'bh-bench-1', kind: 'bench', x: 51, z: 99, rot: 0.62 },
-  { id: 'bh-boat-1', kind: 'boat', x: 58, z: 102, rot: 1.8, scale: 0.75 },
+  { id: 'bh-boat-1', kind: 'boat', x: 70.5, z: 123.5, rot: 1.8, scale: 0.75 },
   { id: 'bh-rock-1', kind: 'rock', x: 66, z: 90, rot: 0.7, scale: 1.5 },
 
   // ═══ Main Plaza (64, 37) — the civic centre ═════════════════════════════
@@ -635,17 +635,17 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   // Both funaya now face the bay, which is the only direction a boat house can face: the
   // ground floor is open so a boat can be pulled up the slipway straight into it, and the
   // pair of them used to have that slipway pointing at the coast road.
-  { id: 'nh-torii-sea', kind: 'torii', x: 0, z: -110, rot: 0.1, scale: 1.4, opts: { inWater: true } },
-  { id: 'nh-pier-e', kind: 'pier', x: 8, z: -86, rot: Math.PI, opts: { length: 20, width: 5 } },
-  { id: 'nh-pier-w', kind: 'pier', x: -16, z: -84, rot: Math.PI * 1.1, opts: { length: 16, width: 4.5 } },
+  { id: 'nh-torii-sea', kind: 'torii', x: 0, z: -112, rot: 0.1, scale: 1.4, opts: { inWater: true } },
+  { id: 'nh-pier-e', kind: 'pier', x: 8, z: -99, rot: Math.PI, opts: { length: 20, width: 5 } },
+  { id: 'nh-pier-w', kind: 'pier', x: -16, z: -101, rot: Math.PI * 1.1, opts: { length: 16, width: 4.5 } },
   { id: 'nh-boathouse-1', kind: 'boathouse', x: -22.1, z: -83.0, rot: 0.073, opts: { w: 7, d: 10 } },
   { id: 'nh-boathouse-2', kind: 'boathouse', x: -6.1, z: -83.7, rot: 0.073, opts: { w: 6.5, d: 9 } },
   { id: 'nh-shed', kind: 'warehouse', x: 15.8, z: -61.8, rot: -0.073, opts: { w: 10, d: 8 } },
   { id: 'nh-minka', kind: 'minka', x: -13.5, z: -60.7, rot: 0.073, opts: { w: 10, d: 8 } },
   { id: 'nh-netrack-1', kind: 'net-rack', x: 7.1, z: -81.0, rot: 3.069 },
   { id: 'nh-netrack-2', kind: 'net-rack', x: 3.1, z: -81.3, rot: 3.069 },
-  { id: 'nh-boat-1', kind: 'boat', x: -10, z: -95, rot: 0.2, scale: 0.85 },
-  { id: 'nh-boat-2', kind: 'boat', x: 16, z: -96, rot: -0.4, scale: 0.8 },
+  { id: 'nh-boat-1', kind: 'boat', x: -12, z: -114, rot: 0.2, scale: 0.85 },
+  { id: 'nh-boat-2', kind: 'boat', x: 16, z: -113.5, rot: -0.4, scale: 0.8 },
   { id: 'nh-seawall', kind: 'sea-wall', x: 23, z: -107.8, rot: 1.63, opts: { length: 14 } },
   { id: 'nh-bell', kind: 'bell-tower', x: 13.1, z: -79.6, rot: 3.069, scale: 0.75 },
   { id: 'nh-stage', kind: 'stage', x: 0.5, z: -61.2, rot: 0.073, opts: { w: 11, d: 8 } },

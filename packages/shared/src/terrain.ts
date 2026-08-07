@@ -1206,6 +1206,90 @@ const PAD_RIM_SMOOTHING = 16;
  */
 const padRims = new Map<string, Float64Array>();
 
+/**
+ * Narrowest a blend ring may be clamped to when it runs into a neighbouring terrace's flat,
+ * metres. Below this a bank is a wall however it is derived, and a clamp reaching zero would
+ * be a genuine discontinuity rather than a steep slope.
+ */
+const PAD_RING_MIN = 2.5;
+
+
+/**
+ * The widest this terrace's ring may grow in one direction before it starts pressing on a
+ * *neighbouring* terrace's flat. Returned as a width (like everything else here), never less
+ * than the authored `nominal`.
+ *
+ * ### The defect this exists to prevent
+ *
+ * Ring growth is generous by design: a terrace cut into a hillside needs a wide bank on its
+ * uphill side or the bank is a wall. But growth is sized against the *natural* ground, which
+ * knows nothing about the other terraces, and the north harbour's inland ring duly grew until
+ * it was reaching **twenty metres inside the lighthouse terrace's flat** — claiming 0.25 of a
+ * point that the lighthouse was claiming in full.
+ *
+ * A flat with a foreign claim on it is not held flat by its own geometry any more. It is held
+ * flat by whatever rule silences the intruder, and the instant that rule relaxes — one metre
+ * outside the flat, where the terrace's own claim first dips below 1 — the intruder's ten
+ * metre height difference lands all at once. That is a 2.5 m step in a single metre at the
+ * rim of the lighthouse terrace, and the same collision, in the same form, at every place a
+ * player marked as sawtoothed.
+ *
+ * No suppression rule can fix that, because the problem is not who wins the argument: it is
+ * that the argument is happening on ground that should never have been contested. Stopping
+ * the ring at the neighbour's rim removes it. What remains between the two flats is an
+ * honest overlap of two blend rings, which averages into a saddle.
+ *
+ * ### Why this one clamp is allowed below the authored width
+ *
+ * Everywhere else in this file the authored ring width is a floor, because narrowing a bank
+ * steepens it and a bank steep enough stops being ground. Here it cannot be. The plaza's flat
+ * ends 5.9 m from the beach's, and its authored 12 m ring therefore overruns the beach's flat
+ * by six metres no matter how the composition resolves it — so the choice is not between a
+ * gentle bank and a steep one, it is between:
+ *
+ * - a steep but *smooth* bank in the 5.9 m that actually exists, with both terraces exactly
+ *   flat; or
+ * - a gentler bank that eats six metres of the beach, and a 1.7 m step at the line where the
+ *   beach stops being able to defend its own flat.
+ *
+ * The first is better and it is not close. A 47° bank between a plaza and a beach six metres
+ * below it reads as a retaining slope, which is what it is; a step in open ground reads as
+ * broken. And the roads between two terraces cut their own grade anyway, so the steep face is
+ * scenery rather than an obstacle — `terrain-audit`'s reachability pass is what confirms that,
+ * and it is the reason this trade can be made on evidence rather than on taste.
+ *
+ * The floor is therefore a small absolute width rather than the authored one: below a couple
+ * of metres a bank is a wall whatever the numbers say, and a clamp that reached zero would put
+ * a true discontinuity into the field.
+ */
+function neighbourLimit(pad: Pad, angle: number): number {
+  const ux = Math.cos(angle);
+  const uz = Math.sin(angle);
+  let limit = Infinity;
+  for (const other of PADS) {
+    if (other === pad) continue;
+    const dx = other.x - pad.x;
+    const dz = other.z - pad.z;
+    // A terrace standing *on* another one (the notice board on the plaza) is the nesting
+    // case, and nesting is resolved by depth in `paddedHeight`. Clamping there would strand
+    // the outer terrace's ring at the inner one's rim for no reason.
+    const centreDist = Math.hypot(dx, dz);
+    if (centreDist < other.inner || centreDist < pad.inner) continue;
+
+    // Where this ray first enters the neighbour's flat: the near root of |P + t·u − Q|² = r².
+    const b = dx * ux + dz * uz;
+    if (b <= 0) continue; // Behind us.
+    const disc = b * b - (centreDist * centreDist - other.inner * other.inner);
+    if (disc <= 0) continue; // The ray misses the flat entirely.
+    limit = Math.min(limit, b - Math.sqrt(disc) - pad.inner);
+  }
+  // `Infinity` where no other flat lies in this direction — nearly every direction on the
+  // island, including every seaward one — so the growth rule is left entirely alone there.
+  // An earlier version capped the width unconditionally and quietly removed the growth from
+  // the whole coast, which moved the corrugation it was meant to remove down to the waterline.
+  return limit === Infinity ? Infinity : Math.max(PAD_RING_MIN, limit);
+}
+
 function padRimRing(pad: Pad): Float64Array {
   let ring = padRims.get(pad.id);
   if (ring) return ring;
@@ -1220,7 +1304,7 @@ function padRimRing(pad: Pad): Float64Array {
     const a = (i / PAD_RIM_SECTORS) * Math.PI * 2;
     const drop = Math.abs(naturalHeight(pad.x + Math.cos(a) * radius, pad.z + Math.sin(a) * radius) - pad.height);
     const needed = (SMOOTHSTEP_PEAK * drop) / maxEmbankmentGradient;
-    raw[i] = Math.min(widest, Math.max(nominal, needed));
+    raw[i] = Math.min(widest, neighbourLimit(pad, a), Math.max(nominal, needed));
   }
 
   // A cosine window rather than a box: a box filter has its own corners, and the point of
@@ -1238,8 +1322,15 @@ function padRimRing(pad: Pad): Float64Array {
     for (let k = -PAD_RIM_SMOOTHING; k <= PAD_RIM_SMOOTHING; k++) {
       acc += raw[(i + k + PAD_RIM_SECTORS) % PAD_RIM_SECTORS]! * weights[k + PAD_RIM_SMOOTHING]!;
     }
-    // Never narrower than authored: smoothing may only widen a bank, never steepen one.
-    ring[i] = pad.inner + Math.max(nominal, acc / weightSum);
+    // Smoothing may widen a bank but never steepen one below the authored width — except
+    // where a neighbour's flat is in the way, which is the one case that outranks it.
+    //
+    // The neighbour clamp is re-applied *after* the smoothing rather than trusted from the raw
+    // pass, because a ±11° kernel will happily carry a wide neighbouring sector back out over a
+    // clamped one — which would put the ring back inside the flat it was clamped out of, in the
+    // one direction where that matters most.
+    const a = (i / PAD_RIM_SECTORS) * Math.PI * 2;
+    ring[i] = pad.inner + Math.min(neighbourLimit(pad, a), Math.max(nominal, acc / weightSum));
   }
 
   padRims.set(pad.id, ring);
@@ -1302,17 +1393,41 @@ function rebuildPadDepths(): void {
 }
 
 /**
- * How far apart two terraces' claims must be before the stronger fully silences the weaker.
+ * How strong a terrace's claim must be before it counts as *standing on that terrace* and
+ * silences everyone else's.
  *
- * A hard comparison would be a cliff in the field wherever two claims cross. Over a band the
- * handover is gradual, and at exactly equal strength both are suppressed identically — which
- * is what makes the result independent of which one an implementation happened to look at
- * first, and therefore the same on the client and the server.
+ * ### What this replaced, and why
+ *
+ * The rule used to be a comparison: among terraces at the same depth, whichever claim was
+ * momentarily *larger* suppressed the other, softened over a band of 0.08 in claim strength
+ * so that the handover was gradual rather than a step.
+ *
+ * Gradual in claim strength is not gradual in metres. Two adjacent terraces' rings run in
+ * opposite directions, so their difference sweeps through that 0.08-wide band in well under a
+ * metre of walking — and across that metre the surface swings from one terrace's height to
+ * the other's. Between the lighthouse (13 m) and the north harbour (2.4 m) that is a 3.5 m
+ * step per metre, with a gentle slope on each side of it: gentle, cliff, gentle. Which is
+ * exactly what a player standing at (−34, −50) described as 锯齿 — sawtoothed — and marked as
+ * the worst place on the island.
+ *
+ * The mistake was asking the wrong question. "Which terrace is winning here?" has a different
+ * answer on each side of a line, so it *must* produce an edge; the only freedom is how sharp.
+ * The question worth asking is "am I standing on a terrace?", which has the same answer on
+ * both sides of that line, so nothing has to change hands at all.
+ *
+ * So: a claim at or above this strength is a flat, and a flat suppresses everything else
+ * completely — which is the one property the old rule existed to protect, and it protects it
+ * exactly rather than approximately. Below it, two overlapping rings simply *average*, and
+ * the meeting of two terraces becomes the saddle it should always have been.
+ *
+ * The value is a strength, not a distance, so it means something on every ring width: a
+ * terrace's ring reaches 0.9 about a ninth of the way out, so foreign claims are silenced
+ * across the flat itself and for roughly a metre beyond its rim.
  */
-const PAD_DOMINANCE_BAND = 0.08;
+const PAD_FLAT_STRENGTH = 0.9;
 
 /** Scratch for `paddedHeight`, reused: this runs on every one of ~160 000 mesh samples. */
-const padClaims: Array<{ height: number; w: number; depth: number; inner: number }> = [];
+const padClaims: Array<{ height: number; w: number; depth: number; inner: number; sat: number }> = [];
 
 /**
  * Natural ground with the terraces pressed into it.
@@ -1343,6 +1458,31 @@ const padClaims: Array<{ height: number; w: number; depth: number; inner: number
  * Ties are broken toward the smaller terrace so the result never depends on the order pads
  * happen to appear in the map file — both sides of the wire must agree on this.
  */
+/**
+ * Which terraces are speaking at a point, and how loudly. Introspection for the audits.
+ *
+ * A terrace defect is a *composition* defect — the surface is wrong not because any one ring
+ * is wrong but because of how two of them meet — and from outside `heightAt` the only
+ * available evidence is the height itself, which is the symptom. `scripts/jaggedness.ts` spent
+ * its first version guessing at causes from distances to authored rim radii, which is a
+ * different number from the ring the code actually uses (rings grow, per direction) and so
+ * pointed at the wrong pad more than once.
+ *
+ * Returns the claim strengths that `paddedHeight` composes: 1 on a terrace's flat, falling to
+ * 0 at the outer edge of its blend ring in this direction. Allocates, so it is for tools.
+ */
+export function terraceClaimsAt(x: number, z: number): Array<{ id: string; height: number; w: number }> {
+  const out: Array<{ id: string; height: number; w: number }> = [];
+  for (const pad of PADS) {
+    const dx = x - pad.x;
+    const dz = z - pad.z;
+    const d = Math.hypot(dx, dz);
+    const w = 1 - smoothstep(pad.inner, padBlendOuter(pad, dx, dz), d);
+    if (w > 0) out.push({ id: pad.id, height: pad.height, w });
+  }
+  return out.sort((a, b) => b.w - a.w);
+}
+
 function paddedHeight(x: number, z: number): number {
   padClaims.length = 0;
   for (let i = 0; i < PADS.length; i++) {
@@ -1356,7 +1496,7 @@ function paddedHeight(x: number, z: number): number {
     if (dSq > reach * reach) continue;
     const w = 1 - smoothstep(pad.inner, padBlendOuter(pad, dx, dz), Math.sqrt(dSq));
     if (w <= 0) continue;
-    padClaims.push({ height: pad.height, w, depth: padDepths[i] ?? 0, inner: pad.inner });
+    padClaims.push({ height: pad.height, w, depth: padDepths[i] ?? 0, inner: pad.inner, sat: 0 });
   }
   if (padClaims.length === 0) return naturalHeight(x, z);
   if (padClaims.length === 1) {
@@ -1368,12 +1508,16 @@ function paddedHeight(x: number, z: number): number {
   //
   // - **Depth.** A terrace standing on another one speaks first, in full. Depth is a fixed
   //   property of the map, so it can be a hard rule without making the field jump.
-  // - **Strength, softly.** Among terraces at the same depth, a stronger claim suppresses a
-  //   weaker one — but through a `smoothstep` over {@link PAD_DOMINANCE_BAND} rather than a
-  //   comparison. That matters: sorting and taking "what is left" is the obvious way to write
-  //   this and it tears wherever two rings of similar strength cross, which on this island is
-  //   thirty-three places and steps of up to a metre. At equal strength the soft form
-  //   suppresses both by the same amount, so there is nothing to tear.
+  // - **Being a flat.** Among terraces at the same depth, a claim strong enough to *be* a
+  //   flat (see {@link PAD_FLAT_STRENGTH}) silences the others — unless they are flats too,
+  //   in which case neither yields and the two average, which is the only sane answer where
+  //   two authored flats overlap and the only one that cannot leave a hole.
+  //
+  // Note what is *not* here: any comparison between two claims. Nothing changes hands at a
+  // crossing, so there is no crossing to tear at, and where two rings overlap without either
+  // being a flat they simply average into a saddle. The union of the saturations is used
+  // rather than their maximum for the same reason the coverage below is a union: `max` has a
+  // corner where two of its arguments cross and a product does not.
   //
   // The suppression decides how the terraces divide the point *between themselves*. How much
   // of the point they hold *together* is a separate question, and the answer is the union of
@@ -1382,18 +1526,20 @@ function paddedHeight(x: number, z: number): number {
   // instead let raw hillside through where the plaza, the beach and the south harbour all
   // reach the same corner, steepening the bank beside the coast road into something you
   // could not walk across.
+  for (const claim of padClaims) claim.sat = smoothstep(PAD_FLAT_STRENGTH, 1, claim.w);
+
   let claimed = 0;
   let miss = 1;
   let h = 0;
   for (const claim of padClaims) {
     let share = claim.w;
+    let othersFlat = 1;
     for (const other of padClaims) {
       if (other === claim) continue;
       if (other.depth > claim.depth) share *= 1 - other.w;
-      else if (other.depth === claim.depth) {
-        share *= 1 - other.w * smoothstep(-PAD_DOMINANCE_BAND, PAD_DOMINANCE_BAND, other.w - claim.w);
-      }
+      else if (other.depth === claim.depth) othersFlat *= 1 - other.sat;
     }
+    share *= 1 - (1 - othersFlat) * (1 - claim.sat);
     h += share * claim.height;
     claimed += share;
     miss *= 1 - claim.w;

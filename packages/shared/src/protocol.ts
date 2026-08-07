@@ -353,6 +353,24 @@ export interface ClientHello {
    * rather than rejected — the client silently becomes a new visitor.
    */
   resumeToken?: string;
+  /**
+   * Where the client last stood, so a reconnection puts you back where you were rather
+   * than at the harbour.
+   *
+   * `resumeToken` alone only covers the *short* outage — a dropped frame, a tunnel, a
+   * locked screen — because it restores a player object the server is still holding in
+   * its grace window. Past {@link PROTOCOL.SESSION_GRACE_MS}, or across a server
+   * restart, that object is gone and there is nothing left to resume: the same person
+   * with the same name comes back as a brand-new visitor and is dropped on the quay,
+   * possibly halfway across the island from where they were standing.
+   *
+   * So the client also carries its own position. The server honours it **only when a
+   * cryptographically valid resume token accompanies it** — proof this connection was
+   * issued a session, not a first-time arrival, whose landfall at the harbour is
+   * deliberate — and only after re-deriving it through the walkability contract, so a
+   * claim can never place a player somewhere they could not have walked to.
+   */
+  at?: { pos: Vec3; yaw: number };
   /** Preferred room. Omit to be placed by the matchmaker. */
   room?: RoomId;
   /** Reported so the server can size deltas for weak devices. Advisory only. */

@@ -84,7 +84,7 @@ export async function waitForPortsFree(ports = STACK_PORTS, timeoutMs = 30_000) 
  */
 export function start(name, npmArgs, ready, { cwd, timeoutMs = 120_000 } = {}) {
   const child = spawn('npm', npmArgs, { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
-  children.push(child);
+  children.push({ name, child });
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`${name} not ready in ${timeoutMs}ms`)), timeoutMs);
     let buffer = '';
@@ -106,6 +106,37 @@ export function start(name, npmArgs, ready, { cwd, timeoutMs = 120_000 } = {}) {
 }
 
 /**
+ * Kill **one** half of the stack and wait for its port to come free, leaving the other
+ * half running.
+ *
+ * This exists for the reconnect smoke, which has to reproduce the one failure the resume
+ * token cannot cover: the *server* going away and coming back while the browser stays
+ * open. Restarting the whole stack would reload the page and prove nothing, since a fresh
+ * page is a fresh arrival by definition.
+ *
+ * Signals the process group, same as `shutdown` and for the same reason — `npm run dev` is
+ * a wrapper and killing it alone orphans the compiler and the server that holds the port.
+ */
+export async function stopOne(name, { port, graceMs = 6000 } = {}) {
+  const index = children.findIndex((c) => c.name === name);
+  if (index < 0) throw new Error(`no child named ${name} was started`);
+  const [{ child }] = children.splice(index, 1);
+  for (const signal of ['SIGTERM', 'SIGKILL']) {
+    try {
+      process.kill(-child.pid, signal);
+    } catch {
+      /* already gone */
+    }
+    const deadline = Date.now() + graceMs / 2;
+    while (Date.now() < deadline) {
+      if (port === undefined || !(await inUse(port))) return;
+      await delay(150);
+    }
+  }
+  if (port !== undefined && (await inUse(port))) throw new Error(`${name} still holding :${port} after kill`);
+}
+
+/**
  * Stop everything this process started, and do not return until the ports are free.
  *
  * Signals the process *group* — see the note at the top of the file. `try`/`catch` around
@@ -113,7 +144,7 @@ export function start(name, npmArgs, ready, { cwd, timeoutMs = 120_000 } = {}) {
  * outcome we wanted anyway.
  */
 export async function shutdown(graceMs = 2500) {
-  for (const child of children) {
+  for (const { child } of children) {
     try {
       process.kill(-child.pid, 'SIGTERM');
     } catch {
@@ -129,7 +160,7 @@ export async function shutdown(graceMs = 2500) {
     await delay(200);
   }
 
-  for (const child of children) {
+  for (const { child } of children) {
     try {
       process.kill(-child.pid, 'SIGKILL');
     } catch {

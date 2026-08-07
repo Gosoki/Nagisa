@@ -30,6 +30,7 @@ import {
   PROTOCOL,
   Role,
   activeMap,
+  activeMapId,
   getZone,
   interactablePosition,
   spawnPoint,
@@ -54,6 +55,7 @@ import { NameTags } from './character/name-tags.js';
 import { Speech } from './character/speech.js';
 import { Connection } from './net/connection.js';
 import { WorldSync } from './net/world-sync.js';
+import { readPose } from './net/last-pose.js';
 import { Ambience } from './audio/ambience.js';
 import {
   activities,
@@ -273,14 +275,22 @@ export class App {
     this.renderer.scene.add(rebuilt.character.root);
     this.local = rebuilt;
 
-    this.connection = new Connection('/ws', (resumeToken) => ({
-      t: 'hello',
-      protocol: PROTOCOL.VERSION,
-      name: finalName,
-      appearance,
-      resumeToken: resumeToken ?? undefined,
-      caps: { mobile: isTouchDevice(), lowMemory: this.renderer.quality.tier === 'low' },
-    }));
+    // Rebuilt for every connection attempt, not captured once: `at` must describe where
+    // the character is *now*, including anything walked during the outage — the world
+    // keeps simulating while the socket is down, and coming back to where you were two
+    // minutes ago is its own small teleport.
+    this.connection = new Connection('/ws', (resumeToken) => {
+      const pose = readPose(activeMapId());
+      return {
+        t: 'hello',
+        protocol: PROTOCOL.VERSION,
+        name: finalName,
+        appearance,
+        resumeToken: resumeToken ?? undefined,
+        at: pose ? { pos: pose.pos, yaw: pose.yaw } : undefined,
+        caps: { mobile: isTouchDevice(), lowMemory: this.renderer.quality.tier === 'low' },
+      };
+    });
 
     this.connection.on('state', (state) => {
       connectionState.set(state);

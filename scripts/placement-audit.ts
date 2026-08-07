@@ -62,7 +62,9 @@ import {
   pathAt,
   pathLength,
   LANTERN_VETOES,
+  LAMP_RADIUS,
   insideStructure,
+  landmarkExtent,
   isWalkable,
   resolveMapId,
   roadsideLanternStations,
@@ -718,6 +720,66 @@ const lamps = roadsideLanterns(LAMP_SPACING);
 const lampStations = roadsideLanternStations(LAMP_SPACING);
 
 const lampInBuilding = lamps.filter((l) => !clearOfLandmarks(l.x, l.z, LAMP_RADIUS));
+
+// --- The same question, asked of the *hand-placed* lamps ---------------------------------
+//
+// Everything above is about `roadsideLanterns`, which is a rule: it picks its own positions
+// and can be told to stop picking bad ones. The lamps written into the map by hand are not
+// covered by any of it, and they were the ones actually standing in buildings — three of
+// them, one 1.5 m inside a machiya — while this file printed "0 inside" every run.
+//
+// The blind spot was `FURNITURE` up in the overlap pass. Exempting a lantern from
+// structure-versus-structure overlap is right: furniture *is* meant to stand against a wall,
+// and a lantern in the SAT test against a building's eaves would fire constantly. But
+// "against" and "inside" are different claims, and exempting the kind entirely answered the
+// second along with the first. So this asks the narrower question the exemption should
+// always have left open: is the lamp *inside* the building?
+//
+// Inside, not merely close. `landmarkExtent` is the roofline — it adds 2.3 m of eaves to the
+// wall line — so "negative distance" already means the lamp is under the roof, which for a
+// two-metre stone tōrō means clipping through it. Anything positive is a lantern standing
+// against a wall, which is where lanterns go: at 0.24 m from the summit torii's extent the
+// pair flanking the approach is the composition working, and a check that failed it would be
+// telling the map to un-compose itself. Those are still listed, so the near misses are
+// visible, but only penetration is a fault.
+const HAND_LAMP_KINDS = new Set(['stone-lantern', 'post-lantern']);
+
+/** Distance from a point to a landmark's footprint rectangle; negative when inside it. */
+function distanceToFootprint(l: Landmark, x: number, z: number): number {
+  const { hw, hd, rot } = landmarkExtent(l);
+  const dx = x - l.x;
+  const dz = z - l.z;
+  const lx = dx * Math.cos(rot) - dz * Math.sin(rot);
+  const lz = dx * Math.sin(rot) + dz * Math.cos(rot);
+  const ex = Math.abs(lx) - hw;
+  const ez = Math.abs(lz) - hd;
+  if (ex <= 0 && ez <= 0) return -Math.min(-ex, -ez);
+  return Math.hypot(Math.max(ex, 0), Math.max(ez, 0));
+}
+
+const handLamps = LANDMARKS.filter((l) => HAND_LAMP_KINDS.has(l.kind));
+const handLampFouled: Array<[Landmark, Landmark, number]> = [];
+for (const lamp of handLamps) {
+  let worst: [Landmark, number] | null = null;
+  for (const b of LANDMARKS) {
+    if (b === lamp || FURNITURE.has(b.kind)) continue;
+    const d = distanceToFootprint(b, lamp.x, lamp.z);
+    if (d < LAMP_RADIUS && (!worst || d < worst[1])) worst = [b, d];
+  }
+  if (worst) handLampFouled.push([lamp, worst[0], worst[1]]);
+}
+handLampFouled.sort((p, q) => p[2] - q[2]);
+const handLampInside = handLampFouled.filter(([, , d]) => d < 0);
+
+// And the other half of the same blind spot: `lampLeaning` above asks whether a lamp stands
+// level, and asks it only of the procedural ones. Clearing a building is not enough on its
+// own — three of the gate pairs, moved off a wall, landed on a terrace's blend bank instead,
+// one of them with 0.93 m of drop across a 1.4 m base. A lantern at that angle has not been
+// placed, it has been dropped. The two requirements have to be checked together or a fix for
+// either will keep producing the other.
+const handLampLeaning = handLamps.filter(
+  (l) => lampBaseDrop(l.x, l.z) > LAMP_BASE_DROP[l.kind === 'post-lantern' ? 'post' : 'stone'],
+);
 const lampLeaning = lamps.filter((l) => lampBaseDrop(l.x, l.z) > LAMP_BASE_DROP[l.kind]);
 const lampCrowded: Array<[number, number]> = [];
 for (let a = 0; a < lamps.length; a++) {
@@ -750,6 +812,29 @@ process.stdout.write(
     `    crowding another:        ${lampCrowded.length}\n` +
     `    longest unlit road:      ${darkest.run} m on ${darkest.path}\n`,
 );
+
+if (handLampFouled.length) {
+  process.stdout.write(
+    `\nhand-placed lamps within ${LAMP_RADIUS} m of a structure: ${handLampFouled.length}` +
+      ` (${handLampInside.length} of them inside it)\n`,
+  );
+  for (const [lamp, b, d] of handLampFouled.slice(0, 10)) {
+    process.stdout.write(
+      `    ${lamp.id.padEnd(20)} (${lamp.x.toFixed(1).padStart(6)}, ${lamp.z.toFixed(1).padStart(6)})  ` +
+        `${d < 0 ? `${(-d).toFixed(2)} m INSIDE` : `${d.toFixed(2)} m from`} ${b.id} (${b.kind})\n`,
+    );
+  }
+}
+
+if (handLampLeaning.length) {
+  process.stdout.write(`\nhand-placed lamps on a bank: ${handLampLeaning.length}\n`);
+  for (const l of handLampLeaning.slice(0, 10)) {
+    process.stdout.write(
+      `    ${l.id.padEnd(20)} (${l.x.toFixed(1).padStart(6)}, ${l.z.toFixed(1).padStart(6)})  ` +
+        `${lampBaseDrop(l.x, l.z).toFixed(2)} m across its base\n`,
+    );
+  }
+}
 
 // --- Seats ------------------------------------------------------------------------------
 //
@@ -872,6 +957,17 @@ const verdicts: Array<[string, boolean, string]> = [
   ['no door turns its back on the road', backToRoad.length === 0, `${backToRoad.length} facing away`],
   ['every wall and railing holds something back', idleWalls.length === 0, `${idleWalls.length} idle`],
   ['no lantern stands in a building', lampInBuilding.length === 0, `${lampInBuilding.length} inside`],
+  [
+    'no hand-placed lamp leans on a bank',
+    handLampLeaning.length === 0,
+    `${handLampLeaning.length} of ${handLamps.length} tilted`,
+  ],
+  [
+    'no hand-placed lamp stands inside a structure',
+    handLampInside.length === 0,
+    `${handLampInside.length} of ${handLamps.length} inside a roofline` +
+      `, ${handLampFouled.length - handLampInside.length} standing against one`,
+  ],
   ['no lantern leans on a bank', lampLeaning.length === 0, `${lampLeaning.length} tilted`],
   ['no two lanterns crowd each other', lampCrowded.length === 0, `${lampCrowded.length} pairs`],
   // A road missing a lamp where a building meets it still reads as a lit road. A road that

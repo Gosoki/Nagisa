@@ -30,8 +30,10 @@
     "shots": "node tools/shot.mjs",
     "map": "node scripts/world-map.mjs",
     "test:roam": "node tools/roam-smoke.mjs",
+    "test:reconnect": "node tools/reconnect-smoke.mjs",
     "audit:terrain": "node scripts/terrain-audit.mjs",
     "audit:placement": "node scripts/placement-audit.mjs",
+    "audit:jagged": "node scripts/jaggedness.mjs",
     "plans": "node tools/plan-diagram.mjs",
     "notes": "node scripts/notes.mjs"
   },

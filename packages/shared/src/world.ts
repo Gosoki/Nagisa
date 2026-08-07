@@ -310,7 +310,7 @@ export function clearOfLandmarks(x: number, z: number, extra = 0): boolean {
 // ---------------------------------------------------------------------------
 
 /** Half a lantern plus its plinth: the room the lamp itself needs, beyond the landmark's. */
-const LAMP_RADIUS = 1.2;
+export const LAMP_RADIUS = 1.2;
 /** Two lanterns closer than this read as one bad decision rather than as two lamps. */
 const LAMP_SEPARATION = 9;
 

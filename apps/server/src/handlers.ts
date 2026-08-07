@@ -30,9 +30,12 @@ import {
   ErrorCode,
   PROTOCOL,
   Role,
+  ISLAND_EXTENT,
   activeMapId,
   getInteractable,
+  heightAt,
   interactablePosition,
+  nearestWalkable,
   spawnPoint,
   type Appearance,
   type ClientActivityJoin,
@@ -118,6 +121,58 @@ function sanitizeAppearance(raw: unknown): Appearance {
 }
 
 /**
+ * How far {@link returningSpawn} will let the walkability contract move a claimed
+ * position before it stops believing the claim.
+ *
+ * A small correction is expected and welcome: you logged off wading in the shallows, or
+ * standing on the lip of a terrace that rounds to unwalkable, and the snap lifts you onto
+ * the nearest solid ground. A large one means the claim did not come from anywhere a
+ * player was actually standing — a corrupted store, a stale position from a different
+ * map, or a fabricated one — and `nearestWalkable` would answer with a spiral search or
+ * its plaza fallback, i.e. it would *invent* somewhere to put you. Better to admit we do
+ * not know where you were and use a harbour spawn, which at least reads as an arrival.
+ */
+const RETURN_SNAP_LIMIT = 6;
+
+/**
+ * Turn a client's claimed last position into a spawn, or `null` if it cannot be believed.
+ *
+ * ### Why this is not gated on the resume token
+ *
+ * The obvious design is to honour a claim only from a connection holding a valid resume
+ * token — proof the server issued it a session. That gate is worthless here, and not for a
+ * subtle reason: the case this whole feature exists for is the *server restarting*, and a
+ * restarted server has no rooms and no players, so `verifyResumeToken` succeeding tells it
+ * nothing it can act on. (With the default per-process secret the token does not even
+ * verify.) A gate that is always shut in the one case that matters is not a safeguard, it
+ * is the bug wearing a safeguard's clothes.
+ *
+ * What is left is a plain trust question: may an anonymous socket name the patch of ground
+ * it appears on? On this island, yes — it is public, has no accounts, no locked areas and
+ * nothing to take, so a fabricated claim achieves exactly what walking there for a minute
+ * would have achieved. The arrival at the harbour is preserved anyway, because a client
+ * that has never been here has no pose to claim.
+ *
+ * What is *not* taken on trust is the geometry. `x`/`z` must be finite and inside the map,
+ * the ground beneath them is re-derived through the same `isWalkable` contract the move
+ * validator enforces on every subsequent step, and `y` comes from `heightAt` rather than
+ * from the client — so a claim cannot put a player inside a hill, out at sea, or hovering
+ * above the island.
+ */
+function returningSpawn(at: ClientHello['at']): { pos: [number, number, number]; yaw: number } | null {
+  if (!at || !Array.isArray(at.pos) || at.pos.length !== 3) return null;
+  const [x, , z] = at.pos;
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+  if (Math.abs(x) > ISLAND_EXTENT || Math.abs(z) > ISLAND_EXTENT) return null;
+
+  const [sx, sz] = nearestWalkable(x, z);
+  if (Math.hypot(sx - x, sz - z) > RETURN_SNAP_LIMIT) return null;
+
+  const yaw = Number.isFinite(at.yaw) ? Math.atan2(Math.sin(at.yaw), Math.cos(at.yaw)) : 0;
+  return { pos: [sx, heightAt(sx, sz), sz], yaw };
+}
+
+/**
  * Handle the first frame of a connection. Either mints a brand-new player and drops
  * them at a harbour spawn point, or — if `resumeToken` is present, cryptographically
  * valid, and the named player is still sitting in their room's grace window — restores
@@ -140,45 +195,58 @@ export function handleHello(
   const name = clampName(msg.name);
   const appearance = sanitizeAppearance(msg.appearance);
 
+  // Verify the token once, up front. It does double duty: it is the key to the resume
+  // path below, and — even when that path cannot be taken because the player it names is
+  // already gone — it is the proof that this connection was issued a session, which is
+  // what licenses us to honour a claimed position on the fresh-arrival path.
+  const payload = msg.resumeToken ? verifyResumeToken(deps.config.RESUME_SECRET, msg.resumeToken) : null;
+
   // Attempt resume before anything else — a valid, in-grace resume takes priority over
   // treating this as a new arrival, per ClientHello's own doc: "Invalid or expired
   // tokens are ignored rather than rejected."
-  if (msg.resumeToken) {
-    const payload = verifyResumeToken(deps.config.RESUME_SECRET, msg.resumeToken);
-    if (payload) {
-      const room = deps.rooms.get(payload.room);
-      const player = room?.getPlayer(payload.playerId);
-      if (room && player && player.away) {
-        room.resume(session, player);
-        // Cosmetic fields may have changed client-side (e.g. a re-picked outfit) while
-        // disconnected; identity (id/role/activity attachment) is never re-derived from
-        // the client, only these two presentational fields are refreshed.
-        player.name = name;
-        player.appearance = appearance;
-        if (opts.adminGranted && player.role < Role.Admin) player.role = Role.Admin;
+  if (payload) {
+    const room = deps.rooms.get(payload.room);
+    const player = room?.getPlayer(payload.playerId);
+    if (room && player && player.away) {
+      room.resume(session, player);
+      // Cosmetic fields may have changed client-side (e.g. a re-picked outfit) while
+      // disconnected; identity (id/role/activity attachment) is never re-derived from
+      // the client, only these two presentational fields are refreshed.
+      player.name = name;
+      player.appearance = appearance;
+      if (opts.adminGranted && player.role < Role.Admin) player.role = Role.Admin;
 
-        const resumeToken = issueResumeToken(deps.config.RESUME_SECRET, { playerId: player.id, room: room.id });
-        session.send({
-          t: 'welcome',
-          protocol: PROTOCOL.VERSION,
-          self: player.id,
-          resumeToken,
-          resumed: true,
-          room: room.toView(),
-          serverTime: Date.now(),
-          tickHz: PROTOCOL.TICK_HZ,
-          mapId: activeMapId() ?? '',
-          rooms: deps.rooms.listViews(),
-        });
-        session.send(room.buildSnapshot());
-        return new ConnState(session, room, player);
-      }
+      const resumeToken = issueResumeToken(deps.config.RESUME_SECRET, { playerId: player.id, room: room.id });
+      session.send({
+        t: 'welcome',
+        protocol: PROTOCOL.VERSION,
+        self: player.id,
+        resumeToken,
+        resumed: true,
+        room: room.toView(),
+        serverTime: Date.now(),
+        tickHz: PROTOCOL.TICK_HZ,
+        mapId: activeMapId() ?? '',
+        rooms: deps.rooms.listViews(),
+      });
+      session.send(room.buildSnapshot());
+      return new ConnState(session, room, player);
     }
   }
 
-  // Fresh arrival: matchmake into a room, mint a player, spawn on the harbour quay.
-  const room = deps.rooms.pickRoom(msg.room);
-  const spawn = spawnPoint(Math.floor(Math.random() * 1000));
+  // Fresh arrival: matchmake into a room and mint a player.
+  //
+  // Two quite different people reach this line. A first-time visitor, who lands on the
+  // harbour quay because arriving at the harbour is the intended way to meet the island.
+  // And someone who was *already here* a moment ago but whose player the server no longer
+  // holds — their grace window lapsed during a long outage, or the process restarted
+  // under them. For the second, the harbour is not an arrival, it is a punishment for a
+  // dropped connection: it takes the place you were standing and replaces it with a walk
+  // back. So a connection that can still say where it was resumes there, and only a claim
+  // we cannot believe — or none at all, which is what a genuine first visit looks like —
+  // falls back to the quay. See `returningSpawn` for what "believe" means here.
+  const room = deps.rooms.pickRoom(msg.room ?? payload?.room);
+  const spawn = returningSpawn(msg.at) ?? spawnPoint(Math.floor(Math.random() * 1000));
   const role = opts.adminGranted ? Role.Admin : Role.Guest;
   const player = new Player(randomUUID(), name, appearance, role, spawn);
   room.join(session, player);

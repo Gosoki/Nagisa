@@ -42,6 +42,7 @@ import {
 import type { RemotePlayers } from '../character/remote-players.js';
 import type { LocalPlayer } from '../character/local-player.js';
 import type { Connection } from './connection.js';
+import { rememberPose } from './last-pose.js';
 import {
   activities,
   announcements,
@@ -434,9 +435,16 @@ export class WorldSync {
     this.lastSentYaw = yaw;
     this.lastSentAt = now;
 
+    const reported: Vec3 = [pos.x, pos.y, pos.z];
+    // Remember it locally too. If the connection dies before the next report — and
+    // especially if it stays dead long enough for the server to forget us — this is the
+    // only record of where we were, and the thing that gets us back here rather than to
+    // the harbour. Throttled inside; safe to call at the move rate.
+    rememberPose(reported, yaw, activeMapId() ?? '');
+
     this.connection.send({
       t: 'move',
-      pos: [pos.x, pos.y, pos.z] as Vec3,
+      pos: reported,
       yaw,
       anim: this.local.character.animState,
       seq: ++this.seq,

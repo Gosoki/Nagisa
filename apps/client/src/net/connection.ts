@@ -37,6 +37,7 @@ import {
   type ServerMessage,
   type ServerWelcome,
 } from '@nagisa/shared';
+import { forgetPose } from './last-pose.js';
 
 /** Connection lifecycle, as the UI understands it. */
 export type ConnectionState =
@@ -204,6 +205,19 @@ export class Connection {
     this.setState('closed');
   }
 
+  /**
+   * Drop the socket the way the network does — abruptly, and with the reconnect loop left
+   * armed — rather than the way `close()` does, deliberately and for good.
+   *
+   * Exists for `tools/reconnect-smoke.mjs`, which has to reproduce a blip *short enough*
+   * that the server is still holding the player in its grace window. That case cannot be
+   * staged by restarting the server (a restart takes the room with it) and it is exactly
+   * the case the resume path is for, so there has to be some way to ask for it.
+   */
+  dropForTest(code = 4000, reason = 'test drop'): void {
+    this.socket?.close(code, reason);
+  }
+
   /** Full teardown, including the window listeners. */
   dispose(): void {
     this.close();
@@ -214,6 +228,10 @@ export class Connection {
 
   /** Forget the stored session. Used by "leave the island" and by the name change flow. */
   static clearResumeToken(): void {
+    // The pose goes with it. These are two halves of one idea — "forget this session" —
+    // and a cleared token with a surviving pose would put a deliberately-departed player
+    // back where they left off under a new identity.
+    forgetPose();
     try {
       localStorage.removeItem(RESUME_KEY);
     } catch {

@@ -627,8 +627,8 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'ov-gate-s', kind: 'gate', x: 72.9, z: -18.6, rot: -2.689 },
   { id: 'ov-gate-n', kind: 'gate', x: 49.7, z: -58.2, rot: -2.547 },
   { id: 'ov-well', kind: 'well', x: 60.9, z: -60.9, rot: 2.166 },
-  { id: 'ov-lantern-1', kind: 'post-lantern', x: 61.4, z: -26.3, rot: -1.118 },
-  { id: 'ov-lantern-2', kind: 'post-lantern', x: 70.9, z: -38.8, rot: 2.024 },
+  { id: 'ov-lantern-1', kind: 'post-lantern', x: 64.3, z: -26.9, rot: -1.118 },
+  { id: 'ov-lantern-2', kind: 'post-lantern', x: 68.4, z: -37.6, rot: 2.024 },
   { id: 'ov-bench-1', kind: 'bench', x: 57.9, z: -33.5, rot: -1.118 },
 
   // ═══ North Harbour (0, -74) — the working fishery ═══════════════════════
@@ -720,27 +720,40 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   // terrace's flat — which is where a place actually begins, and the only threshold on the
   // island that was not marked.
   //
+  // Five of these pairs have since been slid along their lane, between 1.7 and 8.3 m, because
+  // they were placed from the lane's geometry alone and three of them landed *inside* a
+  // building's footprint — `sh-gatelamp-1b` 1.47 m inside the harbour office, `nh-gatelamp-2a`
+  // 1.22 m inside the boathouse — with two more standing close enough to be under the eaves.
+  // The whole pair moves together, along the lane and perpendicular to it by the same amounts,
+  // so each still straddles its lane square-on: a gate that has been shifted four metres is
+  // still a gate, and one lamp of a pair moved on its own is two lamps.
+  //
+  // Three of them were then nudged again, by a metre or two, because clearing a building put
+  // them on a terrace's blend bank instead — a 0.93 m drop across `ov-gatelamp-1a`'s 1.4 m
+  // base, which is a lantern standing at an angle. Clear of the building *and* level is the
+  // requirement; either one alone can be satisfied by breaking the other.
+  //
   // These replace twelve lanterns that stood in front of buildings: two flanking the shrine
   // hall, two more up its sandō, four around the plaza, four at the summit. In front of a
   // building a lantern says nothing the building was not already saying, and half of them
   // had no partner, so they read as clutter rather than as composition. At a threshold a
   // pair says *you are arriving somewhere*, which is the one thing a lantern is for.
-  { id: 'sh-gatelamp-1a', kind: 'stone-lantern', x: 23.4, z: 78.1, rot: -1.498 },
-  { id: 'sh-gatelamp-1b', kind: 'stone-lantern', x: 22.5, z: 66.5, rot: -1.498 },
-  { id: 'sh-gatelamp-2a', kind: 'stone-lantern', x: -23.3, z: 78.1, rot: -1.644 },
-  { id: 'sh-gatelamp-2b', kind: 'stone-lantern', x: -22.5, z: 66.5, rot: -1.644 },
+  { id: 'sh-gatelamp-1a', kind: 'stone-lantern', x: 27.1, z: 78.1, rot: -1.498 },
+  { id: 'sh-gatelamp-1b', kind: 'stone-lantern', x: 26.2, z: 66.5, rot: -1.498 },
+  { id: 'sh-gatelamp-2a', kind: 'stone-lantern', x: -26.3, z: 78.2, rot: -1.644 },
+  { id: 'sh-gatelamp-2b', kind: 'stone-lantern', x: -25.5, z: 66.6, rot: -1.644 },
   { id: 'pl-gatelamp-1a', kind: 'stone-lantern', x: 57.8, z: 56.5, rot: -0.595 },
   { id: 'pl-gatelamp-1b', kind: 'stone-lantern', x: 48.2, z: 50.0, rot: -0.595 },
   { id: 'pl-gatelamp-2a', kind: 'stone-lantern', x: 81.9, z: 13.4, rot: -0.453 },
   { id: 'pl-gatelamp-2b', kind: 'stone-lantern', x: 71.5, z: 8.3, rot: -0.453 },
-  { id: 'ov-gatelamp-1a', kind: 'stone-lantern', x: 79.3, z: -18.9, rot: 0.453 },
-  { id: 'ov-gatelamp-1b', kind: 'stone-lantern', x: 68.8, z: -13.8, rot: 0.453 },
+  { id: 'ov-gatelamp-1a', kind: 'stone-lantern', x: 86.3, z: -19.4, rot: 0.453 },
+  { id: 'ov-gatelamp-1b', kind: 'stone-lantern', x: 77.2, z: -12.5, rot: 0.453 },
   { id: 'ov-gatelamp-2a', kind: 'stone-lantern', x: 55.9, z: -59.3, rot: 0.595 },
   { id: 'ov-gatelamp-2b', kind: 'stone-lantern', x: 46.3, z: -52.8, rot: 0.595 },
-  { id: 'nh-gatelamp-1a', kind: 'stone-lantern', x: 23.2, z: -78.1, rot: 1.498 },
-  { id: 'nh-gatelamp-1b', kind: 'stone-lantern', x: 22.4, z: -66.5, rot: 1.498 },
-  { id: 'nh-gatelamp-2a', kind: 'stone-lantern', x: -23.5, z: -78.1, rot: 1.644 },
-  { id: 'nh-gatelamp-2b', kind: 'stone-lantern', x: -22.7, z: -66.5, rot: 1.644 },
+  { id: 'nh-gatelamp-1a', kind: 'stone-lantern', x: 24.9, z: -78.1, rot: 1.498 },
+  { id: 'nh-gatelamp-1b', kind: 'stone-lantern', x: 24.1, z: -66.5, rot: 1.498 },
+  { id: 'nh-gatelamp-2a', kind: 'stone-lantern', x: -25.7, z: -76.0, rot: 1.644 },
+  { id: 'nh-gatelamp-2b', kind: 'stone-lantern', x: -24.9, z: -64.4, rot: 1.644 },
   { id: 'lh-gatelamp-1a', kind: 'stone-lantern', x: -56.6, z: -58.3, rot: 2.547 },
   { id: 'lh-gatelamp-1b', kind: 'stone-lantern', x: -47.0, z: -51.8, rot: 2.547 },
   { id: 'lh-gatelamp-2a', kind: 'stone-lantern', x: -78.9, z: -19.5, rot: 2.689 },

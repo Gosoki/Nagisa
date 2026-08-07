@@ -75,12 +75,6 @@ const STALL_PROGRESS = 0.05;
 /** How long a scripted walk may make no progress before it gives up, seconds. */
 const STALL_TIMEOUT = 3;
 
-/** How often autorun asks whether it is getting anywhere, seconds. */
-const AUTORUN_STALL_WINDOW = 1.5;
-
-/** Ground it must have covered in that window to count as still going, metres. */
-const AUTORUN_STALL_PROGRESS = 0.5;
-
 /** Speed while wading. Slow enough that walking into the sea feels like a decision. */
 const WADE_SPEED = MOVE_SPEED.wade;
 
@@ -124,10 +118,6 @@ export class LocalPlayer {
   /** Closest the character has come to the current waypoint, for the stall watchdog. */
   private autoWalkBest = Infinity;
   private autoWalkStalledFor = 0;
-  /** How long autorun has been pressed against something without moving, seconds. */
-  private autoRunStalledFor = 0;
-  /** Where the character was when the current autorun progress window opened. */
-  private autoRunMark: THREE.Vector3 | null = null;
 
   /** Scratch vectors — allocating in the update loop is how frame times die. */
   private readonly tmpForward = new THREE.Vector3();
@@ -211,39 +201,6 @@ export class LocalPlayer {
     });
   }
 
-  /**
-   * Stop autorunning into a wall.
-   *
-   * Autorun is a toggle with no destination, so nothing else would ever end it: a player who
-   * clicks and then looks away leans on the first cliff they meet until they notice. Same
-   * lesson as the scripted walk's watchdog — a movement the player did not have to hold has
-   * to be able to stop itself.
-   *
-   * Measured as **ground covered**, not as speed. A character walking into a wall still has
-   * a speed: the input re-accelerates it every step and the collision resolve throws most of
-   * it away, so `this.speed` sits comfortably above any threshold while the character has not
-   * moved a centimetre in ten seconds. Displacement is the only honest question — the same
-   * one the scripted walk's watchdog asks, for the same reason.
-   */
-  private tickAutoRunWatchdog(dt: number): void {
-    if (!this.input.autoRun) {
-      this.autoRunStalledFor = 0;
-      this.autoRunMark = null;
-      return;
-    }
-    if (!this.autoRunMark) {
-      this.autoRunMark = new THREE.Vector3().copy(this.position);
-      this.autoRunStalledFor = 0;
-      return;
-    }
-    this.autoRunStalledFor += dt;
-    if (this.autoRunStalledFor < AUTORUN_STALL_WINDOW) return;
-    const covered = Math.hypot(this.position.x - this.autoRunMark.x, this.position.z - this.autoRunMark.z);
-    this.autoRunStalledFor = 0;
-    this.autoRunMark.copy(this.position);
-    if (covered < AUTORUN_STALL_PROGRESS) this.input.cancelAutoRun();
-  }
-
   /** Move on to the next waypoint, resetting the stall watchdog for the new leg. */
   private advanceLeg(): void {
     if (!this.autoWalkRoute) return;
@@ -308,7 +265,6 @@ export class LocalPlayer {
    */
   fixedUpdate(dt: number): void {
     this.tickWalkWatchdog(dt);
-    this.tickAutoRunWatchdog(dt);
     this.resolveIntent(this.tmpDir);
 
     const depth = -Math.min(0, heightAt(this.position.x, this.position.z));

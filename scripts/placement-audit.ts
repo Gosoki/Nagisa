@@ -59,6 +59,9 @@ import {
   activeMap,
   clearOfLandmarks,
   heightAt,
+  pathAt,
+  pathLength,
+  LANTERN_VETOES,
   insideStructure,
   isWalkable,
   resolveMapId,
@@ -723,12 +726,29 @@ for (let a = 0; a < lamps.length; a++) {
     if (d < LAMP_SEPARATION) lampCrowded.push([a, b]);
   }
 }
+// How dark the roads got. A veto is an authorial decision and the rule cannot be blamed for
+// it, but somebody should still be able to see what fifteen of them add up to.
+let darkest = { path: '—', run: 0 };
+for (const path of PATHS) {
+  const total = pathLength(path.id);
+  let run = 0;
+  for (let t = 0; t < total; t += 2) {
+    const { x, z } = pathAt(path.id, t);
+    if (lamps.some((l) => Math.hypot(l.x - x, l.z - z) < 14)) run = 0;
+    else {
+      run += 2;
+      if (run > darkest.run) darkest = { path: path.id, run };
+    }
+  }
+}
+
 process.stdout.write(
   `\nroadside lanterns: ${lamps.length} placed of ${lampStations} stations` +
-    ` (${lampStations - lamps.length} skipped for want of room)\n` +
+    ` (${LANTERN_VETOES.length} vetoed by the map, ${lampStations - lamps.length - LANTERN_VETOES.length} skipped for want of room)\n` +
     `    standing in a structure: ${lampInBuilding.length}\n` +
     `    leaning on a bank:       ${lampLeaning.length}\n` +
-    `    crowding another:        ${lampCrowded.length}\n`,
+    `    crowding another:        ${lampCrowded.length}\n` +
+    `    longest unlit road:      ${darkest.run} m on ${darkest.path}\n`,
 );
 
 // --- Seats ------------------------------------------------------------------------------
@@ -856,7 +876,15 @@ const verdicts: Array<[string, boolean, string]> = [
   ['no two lanterns crowd each other', lampCrowded.length === 0, `${lampCrowded.length} pairs`],
   // A road missing a lamp where a building meets it still reads as a lit road. A road that
   // lost a third of them reads as unfinished, and would mean the rule above is too strict.
-  ['the roads are still lit', lamps.length >= lampStations * 0.7, `${lamps.length} of ${lampStations} stations`],
+  // Vetoes are added back before judging. This asks whether the *rule* still lights the
+  // roads; whether the map's author wants a given lamp is not the rule's business, and a
+  // check that conflated the two would go red the moment somebody exercised the veto the
+  // map file exists to give them.
+  [
+    'the placement rule still lights the roads',
+    lamps.length + LANTERN_VETOES.length >= lampStations * 0.7,
+    `${lamps.length} placed + ${LANTERN_VETOES.length} vetoed of ${lampStations}`,
+  ],
   ['every seat can be sat on', seatFaults.length === 0, `${seatFaults.length} unusable`],
   ['the waterfront meets the water', beached.length === 0, `${beached.length} beached`],
 ];

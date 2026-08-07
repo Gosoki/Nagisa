@@ -41,9 +41,6 @@ export interface StickState {
 }
 
 /** Radius of the virtual stick in CSS pixels — the distance for full deflection. */
-/** How far a mouse may travel during a press and still count as a click, pixels. */
-const CLICK_SLOP_PX = 6;
-
 const STICK_RADIUS = 56;
 
 export class Input {
@@ -64,22 +61,15 @@ export class Input {
   private lookPointer: number | null = null;
   private lastLookX = 0;
   private lastLookY = 0;
-  /** Where a mouse press began, so a click can be told from a drag. */
-  private pressX = 0;
-  private pressY = 0;
-
   /**
-   * Autorun: keep walking forward until told otherwise.
+   * The pointer holding the left button down, or null.
    *
-   * "Forward" is the camera's forward, not the character's, because the movement vector is
-   * camera-relative everywhere else — so orbiting while autorunning steers, which is the
-   * point of having it. It is a toggle rather than a hold: a control you have to keep a
-   * button down for is not one you can cross an island with while reading the chat.
+   * Held, not toggled. A toggle was tried and it is the wrong shape for this: it needs an
+   * indicator on screen to be usable at all, it needs a watchdog so it cannot lean on a wall
+   * forever, and it still leaves the player wondering whether they are in it. A button you
+   * hold answers all three by being a button you hold.
    */
-  autoRun = false;
-
-  /** Set when autorun turns on or off, so the HUD can say so. */
-  onAutoRunChange: ((on: boolean) => void) | null = null;
+  private mouseRunPointer: number | null = null;
 
   /** Pointer id driving the virtual stick, or null. */
   private stickPointer: number | null = null;
@@ -127,21 +117,6 @@ export class Input {
     this.interactQueued = true;
   }
 
-  /**
-   * Turn autorun off.
-   *
-   * Public because the character calls it: a player who autoruns into a wall would otherwise
-   * lean on it indefinitely, which is the same defect the scripted walk's stall watchdog
-   * exists to prevent. Anything that ends the walk should come through here so the HUD
-   * indicator and the movement vector cannot disagree.
-   */
-  cancelAutoRun(): void {
-    if (!this.autoRun) return;
-    this.autoRun = false;
-    this.onAutoRunChange?.(false);
-    this.updateMoveFromKeys();
-  }
-
   /** Zero the look delta. Called by the camera after it has applied it. */
   clearLook(): void {
     this.look.x = 0;
@@ -155,7 +130,7 @@ export class Input {
   releaseAll(): void {
     this.keys.clear();
     this.run = false;
-    this.cancelAutoRun();
+    this.mouseRunPointer = null;
     this.updateMoveFromKeys();
   }
 
@@ -211,7 +186,11 @@ export class Input {
 
   private onKeyUp = (e: KeyboardEvent): void => {
     this.keys.delete(e.code);
-    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.run = false;
+    // Not while the mouse is holding the run — two ways to ask for the same thing, and
+    // letting go of one must not answer for the other.
+    if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && this.mouseRunPointer === null) {
+      this.run = false;
+    }
     this.updateMoveFromKeys();
   };
 
@@ -231,17 +210,11 @@ export class Input {
       x /= len;
       y /= len;
     }
-    // Any real movement key cancels autorun — taking the controls back should never need a
-    // second gesture to undo the first.
-    if (this.autoRun && (x !== 0 || y !== 0)) {
-      this.autoRun = false;
-      this.onAutoRunChange?.(false);
-    }
     // Only the keyboard writes here; touch writes directly in `onPointerMove`. If a
     // stick is active it owns the vector.
     if (this.stickPointer === null) {
       this.move.x = x;
-      this.move.y = this.autoRun && y === 0 ? 1 : y;
+      this.move.y = y;
     }
   }
 
@@ -253,14 +226,20 @@ export class Input {
     if (!(e.target instanceof HTMLCanvasElement)) return;
     if (this.isTypingTarget(e.target)) return;
 
-    // Mouse drags orbit; a mouse *click* toggles autorun. Both start the same way, and
-    // which one it was is only known on release — see `onPointerUp`.
+    // Mouse: dragging orbits, and **holding the left button runs**.
+    //
+    // Both at once, deliberately — a press that turns into a drag is still a held button, so
+    // you can steer the camera while sprinting rather than having to choose. Only the left
+    // button runs; the right one orbits and nothing else, which is what a right-drag is for
+    // everywhere else.
     if (e.pointerType === 'mouse') {
       this.lookPointer = e.pointerId;
       this.lastLookX = e.clientX;
       this.lastLookY = e.clientY;
-      this.pressX = e.clientX;
-      this.pressY = e.clientY;
+      if (e.button === 0) {
+        this.mouseRunPointer = e.pointerId;
+        this.run = true;
+      }
       return;
     }
 
@@ -314,27 +293,11 @@ export class Input {
   };
 
   private onPointerUp = (e: PointerEvent): void => {
-    if (e.pointerId === this.lookPointer) {
-      this.lookPointer = null;
-      // A click, not a drag: the pointer barely moved. **Distance only** — no duration test.
-      //
-      // One was tried, and it is the wrong instrument. Timing a press means subtracting two
-      // clocks read inside event handlers, and on a loaded main thread a handler runs long
-      // after its event: a 40 ms click measured 2441 ms while the island was meshing under
-      // software WebGL. `e.timeStamp` is no better for synthesised input. So a duration test
-      // makes the control stop working exactly when the machine is struggling, which is the
-      // worst possible time for a movement control to stop working.
-      //
-      // Distance has no such problem, and it is also the better question: a press that did
-      // not move is a click whether it lasted 40 ms or a second and a half.
-      if (
-        e.pointerType === 'mouse' &&
-        Math.hypot(e.clientX - this.pressX, e.clientY - this.pressY) < CLICK_SLOP_PX
-      ) {
-        this.autoRun = !this.autoRun;
-        this.onAutoRunChange?.(this.autoRun);
-        this.updateMoveFromKeys();
-      }
+    if (e.pointerId === this.lookPointer) this.lookPointer = null;
+    if (e.pointerId === this.mouseRunPointer) {
+      this.mouseRunPointer = null;
+      // Shift may still be down underneath; ask rather than assume.
+      this.run = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
     }
     if (e.pointerId === this.stickPointer) {
       this.stickPointer = null;

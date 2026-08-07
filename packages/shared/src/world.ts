@@ -71,6 +71,9 @@ export let ACTIVITY_TEMPLATES: readonly ActivityTemplate[] = [];
 /** Arrival points, as [x, z]. {@link spawnPoint} snaps each to walkable ground. */
 export let SPAWN_POINTS: readonly (readonly [number, number])[] = [];
 
+/** Places the map asks to have no roadside lantern. See `MapWorld.lanternVetoes`. */
+export let LANTERN_VETOES: readonly (readonly [number, number])[] = [];
+
 /** Zone reported for a position inside none of the others. */
 let FALLBACK_ZONE: ZoneId = 'coast';
 
@@ -310,6 +313,16 @@ export function clearOfLandmarks(x: number, z: number, extra = 0): boolean {
 const LAMP_RADIUS = 1.2;
 /** Two lanterns closer than this read as one bad decision rather than as two lamps. */
 const LAMP_SEPARATION = 9;
+
+/**
+ * How close a lantern must land to a veto for the veto to apply, metres.
+ *
+ * Generous enough for a note written by somebody standing beside the lamp rather than on top
+ * of it — the fifteen in `dev-notes.jsonl` were written from 0.11 m to 1.70 m away — and
+ * tight enough that a veto cannot silently take out its neighbour, since the lanterns are at
+ * least {@link LAMP_SEPARATION} apart, more than three times this.
+ */
+const LANTERN_VETO_RADIUS = 2.5;
 /**
  * Ground across the base, by what stands on it.
  *
@@ -394,7 +407,13 @@ export function roadsideLanterns(spacing: number): RoadsideLantern[] {
           break outer;
         }
       }
-      if (placed) out.push(placed);
+      // A veto drops the station rather than relocating it: somebody stood in front of this
+      // lamp and said it should not be here, and putting it four metres further along the
+      // same verge answers a different complaint. See `MapWorld.lanternVetoes`.
+      const vetoed =
+        placed !== null &&
+        LANTERN_VETOES.some(([vx, vz]) => Math.hypot(placed.x - vx, placed.z - vz) <= LANTERN_VETO_RADIUS);
+      if (placed && !vetoed) out.push(placed);
     }
   }
   return out;
@@ -424,6 +443,7 @@ onMapChange((pack) => {
   INTERACTABLES = w.interactables;
   ACTIVITY_TEMPLATES = w.activityTemplates;
   SPAWN_POINTS = w.spawnPoints;
+  LANTERN_VETOES = w.lanternVetoes ?? [];
   FALLBACK_ZONE = w.fallbackZone;
 
   VENUE_ZONES = w.zones.filter((z) => z.kind === 'venue').map((z) => z.id);

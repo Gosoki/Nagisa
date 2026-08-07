@@ -42,8 +42,16 @@
  * making the character faster cannot, by construction, make the character get corrected.
  */
 export const MOVE_SPEED = {
-  walk: 4.2,
-  run: 9.0,
+  /**
+   * Ordinary walking — what used to be the run.
+   *
+   * The island is a hexagon 74 m to a side and the whole ring is meant to be under a minute,
+   * so 4.2 m/s made the default pace of the world a trudge and holding the run key the
+   * normal way to be anywhere. A world you have to hold a key to enjoy has the wrong default.
+   */
+  walk: 9.0,
+  /** Running: twice the walk, held rather than toggled. */
+  run: 18.0,
   /** Wading through shallow water. Slow enough to be a decision, not an obstacle. */
   wade: 2.0,
 } as const;

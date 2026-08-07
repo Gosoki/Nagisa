@@ -17,7 +17,7 @@
    * playing and read while editing the map, which is a different day.
    */
   import { onMount } from 'svelte';
-  import { LANDMARKS, activeMapId, zoneAt } from '@nagisa/shared';
+  import { LANDMARKS, activeMapId, roadsideLanterns, zoneAt } from '@nagisa/shared';
   import { cmd, selfPose } from '../state/stores.js';
 
   interface Mark {
@@ -45,10 +45,33 @@
    * also be a thing to keep in sync, for no gain at this size.
    */
   function nearbyLandmarks(x: number, z: number): NonNullable<Mark['nearest']>[] {
-    return LANDMARKS.map((l) => ({ id: l.id, kind: l.kind, dist: Math.hypot(l.x - x, l.z - z) }))
-      .sort((a, b) => a.dist - b.dist)
-      .slice(0, 8);
+    const hand = LANDMARKS.map((l) => ({ id: l.id, kind: l.kind, dist: Math.hypot(l.x - x, l.z - z) }));
+    // The roadside lanterns too — they are the only props nobody placed by hand, and leaving
+    // them out of this list meant they were the only ones you could not point at. Fifteen
+    // notes in a row said "delete this lamp" while the tool offered the nearest *hand-placed*
+    // one, three to twenty-two metres away, because the lamp being pointed at — half a metre
+    // off — was not on the list at all.
+    //
+    // The id carries the position, because that is the only name these have: nothing wrote
+    // them down, so nothing can refer to them except by where they are. It is also exactly
+    // what `MapWorld.lanternVetoes` takes.
+    const roadside = roadsideLanterns(ROADSIDE_SPACING).map((l) => ({
+      id: `roadside [${l.x.toFixed(1)}, ${l.z.toFixed(1)}]`,
+      kind: `${l.kind}-lantern`,
+      dist: Math.hypot(l.x - x, l.z - z),
+    }));
+    return [...hand, ...roadside].sort((a, b) => a.dist - b.dist).slice(0, 8);
   }
+
+  /**
+   * The spacing the client renders at on anything but the low tier.
+   *
+   * Duplicated from `island.buildRoadside` rather than read from it, because that lives
+   * behind the renderer and this panel must work without one. If they drift the ids here
+   * name lanterns that are not drawn, which is worth knowing about: hence the check in
+   * `npm run audit:placement`, which uses the same number.
+   */
+  const ROADSIDE_SPACING = 21;
 
   let nearby: NonNullable<Mark['nearest']>[] = $state([]);
   let chosen = $state('');

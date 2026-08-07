@@ -850,6 +850,32 @@ export const NAGISA_ISLAND: MapPack = {
     activityTemplates: ACTIVITY_TEMPLATES,
     spawnPoints: SPAWN_POINTS,
     fallbackZone: 'coast',
+
+    /**
+     * Roadside lanterns asked for by name, and taken away.
+     *
+     * Fifteen of them, every one recorded from inside the world by somebody standing next to
+     * the lamp — between 0.11 m and 1.70 m from it — and every one a lamp the placement rule
+     * put somewhere a person looking at it did not want one. The rule stays; these fifteen
+     * stations do not. See `MapWorld.lanternVetoes`.
+     */
+    lanternVetoes: [
+      [-18, -68],
+      [-5, -68.9],
+      [15.9, -77.5],
+      [28.2, -67.2],
+      [48.6, -51.4],
+      [70.9, -12.1],
+      [85, -4.5],
+      [69.8, 14.4],
+      [69, 37.4],
+      [51.6, 46.9],
+      [-0.3, 69.3],
+      [-65, 24.1],
+      [-77.7, -2],
+      [-80.6, -13.7],
+      [-52.4, -45.8],
+    ],
   },
 };
 

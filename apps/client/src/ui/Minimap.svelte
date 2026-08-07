@@ -219,16 +219,23 @@
     // You: an arrow, not a dot, because which way you are facing is half of what a map is
     // for.
     //
-    // `rotate(+yaw)`, not `-yaw`, and the sign was wrong: `project` sends world `+z` to
-    // canvas `+y`, so canvas-up is north and a triangle drawn pointing up is already correct
-    // at yaw 0. Yaw π/2 faces east, which is canvas-right — and because canvas y runs *down*,
-    // a positive rotation is clockwise, i.e. from up toward right. Negating it pointed the
-    // arrow west whenever you faced east, and the error was invisible standing still.
+    // `rotate(π − yaw)`. Worth deriving rather than trying, because two of the four cardinal
+    // directions come out right under the wrong sign and standing still tells you nothing.
+    //
+    // `project` sends world `+x` to canvas `+x` and world `+z` to canvas `+y`, so canvas-up
+    // is north (−z). Yaw is measured from `+z` (`atan2(vx, vz)`), so a heading of `yaw` is
+    // the canvas direction `(sin yaw, cos yaw)`. The triangle is drawn pointing up, i.e.
+    // `(0, −1)`, and canvas rotation is clockwise because y runs down, so after `rotate(θ)`
+    // it points `(sin θ, −cos θ)`. Setting those equal gives `θ = π − yaw`.
+    //
+    // It was `+yaw`, which points `(sin yaw, −cos yaw)` — the same thing mirrored north to
+    // south. East and west were right, so the arrow looked plausible; but the mirror inverts
+    // the *direction of turn*, so walking round a corner to the left swung it to the right.
     const [sx, sz] = project(selfPose.x, selfPose.z, size);
     const yaw = selfPose.yaw;
     ctx.save();
     ctx.translate(sx, sz);
-    ctx.rotate(yaw);
+    ctx.rotate(Math.PI - yaw);
     ctx.beginPath();
     ctx.moveTo(0, -6);
     ctx.lineTo(4.2, 4.5);

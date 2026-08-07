@@ -381,6 +381,20 @@ export interface MapWorld {
   readonly spawnPoints: readonly (readonly [number, number])[];
   /** Zone returned when a position is inside none of the others. */
   readonly fallbackZone: ZoneId;
+  /**
+   * Places where the road's own lanterns are not wanted, as [x, z].
+   *
+   * The roadside lanterns are the only props on the island nobody positions by hand — they
+   * are dealt out along each lane by rule. The rule is a good one and it is still wrong
+   * about individual spots: a lamp that lands where two lanes nearly meet, or in front of a
+   * view, is one a person looking at it wants gone, and there is no line in a map file to
+   * delete because there was never a line that put it there.
+   *
+   * So this is the line. A vetoed station is dropped rather than moved: the point is that
+   * there should be no lamp *there*, and shuffling it four metres along answers a different
+   * complaint. See `roadsideLanterns`.
+   */
+  readonly lanternVetoes?: readonly (readonly [number, number])[];
 }
 
 /** A complete, self-contained world. */

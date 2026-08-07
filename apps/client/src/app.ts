@@ -68,7 +68,6 @@ import {
   settings,
   stats,
   stickState,
-  autoRunning,
   zoneAnnounce,
   chatLog,
   followTarget,
@@ -179,7 +178,6 @@ export class App {
     // Feed the touch stick's screen-space state to the overlay so it can draw the ring.
     // This is the only per-pointer-event value that crosses into the interface.
     this.input.onStickChange = (state) => stickState.set(state);
-    this.input.onAutoRunChange = (on) => autoRunning.set(on);
 
     this.registerCommands();
     this.subscribeSettings();

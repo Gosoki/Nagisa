@@ -74,10 +74,9 @@ try {
   // `canvas[data-engine]` rather than `canvas`: the minimap is a canvas as well, and a bare
   // selector resolves to two elements and fails Playwright's strict mode.
   //
-  // A small *drag*, not a click. A click on the world is now a movement command — it starts
-  // autorun — so clicking here to move focus off the entry screen set both characters
-  // walking, and Bob spent the follow test strolling away from Alice. A drag is a look
-  // gesture, which is what this ever wanted from the canvas.
+  // A small *drag*, not a click. This wants a look gesture, which is what it ever wanted from
+  // the canvas — and while the left button is held the character runs, so a press that lingers
+  // here would be a movement command as well.
   for (const p of [alice, bob]) {
     await p.page.evaluate(() => document.activeElement?.blur?.());
     const canvas = p.page.locator('canvas[data-engine]');

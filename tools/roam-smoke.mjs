@@ -169,18 +169,17 @@ try {
   check('no page errors while roaming', pageErrors.length === 0, pageErrors.slice(0, 3));
   console.log(`       roamed ${Math.round(roam.distance)} m over ${roam.samples} samples, y ${roam.minY?.toFixed?.(1)}–${roam.maxY?.toFixed?.(1)}`);
 
-  // --- Autorun: click the world to walk forward, click again to stop ------------------
+  // --- Holding the left mouse button runs -------------------------------------------
   //
-  // Driven through the real canvas, because every bug this control had was in the wiring
-  // rather than in the logic: clicking "Go ashore" set the character autorunning, because
-  // the overlay's buttons are inside the element the world listens on; and a duration-based
-  // click test read a 40 ms click as 2441 ms, because event handlers run late on a loaded
-  // main thread. Neither is visible from anywhere but a browser.
+  // Driven through the real canvas: every bug this control has had was in the wiring rather
+  // than the logic. A click on a UI button was once a click on the world, and a
+  // duration-based test for "is this a click" read a 40 ms press as 2441 ms because event
+  // handlers run late on a loaded main thread. Holding a button has neither problem, which
+  // is most of why it replaced the toggle.
   {
     const box = await (await page.$('canvas')).boundingBox();
     const cx = box.x + box.width * 0.5;
     const cy = box.y + box.height * 0.62;
-    const isOn = () => page.evaluate(() => document.body.innerText.includes('click to stop'));
     const pose = () =>
       page.evaluate(() => {
         const p = window.nagisa?.local?.position;
@@ -192,73 +191,61 @@ try {
       const after = await pose();
       return before && after ? Math.hypot(after.x - before.x, after.z - before.z) : 0;
     };
+    // Face open ground: whichever way the roam left the character pointing, some bearing has
+    // somewhere to walk, and measuring the one it stopped on measures the scenery.
+    //
+    // The bar has to be a real distance. At 0.05 m in 700 ms a character sliding along a wall
+    // passes, and then the comparison below is between two numbers that are both zero. Eight
+    // bearings rather than four, because wedged in a corner two opposite ones can both fail.
+    let facing = 0;
+    for (let turn = 0; turn < 8; turn++) {
+      await page.keyboard.down('KeyW');
+      facing = await travel(1200);
+      await page.keyboard.up('KeyW');
+      await page.waitForTimeout(200);
+      if (facing > 0.3) break;
+      await page.mouse.move(cx, cy);
+      await page.mouse.down();
+      await page.mouse.move(cx + 250, cy, { steps: 10 });
+      await page.mouse.up();
+    }
+    check('the character has somewhere to walk before the control is measured', facing > 0.3, `${facing.toFixed(2)} m in 1.2 s`);
 
-    // Turn until forward is open. Whichever way the roam happened to leave the character
-    // pointing, at least one quarter turn has somewhere to walk; testing the bearing it
-    // stopped on tests the scenery.
-    const faceOpenGround = async () => {
-      for (let turn = 0; turn < 4; turn++) {
-        await page.keyboard.down('KeyW');
-        const probe = await travel(700);
-        await page.keyboard.up('KeyW');
-        await page.waitForTimeout(200);
-        if (probe > 0.05) return true;
-        await page.mouse.move(cx, cy);
-        await page.mouse.down();
-        await page.mouse.move(cx + 490, cy, { steps: 14 });
-        await page.mouse.up();
-      }
-      return false;
-    };
-
-    // A drag orbits the camera and must not be mistaken for a click.
+    // Put the pointer on the world before pressing. A press outside the canvas is correctly
+    // ignored — the overlay's buttons are not the world — and the pointer starts at (0, 0),
+    // so a test that forgets this measures the guard rather than the control.
     await page.mouse.move(cx, cy);
-    await page.mouse.down();
-    await page.mouse.move(cx + 120, cy, { steps: 12 });
-    await page.mouse.up();
-    await page.waitForTimeout(500);
-    check('a drag orbits and does not start autorun', !(await isOn()));
-
-    // The forward key first, as the baseline. Measuring autorun first walked the character
-    // into whatever was ahead, and then W had nowhere to go and the comparison read zero.
-    await faceOpenGround();
     await page.keyboard.down('KeyW');
-    const byKey = await travel(2500);
+    const walked = await travel(2500);
+    await page.mouse.down({ button: 'left' });
+    const ran = await travel(2500);
+    await page.mouse.up({ button: 'left' });
+    const afterRelease = await travel(2500);
     await page.keyboard.up('KeyW');
-    await page.waitForTimeout(400);
 
-    await faceOpenGround();
-    await page.mouse.click(cx, cy, { delay: 40 });
-    await page.waitForTimeout(400);
-    check('a click starts autorun', await isOn());
-    const byClick = await travel(2500);
-
-    // Compared against W rather than against a distance in metres. Absolute thresholds do
-    // not survive this harness: the physics is driven by the frame loop and under software
-    // WebGL the page runs at a fraction of real time, so "walked 2 m in 2 s" fails a control
-    // that works perfectly. Loosely, though — the two windows are timed separately and the
-    // frame rate wanders between them, so the ratio carries noise that says nothing about
-    // the control. The regression worth catching is "a click does nothing".
+    // Ratios, not metres. The physics is driven by the frame loop and this page runs at a
+    // fraction of real time, so absolute distances say more about the machine than the
+    // control; the claim being made is "held left is faster, released is not".
+    check('holding the left button runs', ran > walked * 1.35, `walk ${walked.toFixed(2)} m vs run ${ran.toFixed(2)} m`);
     check(
-      'autorun walks the character as far as the forward key does',
-      byClick > 0.2 && byKey > 0.15 && byClick > byKey * 0.4,
-      `click ${byClick.toFixed(2)} m vs W ${byKey.toFixed(2)} m`,
+      'releasing it goes back to walking',
+      afterRelease < ran * 0.85,
+      `run ${ran.toFixed(2)} m vs after release ${afterRelease.toFixed(2)} m`,
     );
 
-    // Taking the controls back cancels it.
+    // The right button orbits and must not run.
+    await page.mouse.move(cx, cy);
     await page.keyboard.down('KeyW');
-    await page.waitForTimeout(300);
+    await page.mouse.down({ button: 'right' });
+    const withRight = await travel(2500);
+    await page.mouse.up({ button: 'right' });
     await page.keyboard.up('KeyW');
-    await page.waitForTimeout(400);
-    check('taking the controls back cancels autorun', !(await isOn()));
+    check('the right button does not run', withRight < walked * 1.35, `${withRight.toFixed(2)} m against a walk of ${walked.toFixed(2)} m`);
 
-    // And clicking again stops it.
+    // And a bare click, with nothing held, must leave the character where it is.
     await page.mouse.click(cx, cy, { delay: 40 });
-    await page.waitForTimeout(400);
-    const restarted = await isOn();
-    await page.mouse.click(cx, cy, { delay: 40 });
-    await page.waitForTimeout(400);
-    check('a second click stops autorun', restarted && !(await isOn()));
+    const idle = await travel(1500);
+    check('a click on its own does not start anything', idle < 0.2, `moved ${idle.toFixed(2)} m`);
   }
 
   await browser.close();

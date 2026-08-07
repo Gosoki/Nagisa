@@ -312,10 +312,18 @@ const PATHS: MapPack['terrain']['paths'] = [
       // same ground, which reads as one wide road that has been split rather than as a choice
       // between two. They are now 21 to 28 m apart: this one hugs the mountain's foot, the
       // ring road keeps the seaward side, and between them is somewhere rather than a median.
+      //
+      // The last bend used to be a single 80° elbow at the notice board: the lane came down
+      // off the mountain's foot, hit the terrace, and turned straight back uphill to the
+      // plaza. From the bench beside it that reads as a road that gives up — "这条路不要拐角，
+      // 继续延伸". So it carries on east past the terrace first and takes the plaza in two
+      // turns of about fifty degrees instead of one of eighty, which is a road bending round
+      // a hillside rather than a road changing its mind.
       [0, 74],
       [14, 52],
       [32, 34],
-      [48, 22], // notice-board terrace
+      [46, 23], // notice-board terrace
+      [58, 26],
       [64, 37], // plaza
     ],
   },
@@ -530,14 +538,35 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   // ═══ South Harbour (0, 74) — the arrival port ═══════════════════════════
   // The quay road runs east–west across the terrace. Warehouses, stalls and the bell stand
   // on the seaward side facing back at it; the office and the stage are behind it inland.
-  { id: 'sh-torii-sea', kind: 'torii', x: 0, z: 112, rot: 0.05, scale: 1.7, opts: { inWater: true } },
-  { id: 'sh-pier-main', kind: 'pier', x: 0, z: 88, rot: 0, opts: { length: 30, width: 7, lamps: true } },
-  // Moved 4 m west and 2 m inland: its seaward tip used to end inside the main pier's deck.
-  { id: 'sh-pier-west', kind: 'pier', x: -25, z: 101, rot: 0.507, opts: { length: 18, width: 4.5 } },
+  // Out past the end of the main pier rather than straddling its deck, which is where a sea
+  // torii belongs: you pass under it arriving, you do not walk through it on the planks.
+  { id: 'sh-torii-sea', kind: 'torii', x: 0, z: 130, rot: 0.05, scale: 1.7, opts: { inWater: true } },
+  // Lengthened from 30 m. The quay reaches 22 m past the natural shoreline, so a third of the
+  // old pier stood on dry terrace; at 34 m it now has twelve metres of deck over water deep
+  // enough for the ferry that moors beside it.
+  { id: 'sh-pier-main', kind: 'pier', x: 0, z: 88, rot: 0, opts: { length: 34, width: 7, lamps: true } },
+  // Turned a quarter-turn to run out along the west shore instead of pointing at the sea
+  // torii. Which quarter-turn was not a choice: the other one heads inland, forty metres of
+  // 2.4 m quay.
+  //
+  // Moved five metres seaward with it. The harbour's shoreline here runs east–west along
+  // z ≈ 110, so the turned heading tracks the coast rather than leaving it — from the old
+  // root a pier of any length stayed in the shallows and its far end never reached water at
+  // all. Rooted at the water's edge instead, twenty metres takes it into 6 m of it.
+  { id: 'sh-pier-west', kind: 'pier', x: -22, z: 106, rot: -1.064, opts: { length: 20, width: 4.5 } },
   // Turned to run north–south and pulled in toward the quay. It used to lie across the top of
   // the beach at 32°, so the mole that shelters the harbour also ran between the beach huts
   // and the stage — which from the sand reads as a stone path nobody can walk on.
-  { id: 'sh-breakwater', kind: 'breakwater', x: 28, z: 100, rot: -0.25, opts: { length: 34, beacon: true } },
+  //
+  // Lengthened from 34 m to 44, which is as far as it goes: the tip is in 11.6 m of water and
+  // the toe now reaches the seabed to hold it there.
+  //
+  // A player asked for this *or* a second arm meeting it at an obtuse angle. The second arm
+  // was surveyed and abandoned: every siting that leaves a workable harbour mouth puts the
+  // mole's root across `sh-pier-west` — the pier the same note asks to be turned a quarter
+  // turn, which swings it along exactly that piece of shore. Two structures in one place is
+  // not shelter. The long single arm is the option this coast has room for.
+  { id: 'sh-breakwater', kind: 'breakwater', x: 28, z: 100, rot: -0.25, opts: { length: 44, beacon: true } },
   { id: 'sh-boat-1', kind: 'boat', x: 16, z: 113.5, rot: 0.3, opts: { style: 'ferry', scale: 1.25 } },
   { id: 'sh-boat-2', kind: 'boat', x: -12.5, z: 113, rot: -0.7 },
   // On the quay *edge*, twenty-three metres further out. It used to stand in the middle of
@@ -546,11 +575,17 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'sh-warehouse-1', kind: 'warehouse', x: 16.7, z: 86.6, rot: 0.073, opts: { w: 10, d: 8, floors: 2 } },
   { id: 'sh-warehouse-2', kind: 'warehouse', x: -19.5, z: 82.6, rot: -0.073, opts: { w: 10, d: 8 } },
   { id: 'sh-office', kind: 'machiya', x: 20.0, z: 62.0, rot: 1.004, opts: { w: 10, d: 10, floors: 2, sign: true } },
-  { id: 'sh-stall-1', kind: 'market-stall', x: -9.7, z: 79.8, rot: -0.073, opts: { cloth: 1 } },
-  { id: 'sh-stall-2', kind: 'market-stall', x: -3.7, z: 80.2, rot: -0.073, opts: { cloth: 2 } },
-  { id: 'sh-stall-3', kind: 'market-stall', x: 3.5, z: 80.2, rot: 0.073, opts: { cloth: 0 } },
+  // Turned a quarter-turn and lined up along the quay's seaward edge instead of across it,
+  // so the three fronts face you as you come up from the pier rather than presenting their
+  // ends. Held at x = −7: the main pier's deck reaches x = −3.5, and a market that backs onto
+  // a pier is a market with its stock in the way of the gangway.
+  { id: 'sh-stall-1', kind: 'market-stall', x: -7, z: 86, rot: 1.644, opts: { cloth: 1 } },
+  { id: 'sh-stall-2', kind: 'market-stall', x: -7, z: 90, rot: 1.644, opts: { cloth: 2 } },
+  { id: 'sh-stall-3', kind: 'market-stall', x: -7, z: 94, rot: 1.644, opts: { cloth: 0 } },
   { id: 'sh-stage', kind: 'stage', x: -8.0, z: 55.0, rot: 3.069, opts: { w: 12, d: 9 } },
-  { id: 'sh-bell', kind: 'bell-tower', x: 10.5, z: 79.9, rot: 0.073, scale: 0.8 },
+  // Out on the quay by the seawall, facing back along it — where a harbour bell is rung at
+  // and heard from, rather than tucked into the row of stalls it used to stand in.
+  { id: 'sh-bell', kind: 'bell-tower', x: 15, z: 97, rot: 1.661, scale: 0.8 },
   { id: 'sh-lantern-1', kind: 'post-lantern', x: -7.6, z: 79.5, rot: -0.073 },
   { id: 'sh-lantern-2', kind: 'post-lantern', x: 7.4, z: 79.5, rot: 0.073 },
   { id: 'sh-banner-1', kind: 'banner', x: -13.7, z: 79.5, rot: -0.073 },
@@ -661,7 +696,10 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'lh-rail', kind: 'rail', x: -85.2, z: -54.9, rot: 2.452, opts: { length: 16 } },
   { id: 'lh-bench-1', kind: 'bench', x: -66.2, z: -46.7, rot: -0.524 },
   { id: 'lh-rock-1', kind: 'rock', x: -78, z: -52, rot: 0.8, scale: 1.7 },
-  { id: 'lh-rock-2', kind: 'rock', x: -50, z: -50, rot: 2.4, scale: 1.2 },
+  // Off the road. It stood 4.3 m from the coast lane's centreline, which is 0.9 m inside a
+  // 3.4 m carriageway — a boulder you walk into on a road, reported twice from two steps
+  // apart. Two and a half metres to the side clears the shoulder as well as the metalling.
+  { id: 'lh-rock-2', kind: 'rock', x: -47.5, z: -50.2, rot: 2.4, scale: 1.2 },
 
   // ═══ Shrine (-64, 37) — the western headland ════════════════════════════
   // The whole composition is one line: the **sandō**, which is `shrine-ascent`'s first leg

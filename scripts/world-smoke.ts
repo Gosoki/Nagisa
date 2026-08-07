@@ -50,6 +50,7 @@ const mapArg = process.argv.indexOf('--map');
 resolveMapId(mapArg >= 0 ? process.argv[mapArg + 1] : process.env.NAGISA_MAP);
 console.log(`map: ${activeMap().name} (${activeMap().id}) — registered: ${listMaps().map((m) => m.id).join(', ')}`);
 import { QUALITY_PRESETS } from '../apps/client/src/engine/quality.js';
+import { WAVE_AMPLITUDE } from '../apps/client/src/world/waves.js';
 
 let failures = 0;
 let checks = 0;
@@ -269,6 +270,36 @@ console.log('\nLandmarks');
     if (max - min > 0.45) uneven.push({ id: landmark.id, drop: Math.round((max - min) * 100) / 100 });
   }
   check('every building stands on level ground', uneven.length === 0, uneven.slice(0, 8));
+
+  // --- Nothing floating sits under the sea ---------------------------------------------
+  //
+  // The ocean is not a plane at y = 0. It swings through ±WAVE_AMPLITUDE as the crests pass,
+  // and everything placed over water was pinned to exactly 0 — so for a good part of every
+  // cycle the boats were *inside* the sea, which is what a player reported and what
+  // `Island.floatBoats` fixes by making them ride the surface.
+  //
+  // That fix covers boats. This is the guard for the next thing anyone puts in the water: it
+  // has to either ride the waves too, or stand high enough that a crest passes under it.
+  // Without the check the failure is invisible from every still image and only shows up as
+  // "sometimes the thing is gone".
+  // What matters is not that a prop's base is at sea level — a sea torii's *should* be, so the
+  // water washes up its pillars, which is the whole picture of an offshore gate. What matters
+  // is whether a crest can cover the prop *entirely*. So the test is the built geometry's own
+  // height above its origin, measured rather than tabulated, against the crest.
+  const RIDES_THE_WAVES = new Set(['boat']);
+  const swamped: { id: string; standsProud: number }[] = [];
+  for (const landmark of LANDMARKS) {
+    const floats = landmark.kind === 'boat' || landmark.kind === 'breakwater' || landmark.opts?.inWater === true;
+    if (!floats || RIDES_THE_WAVES.has(landmark.kind)) continue;
+    if (heightAt(landmark.x, landmark.z) > 0) continue; // On land; the sea is not its problem.
+    const built = createLandmark(landmark.kind, landmark.opts as Record<string, unknown> | undefined);
+    const top = new THREE.Box3().setFromObject(built).max.y * (landmark.scale ?? 1);
+    if (top < WAVE_AMPLITUDE) swamped.push({ id: landmark.id, standsProud: Math.round(top * 100) / 100 });
+  }
+  check('nothing in the water can be covered by a crest', swamped.length === 0, {
+    swamped: swamped.slice(0, 6),
+    waveAmplitude: Number(WAVE_AMPLITUDE.toFixed(2)),
+  });
 
   const unknown = createLandmark('not-a-real-kind' as never);
   check('an unknown landmark kind degrades to an empty group', unknown.children.length === 0);

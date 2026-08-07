@@ -61,9 +61,10 @@ export function torii(opts?: Opts): THREE.Group {
   const dark = wood('dark');
 
   const pillarRadius = height * 0.055;
-  // Sea torii stand in the water, so their pillars run a long way below the origin to
-  // reach the seabed rather than ending at an invisible waterline.
-  const submerged = inWater ? 8 : 0;
+  // Sea torii stand in the water, so their pillars run below the origin to reach the seabed
+  // rather than ending at an invisible waterline. How far is a property of where the gate is,
+  // so `world/island.ts` measures it; 8 m is the fallback for anything built without that.
+  const submerged = inWater ? numOpt(opts, 'submerged', TORII_SUBMERGED) : 0;
 
   for (const sx of [-1, 1] as const) {
     const x = (sx * span) / 2;
@@ -272,18 +273,59 @@ export function komainu(opts?: Opts): THREE.Group {
 // ---------------------------------------------------------------------------
 
 /**
+ * How far a pier's deck stands above the prop's own origin, metres.
+ *
+ * Exported because the placement in `world/island.ts` has to subtract it: a pier's origin is
+ * its landward end, and what has to line up with the quay is the *deck*, not the origin. With
+ * the origin dropped on the quay instead, every pier on the island stood 1.9 m proud of the
+ * ground it started from — which is what a player meant by *"太高了，要板子和陆地齐平"*: too
+ * high, the planks should be level with the land.
+ *
+ * One number, in one place, for the same reason as everything else in this codebase that used
+ * to be two numbers in two places.
+ */
+export const PIER_DECK_HEIGHT = 1.9;
+
+/**
+ * Default pile length, metres below the deck.
+ *
+ * A fixed 11 m was fine while every pier stopped at the edge of the shelf. It stops being fine
+ * the moment one is extended, because the shelf around this island falls away hard: at the
+ * south harbour the seabed drops from −0.7 m to −22 m in sixteen metres of pier. Piles cut to
+ * a constant length simply end in open water past the drop, and a pier held up by nothing is
+ * worse than a short pier.
+ *
+ * So `world/island.ts` measures the seabed along each pier's actual run and passes the depth it
+ * needs. This is the fallback for anything built without that measurement.
+ */
+export const PIER_PILE_DEPTH = 11;
+
+/** Default depth a sea torii's pillars run below the waterline, metres. */
+export const TORII_SUBMERGED = 8;
+
+/** Lowest the rubble blocks reach on their own, in the prop's frame. Below this is toe. */
+const MOUND_FOOT = -1.6;
+
+/** How far the toe may descend below {@link MOUND_FOOT}, metres. */
+const MOUND_MAX_TOE = 16;
+
+/** How many seabed samples `world/island.ts` takes along a breakwater. */
+export const BREAKWATER_BED_SAMPLES = 12;
+
+/**
  * A pier: a plank deck on piles, running out into the water along +z.
  *
  * Planks are individual boxes with visible gaps. That is a lot of primitives for a walking
  * surface, but the line of the planks is what gives the harbour its scale, and they all
- * merge into one draw call. The piles run 11 m so the pier reaches the seabed whatever the
- * bathymetry does under it.
+ * merge into one draw call. The piles are sized by the caller — see {@link PIER_PILE_DEPTH} —
+ * because how far it is to the seabed is a property of where a pier is, not of what a pier is.
  */
 export function pier(opts?: Opts): THREE.Group {
   const length = numOpt(opts, 'length', 36);
   const width = numOpt(opts, 'width', 7);
   const lamps = boolOpt(opts, 'lamps', false);
-  const deckHeight = numOpt(opts, 'deckHeight', 1.9);
+  const deckHeight = numOpt(opts, 'deckHeight', PIER_DECK_HEIGHT);
+  const pileDepth = numOpt(opts, 'pileDepth', PIER_PILE_DEPTH);
   const parts: THREE.Mesh[] = [];
   const timber = wood('dark');
   const board = wood('weathered');
@@ -302,7 +344,9 @@ export function pier(opts?: Opts): THREE.Group {
   for (let i = 0; i <= bays; i++) {
     const z = (i * length) / bays;
     for (const sx of [-1, 1] as const) {
-      parts.push(cyl(0.2, 0.24, 11, 8, timber, sx * (width / 2 - 0.35), deckHeight - 5.6, z, 0, 0, 0, true));
+      parts.push(
+        cyl(0.2, 0.24, pileDepth, 8, timber, sx * (width / 2 - 0.35), deckHeight - pileDepth / 2 - 0.1, z, 0, 0, 0, true),
+      );
     }
     parts.push(box(width, 0.22, 0.22, timber, 0, deckHeight - 0.5, z));
   }
@@ -349,11 +393,40 @@ export function breakwater(opts?: Opts): THREE.Group {
   const rng = mulberry32(Math.round(length * 31));
   const rock = stone('dark');
 
+  // Seabed under the mound, in the prop's own frame, sampled evenly from the landward end to
+  // the seaward one. See BREAKWATER_BED_SAMPLES.
+  const bed = Array.isArray(opts?.bed) ? (opts.bed as number[]) : null;
+  const bedAt = (t: number): number | null => {
+    if (!bed || bed.length < 2) return null;
+    const u = Math.min(bed.length - 1, Math.max(0, t * (bed.length - 1)));
+    const i = Math.floor(u);
+    const f = u - i;
+    return bed[i]! * (1 - f) + bed[Math.min(bed.length - 1, i + 1)]! * f;
+  };
+
   const blocks = Math.max(8, Math.round(length / 2.2));
   for (let i = 0; i < blocks; i++) {
     const z = -length / 2 + (i + 0.5) * (length / blocks);
     // The mound tapers toward the seaward end.
     const scale = 1 - (i / blocks) * 0.25;
+
+    // Carry the mound down to the seabed where there is one to reach.
+    //
+    // The blocks above sit in a fixed band about the origin, roughly −2.8 m to +2.3 m, which
+    // is right for a mound rooted on the shelf and wrong the moment an arm is extended past
+    // it: this island's shelf falls to −18 m within twenty metres, and a rubble mound ends up
+    // hanging over the drop with nothing beneath it. Invisible through the water, and still a
+    // breakwater made of floating rocks.
+    //
+    // One tapered block per bay, from the seabed up into the mound. Cheap, and it is what the
+    // toe of a real mound is: the bulk of the structure is the part nobody sees.
+    const seabed = bedAt((i + 0.5) / blocks);
+    if (seabed !== null && seabed < MOUND_FOOT) {
+      // Capped, because past a certain depth the toe stops being a toe and becomes a wall
+      // standing on the abyssal plain — and none of it is visible through the water anyway.
+      const height = Math.min(MOUND_MAX_TOE, MOUND_FOOT - seabed);
+      parts.push(box(4.6 * scale, height, (length / blocks) * 1.05, rock, 0, MOUND_FOOT - height / 2, z));
+    }
     for (const sx of [-1, 0, 1] as const) {
       const size = randRange(rng, 1.5, 2.6) * scale;
       const block = box(

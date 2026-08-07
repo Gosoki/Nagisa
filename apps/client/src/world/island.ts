@@ -45,6 +45,8 @@ import type { QualitySettings } from '../engine/quality.js';
 import { inkDepthMaterial } from '../engine/ink/ink-material.js';
 import { stone, terrainMaterial } from './materials.js';
 import { Ocean } from './ocean.js';
+import { BREAKWATER_BED_SAMPLES, PIER_DECK_HEIGHT, PIER_PILE_DEPTH, TORII_SUBMERGED } from './props/structures.js';
+import { WAVE_AMPLITUDE, seaSurfaceAt } from './waves.js';
 import { Sky } from './sky.js';
 import { Scatter, disposeGroup } from './scatter.js';
 import { createLandmark, postLantern, stoneLantern } from './props/index.js';
@@ -108,6 +110,85 @@ interface Bucket {
   radius: number;
 }
 
+/**
+ * Half the hull, for the two slope samples that tilt a boat. The fleet is 7 m by 2.2 m and
+ * the ferry half again as big; one set of numbers for all of them is right, because this is
+ * asking "how much does the sea tip under something boat-sized", not measuring a specific
+ * hull.
+ */
+const BOAT_HALF_LENGTH = 3.5;
+const BOAT_HALF_BEAM = 1.1;
+
+/**
+ * Height of a pier's deck: the quay it starts from, or a freeboard clear of the crests when
+ * it starts over open water.
+ *
+ * Both the placement and the pile length are derived from this, which is why it is a function
+ * and not two copies of the same `Math.max`. The two copies were written first, and they are
+ * the reason this file already carries three separate notes about numbers that must not be
+ * kept in two places.
+ */
+function pierDeckY(landmark: Landmark): number {
+  return Math.max(heightAt(landmark.x, landmark.z), WAVE_AMPLITUDE, PIER_DECK_HEIGHT);
+}
+
+/**
+ * Fit a waterfront prop to the water it actually stands in.
+ *
+ * Three props, one idea: a pier's piles, a breakwater's toe and a sea torii's pillars all have
+ * to reach the seabed, and none of their generators can know where that is. It is a property
+ * of where the prop stands, not of what the prop is — and a constant is wrong on an island
+ * whose shelf falls from −1 m to −22 m inside sixteen metres. So the terrain is sampled here,
+ * once, and the measurement handed down. Everything else passes straight through.
+ *
+ * The result is a plain option bag rather than a `Landmark['opts']`: that type is *authored
+ * map data* and is scalars by design, while what comes out of here is measured — a whole
+ * sampled profile, in one case. Widening the authored type to admit it would let a map file
+ * declare a seabed, which is not a thing a map file gets to have an opinion about.
+ */
+function fittedOpts(landmark: Landmark): Record<string, unknown> | undefined {
+  if (landmark.kind === 'breakwater') {
+    // A breakwater is centred on its origin and runs both ways along local z, unlike a pier,
+    // which starts at its origin. Sampling the wrong span puts the toe under the wrong half.
+    const length = numberOpt(landmark.opts, 'length', 50) * (landmark.scale ?? 1);
+    const fx = Math.sin(landmark.rot);
+    const fz = Math.cos(landmark.rot);
+    const origin = Math.max(0, heightAt(landmark.x, landmark.z));
+    const bed: number[] = [];
+    for (let i = 0; i < BREAKWATER_BED_SAMPLES; i++) {
+      const t = -length / 2 + (i / (BREAKWATER_BED_SAMPLES - 1)) * length;
+      bed.push((heightAt(landmark.x + fx * t, landmark.z + fz * t) - origin) / (landmark.scale ?? 1));
+    }
+    return { ...landmark.opts, bed };
+  }
+  if (landmark.opts?.inWater === true && landmark.kind === 'torii') {
+    // Same idea a third time: a sea torii's pillars should end in the seabed, not at a depth
+    // that happened to suit the one place a sea torii used to stand. Moving the south gate out
+    // past the pier put it over 25 m of water with 8 m legs.
+    const depth = -heightAt(landmark.x, landmark.z) + 1;
+    return { ...landmark.opts, submerged: Math.max(TORII_SUBMERGED, depth) / (landmark.scale ?? 1) };
+  }
+  if (landmark.kind !== 'pier') return landmark.opts;
+  const length = numberOpt(landmark.opts, 'length', 36) * (landmark.scale ?? 1);
+  const deckHeight = numberOpt(landmark.opts, 'deckHeight', PIER_DECK_HEIGHT);
+  const deck = pierDeckY(landmark);
+  const fx = Math.sin(landmark.rot);
+  const fz = Math.cos(landmark.rot);
+  let deepest = Infinity;
+  for (let t = 0; t <= length; t += 2) {
+    deepest = Math.min(deepest, heightAt(landmark.x + fx * t, landmark.z + fz * t));
+  }
+  // A metre into the seabed, so the pile is planted rather than resting on it.
+  const needed = deck - deepest + 1;
+  return { ...landmark.opts, pileDepth: Math.max(PIER_PILE_DEPTH, needed) / (landmark.scale ?? 1), deckHeight };
+}
+
+/** Read a numeric landmark option, falling back when it is absent or not a number. */
+function numberOpt(opts: Landmark['opts'], key: string, fallback: number): number {
+  const value = opts?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
 export class Island {
   readonly group = new THREE.Group();
   readonly ocean: Ocean;
@@ -141,6 +222,11 @@ export class Island {
     this.buildStats.terrainMs = terrain.elapsedMs;
 
     onProgress(0.55, 'Raising the buildings');
+    // Any cached lookup into the previous build's scene graph is now pointing at meshes that
+    // are about to be replaced. Cheap to drop, expensive to notice: a stale entry animates an
+    // object nothing is drawing, and the thing you are looking at never moves.
+    this.boats = null;
+    this.lampCache = undefined;
     await this.buildLandmarks();
 
     onProgress(0.8, 'Hanging the lanterns');
@@ -259,7 +345,7 @@ export class Island {
   private instantiate(landmark: Landmark): THREE.Object3D | null {
     let object: THREE.Group;
     try {
-      object = createLandmark(landmark.kind, landmark.opts as Record<string, unknown> | undefined);
+      object = createLandmark(landmark.kind, fittedOpts(landmark));
     } catch (err) {
       // A broken prop generator must cost one building, not the whole island.
       console.error(`[island] failed to build landmark ${landmark.id} (${landmark.kind})`, err);
@@ -281,9 +367,21 @@ export class Island {
       // being true: `sh-pier-west` had all thirty-seven of its samples on 2.4 m of quay, and
       // was drawn 2.4 m underneath it with only its bollard caps showing.
       //
-      // A pier's origin is its landward end and its deck is level, so putting that end on the
-      // quay is also what makes the deck meet the quay instead of stepping down into it.
-      object.position.set(landmark.x, Math.max(0, heightAt(landmark.x, landmark.z)), landmark.z);
+      // A pier's origin is its landward end — but what has to meet the quay is its *deck*,
+      // which stands `PIER_DECK_HEIGHT` above that origin. Placing the origin on the quay put
+      // the planks 1.9 m above the ground they start from, on every pier on both maps: you
+      // walked to the harbour and the pier began at chest height. So the deck height is
+      // subtracted, and the deck lands exactly on the quay.
+      //
+      // Over open water there is no quay to match, and the deck instead wants a freeboard —
+      // enough that a crest does not wash over it. `WAVE_AMPLITUDE` is that number by
+      // definition, with the old 1.9 m as the floor so nothing got lower than it already was.
+      if (landmark.kind === 'pier') {
+        const deckHeight = numberOpt(landmark.opts, 'deckHeight', PIER_DECK_HEIGHT);
+        object.position.set(landmark.x, pierDeckY(landmark) - deckHeight, landmark.z);
+      } else {
+        object.position.set(landmark.x, Math.max(0, heightAt(landmark.x, landmark.z)), landmark.z);
+      }
     } else if (FOLLOWS_GROUND.has(landmark.kind)) {
       this.layAlongGround(object, landmark);
     } else {
@@ -563,6 +661,65 @@ export class Island {
     this.ocean.update(elapsed, this.sky.current.night);
     this.updateCulling(focus);
     this.animateLighthouse(elapsed);
+    this.floatBoats(elapsed);
+  }
+
+  /**
+   * Let the boats ride the sea instead of being nailed to mean sea level.
+   *
+   * Every floating landmark was placed once, at `y = max(0, ground)`, and never touched
+   * again. The sea is not at 0 though — it swings through ±{@link WAVE_AMPLITUDE} as the
+   * crests pass — so a hull pinned to 0 spends a good part of every cycle *inside* the water,
+   * which is precisely what a player reported: the boats are sometimes swallowed whole, and
+   * all of them do it.
+   *
+   * Raising them by a metre would trade a boat that sinks for a boat that hovers. Riding the
+   * surface is the actual answer, and it costs one sine evaluation per boat per frame for a
+   * harbour that moves.
+   *
+   * The tilt comes from sampling the surface a couple of metres fore and abeam and taking the
+   * slope between, rather than from an analytic gradient: it is the same arithmetic, it stays
+   * correct if the trains ever change, and sampling at the hull's own scale gives the boat the
+   * *average* slope under it rather than the one at a point, which is what a hull does.
+   */
+  private boats: Array<{ object: THREE.Object3D; baseY: number; yaw: number }> | null = null;
+
+  private floatBoats(elapsed: number): void {
+    if (!this.quality.animatedWater) return;
+    if (this.boats === null) {
+      this.boats = [];
+      for (const landmark of LANDMARKS) {
+        if (landmark.kind !== 'boat') continue;
+        const object = this.group.getObjectByName(landmark.id);
+        if (object) this.boats.push({ object, baseY: object.position.y, yaw: landmark.rot });
+      }
+    }
+    for (const boat of this.boats) {
+      const { x, z } = boat.object.position;
+      const cos = Math.cos(boat.yaw);
+      const sin = Math.sin(boat.yaw);
+      // A yaw of θ sends the hull's local +z to world (sin θ, cos θ) and its local +x to
+      // world (cos θ, −sin θ). Sample the surface at the ends of both axes.
+      const bowward = seaSurfaceAt(x + sin * BOAT_HALF_LENGTH, z + cos * BOAT_HALF_LENGTH, elapsed);
+      const sternward = seaSurfaceAt(x - sin * BOAT_HALF_LENGTH, z - cos * BOAT_HALF_LENGTH, elapsed);
+      const xPlus = seaSurfaceAt(x + cos * BOAT_HALF_BEAM, z - sin * BOAT_HALF_BEAM, elapsed);
+      const xMinus = seaSurfaceAt(x - cos * BOAT_HALF_BEAM, z + sin * BOAT_HALF_BEAM, elapsed);
+
+      boat.object.position.y = boat.baseY + seaSurfaceAt(x, z, elapsed);
+      // 'YXZ': heading first, then pitch about the turned x, then roll about the twice-turned
+      // z — which is the order that makes both angles mean what their names say.
+      //
+      // Signs, because they are easy to get backwards and invisible when wrong: a positive
+      // rotation about +x carries +z *downward*, so a bow on higher water wants a negative
+      // pitch. A positive rotation about +z carries +x *upward*, so higher water to local +x
+      // wants a positive roll.
+      boat.object.rotation.set(
+        Math.atan2(sternward - bowward, BOAT_HALF_LENGTH * 2),
+        boat.yaw,
+        Math.atan2(xPlus - xMinus, BOAT_HALF_BEAM * 2),
+        'YXZ',
+      );
+    }
   }
 
   /**

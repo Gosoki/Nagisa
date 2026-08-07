@@ -88,6 +88,135 @@ try {
   await page.locator('canvas[data-engine]').click({ position: { x: 210, y: 200 } });
   await page.waitForTimeout(500);
 
+  // --- Holding the left mouse button runs -------------------------------------------
+  //
+  // Driven through the real canvas: every bug this control has had was in the wiring rather
+  // than the logic. A click on a UI button was once a click on the world, and a
+  // duration-based test for "is this a click" read a 40 ms press as 2441 ms because event
+  // handlers run late on a loaded main thread. Holding a button has neither problem, which
+  // is most of why it replaced the toggle.
+  //
+  // ### Why this runs *before* the roam
+  //
+  // It used to run after, and every one of these checks is a comparison between two short
+  // legs of walking — so every one of them is really a question about the ground the
+  // character happens to be standing on. After a hundred and fifty metres of automated
+  // steering that ground is wherever the roam ran out of turns: against a wall at (17, −49)
+  // on one run, which made the walk leg cover 0.29 m/s where the bearing probe had just
+  // managed 0.54, and then reported "the right button does not run" as a failure because the
+  // *walk* it was compared against had been the obstructed one. Two red checks, both about
+  // the scenery, neither about a control.
+  //
+  // At the spawn the character is on a harbour terrace that `nearestWalkable` chose and that
+  // is flat for twenty-eight metres in every direction. Same measurements, no scenery in
+  // them. The roam still happens, immediately after, and still has the whole island to cross.
+  {
+    const box = await (await page.$('canvas')).boundingBox();
+    const cx = box.x + box.width * 0.5;
+    const cy = box.y + box.height * 0.62;
+    const pose = () =>
+      page.evaluate(() => {
+        const p = window.nagisa?.local?.position;
+        return p ? { x: p.x, z: p.z } : null;
+      });
+    const travel = async (ms) => {
+      const before = await pose();
+      await page.waitForTimeout(ms);
+      const after = await pose();
+      return before && after ? Math.hypot(after.x - before.x, after.z - before.z) : 0;
+    };
+    // Face open ground: whichever way the roam left the character pointing, some bearing has
+    // somewhere to walk, and measuring the one it stopped on measures the scenery.
+    //
+    // The bar has to be a real distance, and it has to be a distance measured *here* rather
+    // than a constant. At 0.05 m in 700 ms a character sliding along a wall passes, and then
+    // the comparison below is between two numbers that are both zero — but a fixed larger
+    // constant is no better, because this page runs at whatever fraction of real time the
+    // machine allows and 1.4 m in 1.2 s on a quiet box is 0.4 m on a loaded one.
+    //
+    // So the bearing search keeps the *best* of eight and the bar is relative: the run leg
+    // below covers about twice the walk leg, so the chosen bearing needs enough clear ground
+    // for all of it. A bearing that merely lets you shuffle is what produced "walk 2.95 m vs
+    // run 3.58 m" — both legs ending against the same obstacle, a ratio of 1.2, and a
+    // movement regression reported where there was none.
+    const turnRight = async () => {
+      await page.mouse.move(cx, cy);
+      await page.mouse.down();
+      await page.mouse.move(cx + 250, cy, { steps: 10 });
+      await page.mouse.up();
+    };
+    const probe = async () => {
+      await page.keyboard.down('KeyW');
+      const d = await travel(1200);
+      await page.keyboard.up('KeyW');
+      await page.waitForTimeout(200);
+      return d;
+    };
+
+    // Sweep the whole circle first, *then* come back to the best of it. Taking the first
+    // bearing over a fixed bar is what this used to do, and on a quiet machine the first
+    // bearing tried clears that bar with three metres of wall just past it.
+    const sweep = [];
+    for (let turn = 0; turn < 8; turn++) {
+      sweep.push(await probe());
+      await turnRight();
+    }
+    const bestFacing = Math.max(...sweep);
+    let facing = 0;
+    for (let turn = 0; turn < 8; turn++) {
+      facing = await probe();
+      if (facing >= bestFacing * 0.85) break;
+      await turnRight();
+    }
+    check('the character has somewhere to walk before the control is measured', facing > 0.3, `${facing.toFixed(2)} m in 1.2 s`);
+
+    // Put the pointer on the world before pressing. A press outside the canvas is correctly
+    // ignored — the overlay's buttons are not the world — and the pointer starts at (0, 0),
+    // so a test that forgets this measures the guard rather than the control.
+    await page.mouse.move(cx, cy);
+    await page.keyboard.down('KeyW');
+    const walked = await travel(2500);
+    await page.mouse.down({ button: 'left' });
+    const ran = await travel(2500);
+    await page.mouse.up({ button: 'left' });
+    const afterRelease = await travel(2500);
+    await page.keyboard.up('KeyW');
+
+    // Ratios, not metres. The physics is driven by the frame loop and this page runs at a
+    // fraction of real time, so absolute distances say more about the machine than the
+    // control; the claim being made is "held left is faster, released is not".
+    // Both legs have to have been *free* for the ratio to mean anything. A walk leg that
+    // covers less ground per second than the bearing probe just did was obstructed, and
+    // comparing two obstructed legs compares the obstacle to itself.
+    const walkRate = walked / 2.5;
+    const probeRate = facing / 1.2;
+    check(
+      'the walk leg ran clear of obstructions',
+      walkRate > probeRate * 0.6,
+      `walk ${walkRate.toFixed(2)} m/s vs ${probeRate.toFixed(2)} m/s on the probe — at ${await pose().then((p) => (p ? `(${p.x.toFixed(0)}, ${p.z.toFixed(0)})` : '?'))}`,
+    );
+    check('holding the left button runs', ran > walked * 1.35, `walk ${walked.toFixed(2)} m vs run ${ran.toFixed(2)} m`);
+    check(
+      'releasing it goes back to walking',
+      afterRelease < ran * 0.85,
+      `run ${ran.toFixed(2)} m vs after release ${afterRelease.toFixed(2)} m`,
+    );
+
+    // The right button orbits and must not run.
+    await page.mouse.move(cx, cy);
+    await page.keyboard.down('KeyW');
+    await page.mouse.down({ button: 'right' });
+    const withRight = await travel(2500);
+    await page.mouse.up({ button: 'right' });
+    await page.keyboard.up('KeyW');
+    check('the right button does not run', withRight < walked * 1.35, `${withRight.toFixed(2)} m against a walk of ${walked.toFixed(2)} m`);
+
+    // And a bare click, with nothing held, must leave the character where it is.
+    await page.mouse.click(cx, cy, { delay: 40 });
+    const idle = await travel(1500);
+    check('a click on its own does not start anything', idle < 0.2, `moved ${idle.toFixed(2)} m`);
+  }
+
   // Count corrections by watching the player's position for discontinuities the client's
   // own physics could not have produced. A correction snaps you; running does not.
   await page.evaluate(() => {
@@ -155,7 +284,18 @@ try {
   }
   await page.keyboard.up('ShiftLeft');
 
-  const roam = await page.evaluate(() => ({ ...window.__roam, jumps: window.__roam.jumps.slice(0, 6) }));
+  // `window.__roam` is installed by an `evaluate`, so a page reload takes it with it — and a
+  // reload is exactly what Vite does when a source file changes, which happens whenever
+  // someone edits the client while a run is in flight. Reading through the hole gives
+  // "Cannot read properties of undefined (reading 'jumps')", which reads like a product bug
+  // and is not one. Say what actually happened instead: the run is void, not failed.
+  const roam = await page.evaluate(() => (window.__roam ? { ...window.__roam, jumps: window.__roam.jumps.slice(0, 6) } : null));
+  if (!roam) {
+    throw new Error(
+      'the page reloaded mid-run and the roam state went with it — almost certainly Vite HMR ' +
+        'after a source edit. Nothing was measured; re-run against a quiet working tree.',
+    );
+  }
 
   // Thresholds are what a software rasteriser can actually reach in the time — see the
   // header. They are here to prove the player moved *and left the flat spawn terrace*, so
@@ -169,84 +309,6 @@ try {
   check('no page errors while roaming', pageErrors.length === 0, pageErrors.slice(0, 3));
   console.log(`       roamed ${Math.round(roam.distance)} m over ${roam.samples} samples, y ${roam.minY?.toFixed?.(1)}–${roam.maxY?.toFixed?.(1)}`);
 
-  // --- Holding the left mouse button runs -------------------------------------------
-  //
-  // Driven through the real canvas: every bug this control has had was in the wiring rather
-  // than the logic. A click on a UI button was once a click on the world, and a
-  // duration-based test for "is this a click" read a 40 ms press as 2441 ms because event
-  // handlers run late on a loaded main thread. Holding a button has neither problem, which
-  // is most of why it replaced the toggle.
-  {
-    const box = await (await page.$('canvas')).boundingBox();
-    const cx = box.x + box.width * 0.5;
-    const cy = box.y + box.height * 0.62;
-    const pose = () =>
-      page.evaluate(() => {
-        const p = window.nagisa?.local?.position;
-        return p ? { x: p.x, z: p.z } : null;
-      });
-    const travel = async (ms) => {
-      const before = await pose();
-      await page.waitForTimeout(ms);
-      const after = await pose();
-      return before && after ? Math.hypot(after.x - before.x, after.z - before.z) : 0;
-    };
-    // Face open ground: whichever way the roam left the character pointing, some bearing has
-    // somewhere to walk, and measuring the one it stopped on measures the scenery.
-    //
-    // The bar has to be a real distance. At 0.05 m in 700 ms a character sliding along a wall
-    // passes, and then the comparison below is between two numbers that are both zero. Eight
-    // bearings rather than four, because wedged in a corner two opposite ones can both fail.
-    let facing = 0;
-    for (let turn = 0; turn < 8; turn++) {
-      await page.keyboard.down('KeyW');
-      facing = await travel(1200);
-      await page.keyboard.up('KeyW');
-      await page.waitForTimeout(200);
-      if (facing > 0.3) break;
-      await page.mouse.move(cx, cy);
-      await page.mouse.down();
-      await page.mouse.move(cx + 250, cy, { steps: 10 });
-      await page.mouse.up();
-    }
-    check('the character has somewhere to walk before the control is measured', facing > 0.3, `${facing.toFixed(2)} m in 1.2 s`);
-
-    // Put the pointer on the world before pressing. A press outside the canvas is correctly
-    // ignored — the overlay's buttons are not the world — and the pointer starts at (0, 0),
-    // so a test that forgets this measures the guard rather than the control.
-    await page.mouse.move(cx, cy);
-    await page.keyboard.down('KeyW');
-    const walked = await travel(2500);
-    await page.mouse.down({ button: 'left' });
-    const ran = await travel(2500);
-    await page.mouse.up({ button: 'left' });
-    const afterRelease = await travel(2500);
-    await page.keyboard.up('KeyW');
-
-    // Ratios, not metres. The physics is driven by the frame loop and this page runs at a
-    // fraction of real time, so absolute distances say more about the machine than the
-    // control; the claim being made is "held left is faster, released is not".
-    check('holding the left button runs', ran > walked * 1.35, `walk ${walked.toFixed(2)} m vs run ${ran.toFixed(2)} m`);
-    check(
-      'releasing it goes back to walking',
-      afterRelease < ran * 0.85,
-      `run ${ran.toFixed(2)} m vs after release ${afterRelease.toFixed(2)} m`,
-    );
-
-    // The right button orbits and must not run.
-    await page.mouse.move(cx, cy);
-    await page.keyboard.down('KeyW');
-    await page.mouse.down({ button: 'right' });
-    const withRight = await travel(2500);
-    await page.mouse.up({ button: 'right' });
-    await page.keyboard.up('KeyW');
-    check('the right button does not run', withRight < walked * 1.35, `${withRight.toFixed(2)} m against a walk of ${walked.toFixed(2)} m`);
-
-    // And a bare click, with nothing held, must leave the character where it is.
-    await page.mouse.click(cx, cy, { delay: 40 });
-    const idle = await travel(1500);
-    check('a click on its own does not start anything', idle < 0.2, `moved ${idle.toFixed(2)} m`);
-  }
 
   await browser.close();
 } catch (err) {

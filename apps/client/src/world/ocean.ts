@@ -36,6 +36,7 @@ import { ISLAND_EXTENT, OCEAN_RADIUS, SCENE_COLORS, heightAt } from '@nagisa/sha
 import type { QualitySettings } from '../engine/quality.js';
 import { DEPTH_CODEC, NORMAL_CODEC, PAPER_NOISE } from '../engine/ink/glsl.js';
 import { inkLighting } from '../engine/ink/ink-material.js';
+import { WAVE_GLSL } from './waves.js';
 
 /** Resolution of the baked bathymetry texture. 256² covers the island at ~2 m per texel. */
 const BATHY_RES = 256;
@@ -154,16 +155,13 @@ out vec3 vWorldPos;
 out vec3 vViewPos;
 out float vWave;
 
-/**
- * Two crossed sine trains at different scales and speeds. Not a Gerstner solver —
- * at this camera distance the difference is invisible and the cost is not.
- */
-float waveHeight(vec2 p, float t) {
-  float w = sin(p.x * 0.055 + t * 0.9) * 0.34;
-  w += sin(p.y * 0.041 - t * 0.7) * 0.28;
-  w += sin((p.x + p.y) * 0.017 + t * 0.45) * 0.5;
-  return w;
-}
+// Two crossed sine trains and a long diagonal swell. Not a Gerstner solver — at this camera
+// distance the difference is invisible and the cost is not.
+//
+// Generated from \`world/waves.ts\`, which evaluates the identical expression on the CPU so the
+// boats ride the surface they are actually floating on. Do not edit the coefficients here;
+// there are none here to edit.
+${WAVE_GLSL}
 
 void main() {
   vUv = uv;
@@ -171,10 +169,7 @@ void main() {
 
   // Waves are damped with distance so the horizon stays a clean flat line — a
   // rippling horizon reads as a bug, not as sea.
-  float dist = length(pos.xz);
-  float damp = 1.0 - smoothstep(120.0, 900.0, dist);
-
-  vWave = waveHeight(pos.xz, uTime) * damp * uWaveEnabled;
+  vWave = waveHeight(pos.xz, uTime) * waveDamping(pos.xz) * uWaveEnabled;
   pos.y += vWave;
 
   vec4 world = modelMatrix * vec4(pos, 1.0);

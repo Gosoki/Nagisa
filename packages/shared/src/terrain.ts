@@ -1285,9 +1285,68 @@ function padBlendOuter(pad: Pad, dx: number, dz: number): number {
   return lerp(ring[i]!, ring[(i + 1) % PAD_RIM_SECTORS]!, t - i);
 }
 
+/**
+ * How many other terraces' flats a terrace's centre lies inside. Rebuilt per map.
+ *
+ * The notice board sits *on* the plaza — its centre is 22 m from the plaza's, well inside
+ * the plaza's 34 m flat — and it is a deliberately raised platform 0.4 m above it. Every
+ * other pair of terraces on the island is side by side. That distinction is the whole reason
+ * the composition below needs an order at all; see {@link paddedHeight}.
+ */
+let padDepths: number[] = [];
+
+function rebuildPadDepths(): void {
+  padDepths = PADS.map((p) =>
+    PADS.reduce((n, q) => (q !== p && Math.hypot(p.x - q.x, p.z - q.z) < q.inner ? n + 1 : n), 0),
+  );
+}
+
+/**
+ * How far apart two terraces' claims must be before the stronger fully silences the weaker.
+ *
+ * A hard comparison would be a cliff in the field wherever two claims cross. Over a band the
+ * handover is gradual, and at exactly equal strength both are suppressed identically — which
+ * is what makes the result independent of which one an implementation happened to look at
+ * first, and therefore the same on the client and the server.
+ */
+const PAD_DOMINANCE_BAND = 0.08;
+
+/** Scratch for `paddedHeight`, reused: this runs on every one of ~160 000 mesh samples. */
+const padClaims: Array<{ height: number; w: number; depth: number; inner: number }> = [];
+
+/**
+ * Natural ground with the terraces pressed into it.
+ *
+ * ### Why this is not a chain of lerps
+ *
+ * It was: `h = lerp(h, pad.height, w)` for each pad in turn. That reads well and is wrong
+ * wherever two terraces are close enough for one's blend ring to reach the other's flat —
+ * because a pad with `w` of 0.76 will happily drag ground that another pad has already set,
+ * with `w` of exactly 1, to its authored height. **Every pad on the island was off its own
+ * authored height**: the plaza by 4.70 m at its rim, the beach by 2.96, the village by 2.72.
+ * Smooth, so no slope or step check could see it; wrong, because a terrace that is not flat
+ * is not a terrace.
+ *
+ * ### What it is instead
+ *
+ * Each terrace claims a share of the point, strongest first, and can only claim what is
+ * left. A pad whose flat contains the point claims `w = 1` and therefore all of it, so its
+ * height is exact and nothing else can pull it. Away from any flat the shares add up to less
+ * than one and the remainder is the natural ground, exactly as before.
+ *
+ * Order is by *nesting depth* first and only then by strength. Strength alone cannot express
+ * the notice board: it stands on the plaza, so the plaza's `w` is 1 across the whole of it
+ * and the plaza would always claim everything first — the raised platform would vanish, and
+ * at its rim, discontinuously. Depth says "a terrace that sits on another one gets to speak
+ * before it", which is what nesting means.
+ *
+ * Ties are broken toward the smaller terrace so the result never depends on the order pads
+ * happen to appear in the map file — both sides of the wire must agree on this.
+ */
 function paddedHeight(x: number, z: number): number {
-  let h = naturalHeight(x, z);
-  for (const pad of PADS) {
+  padClaims.length = 0;
+  for (let i = 0; i < PADS.length; i++) {
+    const pad = PADS[i]!;
     const dx = x - pad.x;
     const dz = z - pad.z;
     const dSq = dx * dx + dz * dz;
@@ -1296,9 +1355,52 @@ function paddedHeight(x: number, z: number): number {
     const reach = pad.inner + (pad.outer - pad.inner) * MAX_PAD_BLEND_GROWTH;
     if (dSq > reach * reach) continue;
     const w = 1 - smoothstep(pad.inner, padBlendOuter(pad, dx, dz), Math.sqrt(dSq));
-    h = lerp(h, pad.height, w);
+    if (w <= 0) continue;
+    padClaims.push({ height: pad.height, w, depth: padDepths[i] ?? 0, inner: pad.inner });
   }
-  return h;
+  if (padClaims.length === 0) return naturalHeight(x, z);
+  if (padClaims.length === 1) {
+    const only = padClaims[0]!;
+    return lerp(naturalHeight(x, z), only.height, only.w);
+  }
+
+  // Each claim is cut down by the claims that outrank it. Two things can outrank one:
+  //
+  // - **Depth.** A terrace standing on another one speaks first, in full. Depth is a fixed
+  //   property of the map, so it can be a hard rule without making the field jump.
+  // - **Strength, softly.** Among terraces at the same depth, a stronger claim suppresses a
+  //   weaker one — but through a `smoothstep` over {@link PAD_DOMINANCE_BAND} rather than a
+  //   comparison. That matters: sorting and taking "what is left" is the obvious way to write
+  //   this and it tears wherever two rings of similar strength cross, which on this island is
+  //   thirty-three places and steps of up to a metre. At equal strength the soft form
+  //   suppresses both by the same amount, so there is nothing to tear.
+  //
+  // The suppression decides how the terraces divide the point *between themselves*. How much
+  // of the point they hold *together* is a separate question, and the answer is the union of
+  // their coverages — one minus the chance every one of them misses. Two claims happen to
+  // give the same number either way; three do not, and reading it off the suppressed shares
+  // instead let raw hillside through where the plaza, the beach and the south harbour all
+  // reach the same corner, steepening the bank beside the coast road into something you
+  // could not walk across.
+  let claimed = 0;
+  let miss = 1;
+  let h = 0;
+  for (const claim of padClaims) {
+    let share = claim.w;
+    for (const other of padClaims) {
+      if (other === claim) continue;
+      if (other.depth > claim.depth) share *= 1 - other.w;
+      else if (other.depth === claim.depth) {
+        share *= 1 - other.w * smoothstep(-PAD_DOMINANCE_BAND, PAD_DOMINANCE_BAND, other.w - claim.w);
+      }
+    }
+    h += share * claim.height;
+    claimed += share;
+    miss *= 1 - claim.w;
+  }
+  if (claimed <= 0) return naturalHeight(x, z);
+  const cover = 1 - miss;
+  return (h / claimed) * cover + (1 - cover) * naturalHeight(x, z);
 }
 
 /**
@@ -1992,6 +2094,7 @@ onMapChange((pack) => {
   pathProfiles.clear();
   pathCuts.clear();
   padRims.clear();
+  rebuildPadDepths();
   rebuildSolids(pack.world.landmarks);
   profilesUnderConstruction.clear();
 });

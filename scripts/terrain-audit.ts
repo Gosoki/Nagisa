@@ -282,6 +282,49 @@ for (const [x, z, amp] of washboard.slice(0, 5)) {
 }
 process.stdout.write('\n');
 
+// --- Terraces: is a flat flat? ---------------------------------------------------------
+//
+// `world-smoke` asks this of each pad's *centre*, which every pad has always passed. The
+// centre is the one point nothing can reach: the answer lives at the rim, where a neighbour's
+// blend ring arrives. Composing the terraces as a chain of `lerp`s let a ring with a weight
+// of 0.76 drag ground another pad had already set at a weight of exactly 1 — the plaza was
+// 4.70 m low at its edge, the beach 2.96, and every pad on the island was off its own number.
+//
+// Where a road crosses a terrace the ground is *supposed* to leave the flat: a lane is cut to
+// its own grade and the quay it crosses does not get a say. So the question is only asked of
+// ground no road reaches.
+const padFaults: Array<[string, number, number, number]> = [];
+for (const pad of PADS) {
+  let worst = 0;
+  let wx = pad.x;
+  let wz = pad.z;
+  for (let r = 0; r <= pad.inner; r += 0.5) {
+    for (let k = 0; k < 96; k++) {
+      const a = (k / 96) * Math.PI * 2;
+      const x = pad.x + Math.cos(a) * r;
+      const z = pad.z + Math.sin(a) * r;
+      if (nearestPath(x, z).path) continue;
+      // A terrace standing on another one is meant to be proud of it — and so is the ramp off
+      // its edge, so the exclusion has to be the smaller pad's whole *ring*, not just its
+      // flat. Without that, the plaza reads as 0.40 m out where the notice board's platform
+      // slopes back down to it, which is the platform working.
+      if (PADS.some((q) => q !== pad && q.inner < pad.inner && Math.hypot(x - q.x, z - q.z) <= q.inner + (q.outer - q.inner) * 3)) continue;
+      const d = Math.abs(heightAt(x, z) - pad.height);
+      if (d > worst) {
+        worst = d;
+        wx = x;
+        wz = z;
+      }
+    }
+  }
+  if (worst > 0.05) padFaults.push([pad.id, worst, wx, wz]);
+}
+process.stdout.write(`\nterraces that are not flat (clear of any road): ${padFaults.length}\n`);
+for (const [id, d, x, z] of padFaults) {
+  process.stdout.write(`    ${id.padEnd(16)} off by ${d.toFixed(2)} m at (${x.toFixed(0)}, ${z.toFixed(0)})\n`);
+}
+process.stdout.write('\n');
+
 // --- Snags: walk the routes and count what stops you ---------------------------------
 //
 // A pinhole census says how speckled the *island* is. It does not say whether a player
@@ -490,6 +533,7 @@ const verdicts: Array<[string, boolean, string]> = [
   // dune's turn as a reversal. Both are below what a walker feels underfoot, which is what
   // this is asking. It caught the atoll's 4.7 m shore spike when that number was 0.3.
   ['no corrugation is step-sized', worstWashboard < 0.4, `worst is ${worstWashboard.toFixed(2)} m`],
+  ['every terrace is flat', padFaults.length === 0, `${padFaults.length} off their authored height`],
   ['nothing important is cut off', problems === 0, `${problems} unreachable`],
   ['stranded pockets are small', stranded <= walkable * 0.02, `${stranded} of ${walkable}`],
   // "The smoothing did not eat the terrain" — asked of the *terrain*, not of the walkable

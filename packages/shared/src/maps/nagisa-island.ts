@@ -317,13 +317,18 @@ const PATHS: MapPack['terrain']['paths'] = [
       // off the mountain's foot, hit the terrace, and turned straight back uphill to the
       // plaza. From the bench beside it that reads as a road that gives up — "这条路不要拐角，
       // 继续延伸". So it carries on east past the terrace first and takes the plaza in two
-      // turns of about fifty degrees instead of one of eighty, which is a road bending round
-      // a hillside rather than a road changing its mind.
+      // turns of 48° and 54° instead of one of eighty, which is a road bending round a
+      // hillside rather than a road changing its mind.
+      //
+      // The terrace vertex itself does **not** move. A first attempt slid it to (46, 23) as
+      // well, which pulled the carriageway 0.4 m closer to `nb-board` and put the notice board
+      // 0.3 m inside it — a road driven through the thing the road exists to serve. Adding the
+      // second vertex is the whole fix; moving the first was never part of it.
       [0, 74],
       [14, 52],
       [32, 34],
-      [46, 23], // notice-board terrace
-      [58, 26],
+      [48, 22], // notice-board terrace
+      [58, 24],
       [64, 37], // plaza
     ],
   },
@@ -493,7 +498,7 @@ const INTERACTABLES: MapPack['world']['interactables'] = [
   // its prompt with it. A prompt left behind is a "Ring" that rings nothing.
   { id: 'notice-board', zone: 'noticeboard', dx: -3.2, dz: 2.5, range: 4.5, kind: 'use', label: 'Read', effect: 'read_announcements' },
   { id: 'plaza-post', zone: 'plaza', dx: -13, dz: 7, range: 3.5, kind: 'use', label: 'Check in', effect: 'checkin_nearby' },
-  { id: 'shrine-bell', zone: 'shrine', dx: -9.5, dz: -7, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
+  { id: 'shrine-bell', zone: 'shrine', dx: -13.2, dz: -8.1, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
   { id: 'summit-bell', zone: 'summit', dx: 0, dz: 12.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
   { id: 'south-harbor-bell', zone: 'south-harbor', dx: 10.5, dz: 3.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
   { id: 'north-harbor-bell', zone: 'north-harbor', dx: 13.1, dz: -3.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
@@ -710,18 +715,34 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   // path nor across it; and the hall stood at the far end facing *west*, with its back to its
   // own approach and its doors looking out to sea.
   //
-  // Now every one of these is placed by station along the sandō and squared to it: the hall at
-  // its head fourteen metres west of the T, exactly where the road crosses, facing back down
-  // the approach; the three gates on the centreline at 6, 13 and 20 m, growing as they go out;
-  // the guardian dogs, the bell and the basin in mirrored pairs either side.
+  // The **gates** are still placed by station along the sandō and squared to it: on the
+  // centreline at 6, 13 and 20 m, growing as they go out, with the guardian dogs either side.
+  //
+  // The **buildings** are not. They used to share one yaw of −1.203 and sit at three unrelated
+  // setbacks from the coast road — front walls 4.69, 5.63 and 7.66 m out — which from the road
+  // reads as three copies of the same object rather than as a precinct: 「这里3个建筑最好沿着
+  // 路的曲线分布」. They are now stationed evenly along the coast lane (s = 398, 411.06, 425 —
+  // spacings of 13.1 and 13.9 m), set on a common frontage line, and each turned to face the
+  // lane at *its own* station, so the yaws step −1.118 / −1.047 / −0.976 with the road's bend.
+  //
+  // How much bend there is to follow: 8.1°, all of it at the single vertex (−64, 37). That is
+  // the honest limit of this note — the coast polyline has no waypoint between (−82, 0) and
+  // (−41, 71), so no arrangement of landmarks can trace a curve the lane does not have. What
+  // changes on screen is the even stationing and the shared frontage, not the yaw spread.
+  //
+  // The three now face the road within 0.2° where they were 4.9°, 4.9° and 13.0° off it.
   { id: 'sr-torii-1', kind: 'torii', x: -45.4, z: 29.7, rot: 2.078, scale: 1.35 },
   { id: 'sr-torii-2', kind: 'torii', x: -49.6, z: 31.4, rot: 1.942, scale: 1.25 },
   { id: 'sr-torii-3', kind: 'torii', x: -53.7, z: 33.0, rot: 1.942, scale: 1.15 },
   { id: 'sr-komainu-l', kind: 'komainu', x: -55.4, z: 38.9, rot: -1.200, opts: { side: 1 } },
   { id: 'sr-komainu-r', kind: 'komainu', x: -58.6, z: 29.7, rot: -1.200, opts: { side: -1 } },
-  { id: 'sr-temizuya', kind: 'temizuya', x: -67.2, z: 51.1, rot: -1.203 },
-  { id: 'sr-hall', kind: 'shrine-hall', x: -77.0, z: 42.1, rot: -1.203, opts: { w: 11, d: 9, honden: true } },
-  { id: 'sr-bell', kind: 'bell-tower', x: -75.9, z: 28.7, rot: -1.203 },
+  { id: 'sr-temizuya', kind: 'temizuya', x: -64.1, z: 53.9, rot: -0.976 },
+  { id: 'sr-hall', kind: 'shrine-hall', x: -76.7, z: 44.4, rot: -1.047, opts: { w: 11, d: 9, honden: true } },
+  // Pulled 3.94 m further off the carriageway as well as restationed — 「钟可以适当往后一点点」,
+  // and "back" from where that note was written is +2.29 m along the camera and +3.41 m along
+  // the avatar's facing, so every reading of it agrees. Its `shrine-bell` interactable moves
+  // with it; left where it was, the Ring prompt sits 6.10 m from a bell with 3.5 m of range.
+  { id: 'sr-bell', kind: 'bell-tower', x: -79.6, z: 30.1, rot: -1.118 },
   { id: 'sr-rock-1', kind: 'rock', x: -88, z: 52, rot: 0.5, scale: 1.5 },
   { id: 'sr-rock-2', kind: 'rock', x: -84, z: 24, rot: 2.1, scale: 1.2 },
 

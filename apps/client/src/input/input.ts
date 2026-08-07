@@ -41,6 +41,9 @@ export interface StickState {
 }
 
 /** Radius of the virtual stick in CSS pixels — the distance for full deflection. */
+/** How far a mouse may travel during a press and still count as a click, pixels. */
+const CLICK_SLOP_PX = 6;
+
 const STICK_RADIUS = 56;
 
 export class Input {
@@ -61,6 +64,22 @@ export class Input {
   private lookPointer: number | null = null;
   private lastLookX = 0;
   private lastLookY = 0;
+  /** Where a mouse press began, so a click can be told from a drag. */
+  private pressX = 0;
+  private pressY = 0;
+
+  /**
+   * Autorun: keep walking forward until told otherwise.
+   *
+   * "Forward" is the camera's forward, not the character's, because the movement vector is
+   * camera-relative everywhere else — so orbiting while autorunning steers, which is the
+   * point of having it. It is a toggle rather than a hold: a control you have to keep a
+   * button down for is not one you can cross an island with while reading the chat.
+   */
+  autoRun = false;
+
+  /** Set when autorun turns on or off, so the HUD can say so. */
+  onAutoRunChange: ((on: boolean) => void) | null = null;
 
   /** Pointer id driving the virtual stick, or null. */
   private stickPointer: number | null = null;
@@ -108,6 +127,21 @@ export class Input {
     this.interactQueued = true;
   }
 
+  /**
+   * Turn autorun off.
+   *
+   * Public because the character calls it: a player who autoruns into a wall would otherwise
+   * lean on it indefinitely, which is the same defect the scripted walk's stall watchdog
+   * exists to prevent. Anything that ends the walk should come through here so the HUD
+   * indicator and the movement vector cannot disagree.
+   */
+  cancelAutoRun(): void {
+    if (!this.autoRun) return;
+    this.autoRun = false;
+    this.onAutoRunChange?.(false);
+    this.updateMoveFromKeys();
+  }
+
   /** Zero the look delta. Called by the camera after it has applied it. */
   clearLook(): void {
     this.look.x = 0;
@@ -121,6 +155,7 @@ export class Input {
   releaseAll(): void {
     this.keys.clear();
     this.run = false;
+    this.cancelAutoRun();
     this.updateMoveFromKeys();
   }
 
@@ -196,22 +231,36 @@ export class Input {
       x /= len;
       y /= len;
     }
+    // Any real movement key cancels autorun — taking the controls back should never need a
+    // second gesture to undo the first.
+    if (this.autoRun && (x !== 0 || y !== 0)) {
+      this.autoRun = false;
+      this.onAutoRunChange?.(false);
+    }
     // Only the keyboard writes here; touch writes directly in `onPointerMove`. If a
     // stick is active it owns the vector.
     if (this.stickPointer === null) {
       this.move.x = x;
-      this.move.y = y;
+      this.move.y = this.autoRun && y === 0 ? 1 : y;
     }
   }
 
   private onPointerDown = (e: PointerEvent): void => {
+    // The world is the canvas. The overlay's root is `pointer-events: none` and its controls
+    // opt back in, so anything whose target is not the canvas is a button, a panel or a
+    // field — and treating those as world gestures meant that clicking "Go ashore" set the
+    // character autorunning off the pier before the player had touched anything.
+    if (!(e.target instanceof HTMLCanvasElement)) return;
     if (this.isTypingTarget(e.target)) return;
 
-    // Mouse always orbits — a desktop user has the keyboard for movement.
+    // Mouse drags orbit; a mouse *click* toggles autorun. Both start the same way, and
+    // which one it was is only known on release — see `onPointerUp`.
     if (e.pointerType === 'mouse') {
       this.lookPointer = e.pointerId;
       this.lastLookX = e.clientX;
       this.lastLookY = e.clientY;
+      this.pressX = e.clientX;
+      this.pressY = e.clientY;
       return;
     }
 
@@ -265,7 +314,28 @@ export class Input {
   };
 
   private onPointerUp = (e: PointerEvent): void => {
-    if (e.pointerId === this.lookPointer) this.lookPointer = null;
+    if (e.pointerId === this.lookPointer) {
+      this.lookPointer = null;
+      // A click, not a drag: the pointer barely moved. **Distance only** — no duration test.
+      //
+      // One was tried, and it is the wrong instrument. Timing a press means subtracting two
+      // clocks read inside event handlers, and on a loaded main thread a handler runs long
+      // after its event: a 40 ms click measured 2441 ms while the island was meshing under
+      // software WebGL. `e.timeStamp` is no better for synthesised input. So a duration test
+      // makes the control stop working exactly when the machine is struggling, which is the
+      // worst possible time for a movement control to stop working.
+      //
+      // Distance has no such problem, and it is also the better question: a press that did
+      // not move is a click whether it lasted 40 ms or a second and a half.
+      if (
+        e.pointerType === 'mouse' &&
+        Math.hypot(e.clientX - this.pressX, e.clientY - this.pressY) < CLICK_SLOP_PX
+      ) {
+        this.autoRun = !this.autoRun;
+        this.onAutoRunChange?.(this.autoRun);
+        this.updateMoveFromKeys();
+      }
+    }
     if (e.pointerId === this.stickPointer) {
       this.stickPointer = null;
       this.stick = null;

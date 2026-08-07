@@ -142,6 +142,70 @@ try {
   check('no page errors while roaming', pageErrors.length === 0, pageErrors.slice(0, 3));
   console.log(`       roamed ${Math.round(roam.distance)} m over ${roam.samples} samples, y ${roam.minY?.toFixed?.(1)}–${roam.maxY?.toFixed?.(1)}`);
 
+  // --- Autorun: click the world to walk forward, click again to stop ------------------
+  //
+  // Driven through the real canvas, because every bug this control had was in the wiring
+  // rather than in the logic: clicking "Go ashore" set the character autorunning, because
+  // the overlay's buttons are inside the element the world listens on; and a duration-based
+  // click test read a 40 ms click as 2441 ms, because event handlers run late on a loaded
+  // main thread. Neither is visible from anywhere but a browser.
+  {
+    const box = await (await page.$('canvas')).boundingBox();
+    const cx = box.x + box.width * 0.5;
+    const cy = box.y + box.height * 0.62;
+    const isOn = () => page.evaluate(() => document.body.innerText.includes('click to stop'));
+    const pose = () =>
+      page.evaluate(() => {
+        const p = window.nagisa?.local?.position;
+        return p ? { x: p.x, z: p.z } : null;
+      });
+    const travel = async (ms) => {
+      const before = await pose();
+      await page.waitForTimeout(ms);
+      const after = await pose();
+      return before && after ? Math.hypot(after.x - before.x, after.z - before.z) : 0;
+    };
+
+    // A drag orbits the camera and must not be mistaken for a click.
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + 120, cy, { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(500);
+    check('a drag orbits and does not start autorun', !(await isOn()));
+
+    await page.mouse.click(cx, cy, { delay: 40 });
+    await page.waitForTimeout(400);
+    check('a click starts autorun', await isOn());
+    const byClick = await travel(2500);
+
+    // Taking the controls back cancels it, and gives the baseline for the comparison below.
+    await page.keyboard.down('KeyW');
+    const byKey = await travel(2500);
+    await page.keyboard.up('KeyW');
+    await page.waitForTimeout(400);
+    check('taking the controls back cancels autorun', !(await isOn()));
+
+    // Compared against W rather than against a distance in metres. Absolute thresholds do
+    // not survive this harness: under software WebGL the page runs at a few frames a second
+    // and the physics is driven by the frame loop, so the character covers about half a
+    // metre per wall-clock second and "walked 2 m in 2 s" fails a control that works. Asking
+    // whether a click walks you as far as the forward key does is frame-rate independent,
+    // and it is the actual claim being made.
+    check(
+      'autorun walks the character as far as the forward key does',
+      byKey > 0.15 && byClick > byKey * 0.6,
+      `click ${byClick.toFixed(2)} m vs W ${byKey.toFixed(2)} m`,
+    );
+
+    await page.mouse.click(cx, cy, { delay: 40 });
+    await page.waitForTimeout(400);
+    const restarted = await isOn();
+    await page.mouse.click(cx, cy, { delay: 40 });
+    await page.waitForTimeout(400);
+    check('a second click stops autorun', restarted && !(await isOn()));
+  }
+
   await browser.close();
 } catch (err) {
   failures++;

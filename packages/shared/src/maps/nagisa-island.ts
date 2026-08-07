@@ -591,7 +591,7 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   // — Notice-board terrace (48, 22), one step up from the plaza ————————
   { id: 'nb-board', kind: 'notice-board', x: 44.0, z: 18.0, rot: -2.498, scale: 1.4 },
   { id: 'nb-bench-2', kind: 'bench', x: 52.0, z: 18.0, rot: 2.388 },
-  { id: 'nb-bench-1', kind: 'bench', x: 44.6, z: 27.6, rot: -2.498 },
+  { id: 'nb-bench-1', kind: 'bench', x: 46.1, z: 29.6, rot: -2.498 },
 
   // ═══ Old Street (64, -37) — two rows facing each other ══════════════════
   // Two rows of row houses laid out **along the ring road**, at eleven metres either side of
@@ -659,7 +659,7 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'lh-keepers', kind: 'keepers-house', x: -60.6, z: -22.9, rot: 1.118, opts: { w: 10, d: 7.5 } },
   { id: 'lh-store', kind: 'warehouse', x: -77.7, z: -31.2, rot: -2.024, opts: { w: 10, d: 7.5 } },
   { id: 'lh-rail', kind: 'rail', x: -85.2, z: -54.9, rot: 2.452, opts: { length: 16 } },
-  { id: 'lh-bench-1', kind: 'bench', x: -68.2, z: -43.2, rot: -2.166 },
+  { id: 'lh-bench-1', kind: 'bench', x: -66.2, z: -46.7, rot: -0.524 },
   { id: 'lh-rock-1', kind: 'rock', x: -78, z: -52, rot: 0.8, scale: 1.7 },
   { id: 'lh-rock-2', kind: 'rock', x: -50, z: -50, rot: 2.4, scale: 1.2 },
 

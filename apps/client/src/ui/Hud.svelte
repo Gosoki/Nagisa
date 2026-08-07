@@ -26,6 +26,7 @@
     interactPrompt,
     emoteOpen,
     connectionTroubled,
+    autoRunning,
     devMode,
     settings,
     togglePanel,
@@ -49,6 +50,16 @@
 
 {#if $connectionTroubled}
   <p class="reconnecting" role="status">Reconnecting…</p>
+{/if}
+
+<!--
+  Autorun. A movement mode nobody is holding a button for has to be visible: the first time
+  it switches itself off against a wall, a player with no indicator concludes the controls
+  have broken rather than that the walk ended. Bottom-centre, above the emote button, out of
+  the way of the minimap and the headcount.
+-->
+{#if $autoRunning}
+  <p class="autorun" role="status">Walking · click to stop</p>
 {/if}
 
 <div class="top-right">
@@ -223,6 +234,23 @@
     letter-spacing: 0.04em;
     color: var(--ui-warn);
     pointer-events: none;
+  }
+
+  .autorun {
+    position: fixed;
+    bottom: calc(max(var(--sp-md), env(safe-area-inset-bottom)) + 3.6rem);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: var(--z-hud);
+    margin: 0;
+    padding: 3px var(--sp-md);
+    border-radius: 999px;
+    background: var(--ui-surface);
+    font-size: var(--fs-xs);
+    letter-spacing: 0.04em;
+    color: var(--ui-ink-muted);
+    pointer-events: none;
+    white-space: nowrap;
   }
 
   .top-right {

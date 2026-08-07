@@ -59,6 +59,8 @@ import {
   activeMap,
   clearOfLandmarks,
   heightAt,
+  insideStructure,
+  isWalkable,
   resolveMapId,
   roadsideLanternStations,
   roadsideLanterns,
@@ -729,6 +731,46 @@ process.stdout.write(
     `    crowding another:        ${lampCrowded.length}\n`,
 );
 
+// --- Seats ------------------------------------------------------------------------------
+//
+// A bench is furniture you are meant to *use*, so the questions are different from a
+// building's: can you get to it, is it level enough to sit on, is it standing in the road,
+// and is it inside a wall. Two were wrong — one bench stood 1.4 m inside the east lane's
+// carriageway, and one was 3.8 m from the lighthouse, which put it inside the round tower's
+// collider once that became a circle.
+const SEAT_KINDS = new Set(['bench']);
+const SEAT_TILT = 0.25;
+const seatFaults: Array<[Landmark, string]> = [];
+for (const l of LANDMARKS) {
+  if (!SEAT_KINDS.has(l.kind)) continue;
+  const cos = Math.cos(l.rot);
+  const sin = Math.sin(l.rot);
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const [ox, oz] of [[-1.2, -0.4], [1.2, -0.4], [-1.2, 0.4], [1.2, 0.4]]) {
+    const h = heightAt(l.x + ox! * cos - oz! * sin, l.z + ox! * sin + oz! * cos);
+    lo = Math.min(lo, h);
+    hi = Math.max(hi, h);
+  }
+  if (hi - lo > SEAT_TILT) seatFaults.push([l, `${(hi - lo).toFixed(2)} m across the seat`]);
+  if (insideStructure(l.x, l.z)) seatFaults.push([l, 'inside a building']);
+  const lane = nearestLane(l.x, l.z);
+  if (lane.id !== null && lane.dist < lane.halfWidth + 1) {
+    seatFaults.push([l, `${(lane.halfWidth + 1 - lane.dist).toFixed(1)} m inside the ${lane.id} carriageway`]);
+  }
+  // You have to be able to stand in front of a bench to sit on it. Its entrance is local −z,
+  // like every other builder's.
+  const fx = -sin;
+  const fz = -cos;
+  if (![1.0, 1.6].every((r) => isWalkable(l.x + fx * r, l.z + fz * r))) {
+    seatFaults.push([l, 'nothing to stand on in front of it']);
+  }
+}
+process.stdout.write(`\nseats you cannot sit on: ${seatFaults.length}\n`);
+for (const [l, why] of seatFaults) {
+  process.stdout.write(`    ${l.id.padEnd(20)} (${l.kind.padEnd(13)}) ${why}\n`);
+}
+
 process.stdout.write('\n');
 for (const r of reports) {
   if (!r.incoherent.length) continue;
@@ -780,6 +822,7 @@ const verdicts: Array<[string, boolean, string]> = [
   // A road missing a lamp where a building meets it still reads as a lit road. A road that
   // lost a third of them reads as unfinished, and would mean the rule above is too strict.
   ['the roads are still lit', lamps.length >= lampStations * 0.7, `${lamps.length} of ${lampStations} stations`],
+  ['every seat can be sat on', seatFaults.length === 0, `${seatFaults.length} unusable`],
 ];
 
 let bad = 0;

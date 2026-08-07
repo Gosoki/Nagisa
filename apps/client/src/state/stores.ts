@@ -415,6 +415,15 @@ export interface StickState {
 
 export const stickState: Writable<StickState | null> = writable(null);
 
+/**
+ * Whether autorun is on — click the world to start walking forward, click again to stop.
+ *
+ * Mirrored into a store purely so the HUD can say so. A movement mode the player did not
+ * have to hold a button for has to be visible, or the first time it switches itself off
+ * against a wall it reads as the controls having broken.
+ */
+export const autoRunning: Writable<boolean> = writable(false);
+
 /** Which optional panel is open. Only ever one, and `null` most of the time. */
 export type PanelId = 'people' | 'activities' | 'settings' | 'host' | 'notes' | null;
 export const openPanel: Writable<PanelId> = writable(null);

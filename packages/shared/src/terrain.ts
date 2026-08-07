@@ -445,9 +445,49 @@ export interface PathHit {
    * Never narrower than `path.shoulder`; see {@link blendWidth}.
    */
   readonly blend: number;
+  /**
+   * Designed road height here — **blended across every segment that is nearly as close as
+   * the winner**, rather than read off the winner alone. See {@link CORNER_TIE}.
+   *
+   * This is the number `heightAt` carves toward, and the reason it is precomputed here
+   * rather than derived from `s` by the caller: `s` cannot be blended and this can.
+   */
+  readonly height: number;
 }
 
-const NO_PATH: PathHit = { path: null, dist: Infinity, s: 0, blend: 0 };
+const NO_PATH: PathHit = { path: null, dist: Infinity, s: 0, blend: 0, height: 0 };
+
+/**
+ * How much further than the winner a segment may be and still get a say, metres.
+ *
+ * ### The corner problem
+ *
+ * The closest point on a polyline is a discontinuous function of position, and the
+ * discontinuity is on the *inside* of every bend. Approaching a corner from within, the
+ * perpendicular foot on the outgoing segment lies some way *past* the vertex while the foot
+ * on the incoming one lies some way *before* it, so crossing the bisector between them makes
+ * the closest point — and with it the arc length — jump right around the corner.
+ *
+ * On the ring road that jump is 4.9 m of arc for 5 cm of walking, and since the designed
+ * road climbs at 24% there, the carved ground under the player stepped **1.16 m** in a single
+ * physics step. The visible mesh, sampled on a 1 m grid, cannot represent a vertical face at
+ * all, so it drew a smooth slope while the collision field had a wall in it: walk across the
+ * line and you are lifted a body height out of the ground you can see. Thirty-one places on
+ * the island did this.
+ *
+ * ### Why blending is the right answer and not a smoothing hack
+ *
+ * A point on the inside of a bend genuinely *is* near two limbs of the same road, five metres
+ * apart along it and at different heights. Asking which one wins by a millimetre is the wrong
+ * question; the ground between them sits at their blend, which is what the inside of a banked
+ * bend actually looks like. Away from corners exactly one segment is within the tie window
+ * and the result is identical to reading the winner alone.
+ *
+ * Sized at four metres: wide enough that the height rolls over across a stride or two rather
+ * than a hand's breadth, narrow enough that two genuinely different parts of the network do
+ * not average with each other.
+ */
+const CORNER_TIE = 4;
 
 /**
  * The nearest path to a point, and how far away it is.
@@ -478,9 +518,42 @@ export function nearestPath(x: number, z: number, excludeId?: WorldPath['id']): 
   }
 
   if (!bestPath) return NO_PATH;
-  const blend = blendWidth(bestPath, bestS);
+
+  // Second pass: everything within `CORNER_TIE` of the winner gets a say in the height and
+  // in the blend width, weighted by how close it came. Both are scalars that vary smoothly
+  // along a road, so averaging them is meaningful; the arc length is not — averaging the two
+  // sides of a closed loop's seam would put the road on the far side of the island — so `s`
+  // stays the winner's and is reported for callers that want a position, not a height.
+  //
+  // Restricted to the winning path. Two roads meeting at a junction have to agree about their
+  // height at the junction anyway, and averaging across paths would let a lane influence a
+  // road it merely passes near.
+  let weightSum = 0;
+  let heightSum = 0;
+  let blendSum = 0;
+  for (const seg of segments) {
+    if (seg.path !== bestPath) continue;
+    const t = clamp(((x - seg.ax) * seg.dx + (z - seg.az) * seg.dz) * seg.invLenSq, 0, 1);
+    const d = Math.hypot(x - (seg.ax + seg.dx * t), z - (seg.az + seg.dz * t));
+    // 1 at the winner's own distance, easing to 0 at `CORNER_TIE` beyond it. Continuous in
+    // position because `d` and `best` both are, which is the whole point.
+    const w = 1 - smoothstep(0, CORNER_TIE, d - best);
+    if (w <= 0) continue;
+    const segS = seg.s0 + seg.length * t;
+    weightSum += w;
+    heightSum += profileHeight(bestPath, segS) * w;
+    blendSum += blendWidth(bestPath, segS) * w;
+  }
+
+  const blend = weightSum > 0 ? blendSum / weightSum : blendWidth(bestPath, bestS);
   if (best > bestPath.halfWidth + blend) return NO_PATH;
-  return { path: bestPath, dist: best, s: bestS, blend };
+  return {
+    path: bestPath,
+    dist: best,
+    s: bestS,
+    blend,
+    height: weightSum > 0 ? heightSum / weightSum : profileHeight(bestPath, bestS),
+  };
 }
 
 /** Total length of a path, metres. Computed once when the index is built. */
@@ -1200,7 +1273,9 @@ export function heightAt(x: number, z: number): number {
   if (!hit.path) return h;
   // `hit.blend`, not `path.shoulder`: the width the drop here actually needs. See `blendWidth`.
   const w = 1 - smoothstep(hit.path.halfWidth, hit.path.halfWidth + hit.blend, hit.dist);
-  return lerp(h, profileHeight(hit.path, hit.s), w * hit.path.carve);
+  // `hit.height`, not `profileHeight(path, hit.s)`: the arc length jumps around the inside of
+  // a bend and the height must not. See `CORNER_TIE`.
+  return lerp(h, hit.height, w * hit.path.carve);
 }
 
 /**

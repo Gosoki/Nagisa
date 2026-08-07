@@ -154,7 +154,7 @@ const PADS: MapPack['terrain']['pads'] = [
   /** The arrival port. Barely above the water, so the boats read as boats. */
   { id: 'south-harbor', x: 0, z: 74, height: 2.4, inner: 28, outer: 40 },
   /** The main plaza, on the eastern shelf. */
-  { id: 'plaza', x: 64, z: 37, height: 8.0, inner: 34, outer: 46 },
+  { id: 'plaza', x: 64, z: 37, height: 8.0, inner: 32, outer: 44 },
   /**
    * The old street, sharing that shelf — see SHELVES for why there is no dip between them.
    *
@@ -165,7 +165,7 @@ const PADS: MapPack['terrain']['pads'] = [
    */
   { id: 'village', x: 64, z: -37, height: 9.0, inner: 28, outer: 40 },
   /** Sunset beach, on the sand east of the south quay. */
-  { id: 'beach', x: 46, z: 92, height: 1.6, inner: 18, outer: 26 },
+  { id: 'beach', x: 45, z: 96, height: 1.6, inner: 18, outer: 26 },
   /** The working fishing harbour. */
   { id: 'north-harbor', x: 0, z: -74, height: 2.4, inner: 28, outer: 40 },
   /** Lighthouse cape: a flat clifftop, deliberately exposed and the higher of the two. */
@@ -331,6 +331,47 @@ const PATHS: MapPack['terrain']['paths'] = [
       [48, 22], // notice-board terrace
       [58, 24],
       [64, 37], // plaza
+    ],
+  },
+  {
+    id: 'lighthouse-ascent',
+    name: 'Lighthouse Path',
+    halfWidth: 2.6,
+    shoulder: 6,
+    carve: 0.94,
+    surface: 'gravel',
+    points: [
+      // 「灯塔移动到这个地方，同时安排一个路延伸上来」 — the second half of the note that moves
+      // the tower. It leaves the ring road at the cape's own T, the mirror of the sandō leaving
+      // it at the shrine, and climbs the mountain by its north-east flank, which is the one
+      // side that rises gently enough to walk: 13 m to 24 m over forty-six metres.
+      //
+      // Four legs rather than a straight run because the flank is not a plane. A direct line
+      // from the T crosses a shoulder that is unwalkable before the carve and needs a 1.41
+      // grade after it; this route holds every vertex on ground that is already walkable and
+      // lets the carve do the rest.
+      //
+      // It stops **thirteen** metres short of the tower, and that distance was arrived at
+      // three times, each by a different check saying no:
+      //
+      //  - ending *at* the tower leaves the last waypoint unreachable, because a lighthouse is
+      //    a `ROUND_SOLIDS` collider and the road would end inside a building;
+      //  - six metres short still put the carriageway 1.4 m into it — the road that exists to
+      //    serve the tower, running through the tower;
+      //  - nine metres cleared that, and then `world-smoke` refused the tower: `heightAt`
+      //    applies path carves *after* pads, so a lane whose blend reaches the terrace digs
+      //    the ground out from under the thing standing on it. At nine metres the tower's own
+      //    footprint spanned 0.92 m of ground.
+      //
+      // Thirteen clears the terrace's 6 m flat by more than the lane's 2.6 + 6 m of carve, so
+      // the road stops where the terrace begins. The rest is a walk across the head, which is
+      // what a lighthouse terrace is for.
+      [-64, -37], // the ring road, on the cape terrace
+      [-76, -42],
+      [-86, -46],
+      [-90, -49], // the steep pitch, given its own station so the carve grades it
+      [-94, -52],
+      [-93, -51], // the head, stopping short of the tower's own collider
     ],
   },
 ] as const;
@@ -508,7 +549,9 @@ const INTERACTABLES: MapPack['world']['interactables'] = [
   // Follows `sh-bell`, which moved out onto the quay. Left where it was, this rang a banner.
   { id: 'south-harbor-bell', zone: 'south-harbor', dx: 12.4, dz: 23.2, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
   { id: 'north-harbor-bell', zone: 'north-harbor', dx: 13.1, dz: -3.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
-  { id: 'lighthouse-door', zone: 'lighthouse', dx: 0, dz: 3, range: 4, kind: 'use', label: 'Look', effect: 'none' },
+  // Follows the tower to the head. It used to resolve to (−64, −34), 11.6 m from a lighthouse
+  // that was already not there, and reach the keeper's house instead.
+  { id: 'lighthouse-door', zone: 'lighthouse', dx: -33.5, dz: -21.5, range: 4, kind: 'use', label: 'Look', effect: 'none' },
   { id: 'summit-rail', zone: 'summit', dx: -21.5, dz: -7, range: 6, kind: 'use', label: 'Look', effect: 'none' },
   { id: 'teahouse-mat-a', zone: 'plaza', dx: 17.5, dz: -14.7, range: 2.5, kind: 'sit', label: 'Sit', effect: 'none' },
   { id: 'teahouse-mat-b', zone: 'plaza', dx: 19.4, dz: -18.7, range: 2.5, kind: 'sit', label: 'Sit', effect: 'none' },
@@ -723,11 +766,22 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   // The keeper's cottage and the store are a mirrored pair across the coast road, both
   // addressing it. The railing is on the seaward rim of the terrace where the ground
   // genuinely falls away — it used to stand on flat grass in the middle of the cape.
-  { id: 'lh-tower', kind: 'lighthouse', x: -72, z: -43, rot: -0.524, scale: 0.92 },
-  { id: 'lh-keepers', kind: 'keepers-house', x: -60.6, z: -22.9, rot: 1.118, opts: { w: 10, d: 7.5 } },
+  // Moved to the clifftop a player pointed at — 「这个灯塔要移动」 / 「灯塔移动到这个地方」 —
+  // and standing on `lighthouse-head`, the small terrace cut for it. It has to be cut: not one
+  // of the 1,580 walkable spots on that plateau gives a 7 m footprint inside world-smoke's
+  // 0.45 m levelness bar, and the flattest is 0.456 m. The terrace is deliberately the
+  // smallest that works — a 12 m flat with a 14 m blend — because note 12 praises this
+  // mountain's natural transitions and a terrace the size of the harbour's would erase them.
+  { id: 'lh-tower', kind: 'lighthouse', x: -101, z: -62, rot: -2.62, scale: 0.92 },
+  // Follows the tower onto the head. A keeper's house belongs beside the light it keeps, and
+  // left on the cape it was fifty-six metres and a mountain away from it. Shrunk to a
+  // clifftop cottage: the head's flat is 12 m across, and a 10 m house on it is the terrace.
+  { id: 'lh-keepers', kind: 'keepers-house', x: -107.9, z: -58.0, rot: -1.047, opts: { w: 8, d: 6 } },
   { id: 'lh-store', kind: 'warehouse', x: -77.7, z: -31.2, rot: -2.024, opts: { w: 10, d: 7.5 } },
   { id: 'lh-rail', kind: 'rail', x: -85.2, z: -54.9, rot: 2.452, opts: { length: 16 } },
-  { id: 'lh-bench-1', kind: 'bench', x: -66.2, z: -46.7, rot: -0.524 },
+  // Follows the tower too, and turned to look out to sea rather than back at the hill — the
+  // whole reason to walk up here.
+  { id: 'lh-bench-1', kind: 'bench', x: -105.0, z: -67.0, rot: 2.60 },
   { id: 'lh-rock-1', kind: 'rock', x: -78, z: -52, rot: 0.8, scale: 1.7 },
   // Off the road. It stood 4.3 m from the coast lane's centreline, which is 0.9 m inside a
   // 3.4 m carriageway — a boulder you walk into on a road, reported twice from two steps

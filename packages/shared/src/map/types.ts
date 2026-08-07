@@ -97,7 +97,13 @@ export type PathSurface = 'stone' | 'gravel' | 'boardwalk';
  * where a path goes, you know where you can go, and you never need a minimap.
  */
 export interface WorldPath {
-  readonly id: 'coast' | 'shrine-ascent' | 'south-approach' | 'east-lane';
+  /**
+   * A closed union rather than a bare string, so a typo in a map file is a compile error
+   * instead of a lane that silently carves nothing. Adding a road means adding its id here —
+   * which is the intended friction: a new road changes the terrain, the routing graph and the
+   * lantern layout, and should not be possible to introduce by accident.
+   */
+  readonly id: 'coast' | 'shrine-ascent' | 'south-approach' | 'east-lane' | 'lighthouse-ascent';
   readonly name: string;
   /**
    * Waypoints, in order, as [x, z].

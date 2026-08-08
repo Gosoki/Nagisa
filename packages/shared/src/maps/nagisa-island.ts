@@ -313,23 +313,32 @@ const PATHS: MapPack['terrain']['paths'] = [
       // between two. They are now 21 to 28 m apart: this one hugs the mountain's foot, the
       // ring road keeps the seaward side, and between them is somewhere rather than a median.
       //
-      // The last bend used to be a single 80° elbow at the notice board: the lane came down
-      // off the mountain's foot, hit the terrace, and turned straight back uphill to the
-      // plaza. From the bench beside it that reads as a road that gives up — "这条路不要拐角，
-      // 继续延伸". So it carries on east past the terrace first and takes the plaza in two
-      // turns of 48° and 54° instead of one of eighty, which is a road bending round a
-      // hillside rather than a road changing its mind.
+      // 「这条路不要拐角，继续延伸」, written standing 4.4 m from the notice-board vertex and
+      // looking south-east — down the direction of travel, at the ground the road should have
+      // covered. It used to turn 80° there and go straight back uphill to the plaza.
       //
-      // The terrace vertex itself does **not** move. A first attempt slid it to (46, 23) as
-      // well, which pulled the carriageway 0.4 m closer to `nb-board` and put the notice board
-      // 0.3 m inside it — a road driven through the thing the road exists to serve. Adding the
-      // second vertex is the whole fix; moving the first was never part of it.
+      // A first attempt split that elbow into 48° and 54°. That answered a question nobody
+      // asked: the note does not say *make the corner gentler*, it says **do not have one**,
+      // and a corner in two parts is still a corner in the same place.
+      //
+      // What the road wanted was to keep going. On its arriving bearing it runs 40 m over flat
+      // walkable ground and lands on (82, 0) — already a vertex of both `coast` and
+      // `south-approach`, so the three-way junction there simply becomes a four-way. The
+      // notice-board turn is now 4°, which is a road holding its line.
+      //
+      // Nothing is lost by dropping the old plaza leg, because it was doubling back to a place
+      // the road was already standing on: the notice-board terrace is 21.9 m from the plaza's
+      // centre and the plaza's flat has a 32 m radius. The lane was turning round to arrive
+      // somewhere it had arrived.
+      //
+      // The terrace vertex itself has never moved. An earlier attempt slid it to (46, 23),
+      // which pulled the carriageway 0.4 m closer to `nb-board` and put the notice board 0.3 m
+      // inside it — a road driven through the thing the road exists to serve.
       [0, 74],
       [14, 52],
       [32, 34],
       [48, 22], // notice-board terrace
-      [58, 24],
-      [64, 37], // plaza
+      [82, 0], // the coast / south-approach junction
     ],
   },
   {
@@ -700,7 +709,13 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
 
   // — Notice-board terrace (48, 22), one step up from the plaza ————————
   { id: 'nb-board', kind: 'notice-board', x: 44.0, z: 18.0, rot: -2.498, scale: 1.4 },
-  { id: 'nb-bench-2', kind: 'bench', x: 52.0, z: 18.0, rot: 2.388 },
+  // Moved 3.4 m clear of the east lane, which now runs straight past the terrace instead of
+  // turning at it, and so passes through where this bench used to sit.
+  //
+  // Kept at ~80° to the board rather than turned to face it. The terrace is composed as an
+  // axis, not as a ring: nb-bench-1 carries the board's own yaw. Facing this one at the board
+  // reads as a lone deckchair and the audit calls it adrift.
+  { id: 'nb-bench-2', kind: 'bench', x: 50.5, z: 15.0, rot: 1.396 },
   { id: 'nb-bench-1', kind: 'bench', x: 46.1, z: 29.6, rot: -2.498 },
 
   // ═══ Old Street (64, -37) — two rows facing each other ══════════════════

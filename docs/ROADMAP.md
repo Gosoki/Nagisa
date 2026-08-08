@@ -135,10 +135,15 @@ island is dense and beautiful and, at the moment you touch it, inert. That is wh
   that survives a restart is the cheapest possible "somebody was here", and the persistence
   layer already exists. The world currently resets to nobody-has-ever-been-here.
 
-### Voice — decided in principle, not scheduled
+### Voice — deferred on purpose, designed in advance
 
-Discussed 2026-08-08. Recorded now because the reasoning is worth more than the conclusion,
-and re-deriving it in two months would cost a day.
+**Decided 2026-08-08: not now.** Voice waits until the rest of the world is where the author
+wants it, and then goes in as one piece rather than being grown alongside everything else.
+
+Recorded in full anyway, because the reasoning is worth more than the conclusion and
+re-deriving it in two months would cost a day. Read the "which route" section below before
+acting on anything here — the deferral changes the answer, and the earlier advice was written
+under a premise that no longer holds.
 
 **P2P is out, and not for the reason it looks like.** The obvious worry is NAT traversal —
 raw WebRTC with STUN alone fails on roughly 15–20% of connections (symmetric NAT, corporate
@@ -225,16 +230,55 @@ talking for an hour is ~4.5 GB, so an ordinary 2 TB/month VPS carries roughly 44
 100-concurrent voice. Drop VAD and raise the bitrate and the same box does a quarter of that.
 CPU is close to free either way — nothing on the path transcodes, and only an MCU would.
 
-**A cheaper first step worth taking seriously.** Opus over the existing WebSocket: no
-WebRTC, no NAT, no TURN, no signalling, no second auth path — it reuses the connection that
-already has resume tokens and reconnection. The cost is TCP head-of-line blocking: stutter
-under packet loss, and 100–300 ms more latency than WebRTC.
+**Which route — and how the deferral changes it.**
 
-For a competitive game that is disqualifying. For a quiet island where people stand around
-talking, it may well not be — 250 ms is close to unnoticeable in conversation. It is days of
-work against weeks for an SFU, and **the spatialisation half (PannerNode driven by the
-existing transform stream) is identical either way**, so nothing is wasted by proving the
-feel first and migrating the transport later.
+The original advice was "start with Opus over the existing WebSocket": no WebRTC, no NAT, no
+TURN, no signalling, no second auth path, reusing the connection that already carries resume
+tokens and reconnection. Its cost is TCP head-of-line blocking — stutter under packet loss and
+100–300 ms more latency than WebRTC, which disqualifies it for a competitive game and probably
+does not for a quiet island where people stand around talking.
+
+Every bit of that argument rested on one premise: **that the fastest possible answer to "does
+voice make this island better?" was worth more than doing it properly the first time.** Days
+of work against weeks, and the spatialisation half is transport-independent, so little is lost
+by proving the feel and migrating later.
+
+The decision to defer removes that premise. Building this later, deliberately, in one piece
+means there is no proof-of-feel to race toward — and the WebSocket route's throwaway half is
+real: the WASM Opus encoder, the framing, the jitter buffer and the server relay all get
+deleted on migration. It is also the harder of the two to separate afterwards, because its
+relay lives *inside* the game server process, where an SFU is already its own process on a
+port.
+
+**So when voice is built, build LiveKit self-hosted directly.** The WebSocket route was the
+right first step for a project that wanted to know tonight. It is the wrong first step for one
+that has decided to wait.
+
+**It can share the existing VPS, and should to begin with.** The deployment today is nginx
+terminating TLS on 443, Docker Compose, Node on 8787. LiveKit fits beside that with three
+things to get right:
+
+- **The 443 collision.** nginx holds 443; LiveKit's TURN/TLS wants it too, and wanting it is
+  the entire point — TLS on 443 is what survives networks that block UDP outright. Best first:
+  SNI routing (HAProxy, or nginx's `stream` module with `ssl_preread`) sending
+  `turn.<domain>` to LiveKit and everything else to the existing nginx. Otherwise a second IP,
+  which most providers sell for pocket money. Otherwise put TURN on 5349 and accept losing the
+  strictest networks — fine to start, easy to revisit.
+- **Docker and the UDP range.** LiveKit wants ~10 000 UDP ports for media. Publishing those
+  through Docker's userland proxy is a known disaster — slow start, enormous memory. Give that
+  container `network_mode: host` and set `use_external_ip: true`.
+- **The asymmetry, which is the only real risk.** An SFU forwards without transcoding, so CPU
+  is light. But *voice stuttering is annoying and a jittering game tick is fatal* — the 10 Hz
+  tick is latency-sensitive in a way voice is not, and if LiveKit saturates the NIC or spikes
+  the CPU, movement degrades for everyone including the people with no microphone. Cap the
+  container's `cpus` so it cannot starve the game loop, and **add a tick-jitter metric to
+  OPERATIONS.md's table** — that number, not a hunch, is what should decide when the two stop
+  sharing a box.
+
+Bandwidth shares one monthly cap, and voice will dominate it: game traffic is ~3 KB/s per
+client, so a hundred players is ~2.4 Mbps against voice's ~10 Mbps. Roughly **80% of egress
+becomes voice** the day it ships. At this scale 2 vCPU / 4 GB carries nginx, the game server
+and the SFU together; the binding constraint is the network, not the compute.
 
 **Things that will bite, noted while they are fresh:**
 - **WebTransport** (unreliable datagrams without WebRTC) is where this is heading, but

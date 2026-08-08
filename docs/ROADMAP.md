@@ -110,6 +110,31 @@ Honest list of what is imperfect today.
 
 ## 4. Roadmap
 
+### Blocked on modelling — environment interaction
+
+Agreed with the author 2026-08-08: **the models come first.** These three are wanted, and
+none of them starts until the prop and building geometry is where the author wants it. Recorded
+here so the reasoning is not lost, not as a queue to start on.
+
+The finding that prompted them: of the island's twelve interactables, **six press and
+nothing happens** — the four `Ring` bells and the two `Look` viewpoints, all
+`effect: 'none'`. (The four `Sit`s do work: `kind: 'sit'` drives the animation through the
+packed-transform channel, independently of `effect`. `Check in` and `Read` work too.) The
+island is dense and beautiful and, at the moment you touch it, inert. That is what "有点
+单调" means here — not a shortage of content.
+
+- **Ring the bell, and have it ring.** The strongest of the three, and the smallest: one new
+  effect plus a zone broadcast, a swinging clapper and a sound. Its value is not the sound —
+  it is that ringing is the only channel besides chat where *one player's action is
+  perceived by another*. Chat is text about the world; a bell is the world answering. Four
+  bells already stand in four different places, and their prompts all reach them as of
+  `0e88f18`. Expect it to grow its own uses: greeting, gathering, marking dusk.
+- **Give the two `Look` viewpoints something to look at.** The lighthouse door and the
+  summit rail are the island's two vantage points and both are silent.
+- **Let the notice board be written to.** It can be read; it cannot be signed. A short line
+  that survives a restart is the cheapest possible "somebody was here", and the persistence
+  layer already exists. The world currently resets to nobody-has-ever-been-here.
+
 ### Near term — finish what is started
 - **Announcement scope filtering** server-side (limitation 2).
 - **Room-partitioned persistence** (limitation 1).

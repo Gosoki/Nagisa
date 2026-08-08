@@ -138,21 +138,17 @@ const MARKED: Array<[string, number, number]> = [
 
 /**
  * The yardstick: 「这座山是过渡很自然的」 — *this* mountain's transitions are natural, use it as
- * the reference for the places that are not.
+ * the reference for the places that are not. Sampled where the note was written.
  *
- * The note was written at (−103.0, −61.6), on the summit. That sample is gone: a later note
- * (19) asked for the lighthouse to be moved onto this same hilltop, and no walkable spot up
- * there gives a 7 m footprint inside `world-smoke`'s levelness bar — the flattest of 1,580 is
- * 0.456 m against 0.45 — so the tower needed a terrace cut for it, and a terrace is flat by
- * definition. Sampling the old point now returns `rms 0.000`, which would silently take the
- * denominator out of every ratio in this file.
+ * It moved once, to (−93, −88), when a terrace was cut into this hilltop to stand the
+ * lighthouse on and the sample went flat — which would have made `rms 0.000` the denominator of
+ * every ratio in this file. The terrace turned out not to be needed (see `lh-tower` in the map
+ * pack), so the reference is back where the player put it.
  *
- * So the reference moved 27 m down the same mountain's south flank, outside the terrace and
- * its blend, to ground whose ruggedness is the *median* of every remaining natural sample on
- * this massif. Same hillside, same character, still the thing the player pointed at — just not
- * the part of it that now has a lighthouse standing on it.
+ * Worth remembering as a shape: when the yardstick has to move to accommodate a change, the
+ * change is worth looking at twice. Here it was wrong.
  */
-const REFERENCE: [string, number, number] = ['note 12 lighthouse mountain (south flank)', -93.0, -88.0];
+const REFERENCE: [string, number, number] = ['note 12 lighthouse mountain', -103.0, -61.6];
 
 /**
  * The map the notes were written on. Coordinates are not portable between packs — the same

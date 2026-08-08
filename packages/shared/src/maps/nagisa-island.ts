@@ -170,7 +170,6 @@ const PADS: MapPack['terrain']['pads'] = [
   { id: 'north-harbor', x: 0, z: -74, height: 2.4, inner: 28, outer: 40 },
   /** Lighthouse cape: a flat clifftop, deliberately exposed and the higher of the two. */
   { id: 'lighthouse', x: -64, z: -37, height: 13.0, inner: 27, outer: 39 },
-  { id: 'lighthouse-head', x: -101, z: -62, height: 24.0, inner: 6, outer: 20 },
   /** The shrine, on its own headland. */
   { id: 'shrine', x: -64, z: 37, height: 11.0, inner: 26, outer: 38 },
 
@@ -767,21 +766,37 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   // addressing it. The railing is on the seaward rim of the terrace where the ground
   // genuinely falls away — it used to stand on flat grass in the middle of the cape.
   // Moved to the clifftop a player pointed at — 「这个灯塔要移动」 / 「灯塔移动到这个地方」 —
-  // and standing on `lighthouse-head`, the small terrace cut for it. It has to be cut: not one
-  // of the 1,580 walkable spots on that plateau gives a 7 m footprint inside world-smoke's
-  // 0.45 m levelness bar, and the flattest is 0.456 m. The terrace is deliberately the
-  // smallest that works — a 12 m flat with a 14 m blend — because note 12 praises this
-  // mountain's natural transitions and a terrace the size of the harbour's would erase them.
-  { id: 'lh-tower', kind: 'lighthouse', x: -101, z: -62, rot: -2.62, scale: 0.92 },
-  // Follows the tower onto the head. A keeper's house belongs beside the light it keeps, and
-  // left on the cape it was fifty-six metres and a mountain away from it. Shrunk to a
-  // clifftop cottage: the head's flat is 12 m across, and a 10 m house on it is the terrace.
-  { id: 'lh-keepers', kind: 'keepers-house', x: -107.9, z: -58.0, rot: -1.047, opts: { w: 8, d: 6 } },
+  // and standing on the **natural** hilltop, with no terrace cut for it.
+  //
+  // A terrace was built here first, on a measurement that was wrong twice. The search for a
+  // level footprint held the tower's yaw at zero and used a 3.5 m half-extent instead of
+  // world-smoke's 3.22 — the 0.92 scale was never applied — and concluded that none of 1,580
+  // walkable spots could hold it. world-smoke rotates the footprint by the landmark's own
+  // `rot`, and `rot` is a free parameter: at the right yaw this hilltop has twelve positions
+  // that pass, four metres from where the player stood. The terrace was never needed for the
+  // tower, and cutting one flattened the summit of the mountain note 12 holds up as the
+  // example of terrain done right.
+  //
+  // The yaw is therefore chosen for levelness, not for the road: at 0.131 the footprint spans
+  // 0.369 m, and every yaw that points the door back down the lane spans 0.500 m. A round
+  // tower with a lamp on top does not have a frontage to present, which is the one building on
+  // the island that can afford to be turned by the ground instead of by the approach.
+  { id: 'lh-tower', kind: 'lighthouse', x: -98, z: -65, rot: 0.131, scale: 0.92 },
+  // Stays on the cape, though the light it keeps has gone up the hill.
+  //
+  // It followed the tower onto the head for one draft, and that draft is why there is no
+  // terrace up there. A keeper's cottage wants an 8 × 6 m footprint inside a 0.45 m levelness
+  // bar, and on the natural hilltop there are **zero** legal (position, rotation) pairs for it
+  // within 22 m of the tower — against 458 for a bench. The only way to house it beside the
+  // light was to cut a terrace, and the mountain it would be cut into is the one a player
+  // singled out for its natural transitions (note 12). A cottage is not worth flattening the
+  // thing you were told to use as the reference for everything else.
+  { id: 'lh-keepers', kind: 'keepers-house', x: -60.6, z: -22.9, rot: 1.118, opts: { w: 10, d: 7.5 } },
   { id: 'lh-store', kind: 'warehouse', x: -77.7, z: -31.2, rot: -2.024, opts: { w: 10, d: 7.5 } },
   { id: 'lh-rail', kind: 'rail', x: -85.2, z: -54.9, rot: 2.452, opts: { length: 16 } },
-  // Follows the tower too, and turned to look out to sea rather than back at the hill — the
-  // whole reason to walk up here.
-  { id: 'lh-bench-1', kind: 'bench', x: -105.0, z: -67.0, rot: 2.60 },
+  // Follows the tower up. A bench fits on the natural head where a cottage does not — 2.4 × 0.8 m
+  // has 458 legal placements up there — and it looks out to sea, which is the reason to walk up.
+  { id: 'lh-bench-1', kind: 'bench', x: -106.5, z: -62.0, rot: 0.0 },
   { id: 'lh-rock-1', kind: 'rock', x: -78, z: -52, rot: 0.8, scale: 1.7 },
   // Off the road. It stood 4.3 m from the coast lane's centreline, which is 0.9 m inside a
   // 3.4 m carriageway — a boulder you walk into on a road, reported twice from two steps

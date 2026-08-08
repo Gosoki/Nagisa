@@ -191,6 +191,40 @@ tracks at 32 kbps is **~26 Mbps of egress**. One ordinary VPS. (Managed SFUs typ
 per *subscribed* stream-minute, and proximity voice means everyone subscribes to eight of
 them — price that carefully before choosing a hosted tier over a box.)
 
+**Constraint added 2026-08-08: no paid services, a VPS is fine.** That removes the hosted
+tiers and reorders the rest — with nothing to buy, the scarce resource is the maintainer's
+time and the VPS's monthly bandwidth, not money.
+
+Three self-hosted routes, in the order they should be attempted:
+
+1. **Opus over the existing WebSocket.** No WebRTC, no TURN, no second service, no
+   certificates beyond the ones already serving the site. The server never decodes anything:
+   it forwards opaque Opus frames to whoever is near enough, which is the same fan-out the
+   delta broadcaster already performs, with a distance test bolted on. `decode()` already
+   takes a `Buffer`, and `ws` reports `isBinary` per message, so binary audio frames and the
+   JSON protocol can share one connection cleanly.
+2. **mediasoup**, if TCP stutter turns out to matter. ISC, a Node library rather than a
+   service, so it runs *inside* this server process and reuses the room membership, the auth
+   and the positions that already live there — no parallel notion of who is in what room.
+   The cost is writing the signalling (transport setup, ICE exchange, produce/consume), which
+   is real but which this codebase already has a typed message channel for.
+3. **LiveKit self-hosted**, if the priority is having it working rather than having it
+   in-process. One Go binary, TURN included, subscription API included. It brings its own
+   Room/Participant concepts to keep in step with ours, which is a known and small tax.
+
+**What self-hosting actually costs, since it is bandwidth and not licences.** Voice is
+cheap if three things are true, and expensive if any of them is not:
+
+- **Opus at 16–24 kbps**, not 32. Mono speech is fine there.
+- **Proximity subscription**, so a listener averages 4–5 streams rather than the whole room.
+- **Voice activity detection**, so silence is not relayed. Without it every player pays for
+  everybody else's empty room tone all evening.
+
+With all three: ~100 kbps down per listener, **45 MB per listener-hour**. A hundred people
+talking for an hour is ~4.5 GB, so an ordinary 2 TB/month VPS carries roughly 440 hours of
+100-concurrent voice. Drop VAD and raise the bitrate and the same box does a quarter of that.
+CPU is close to free either way — nothing on the path transcodes, and only an MCU would.
+
 **A cheaper first step worth taking seriously.** Opus over the existing WebSocket: no
 WebRTC, no NAT, no TURN, no signalling, no second auth path — it reuses the connection that
 already has resume tokens and reconnection. The cost is TCP head-of-line blocking: stutter

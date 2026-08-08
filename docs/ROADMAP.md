@@ -135,6 +135,83 @@ island is dense and beautiful and, at the moment you touch it, inert. That is wh
   that survives a restart is the cheapest possible "somebody was here", and the persistence
   layer already exists. The world currently resets to nobody-has-ever-been-here.
 
+### Voice — decided in principle, not scheduled
+
+Discussed 2026-08-08. Recorded now because the reasoning is worth more than the conclusion,
+and re-deriving it in two months would cost a day.
+
+**P2P is out, and not for the reason it looks like.** The obvious worry is NAT traversal —
+raw WebRTC with STUN alone fails on roughly 15–20% of connections (symmetric NAT, corporate
+firewalls, some mobile carriers), and that *is* real. But it is a solved problem: a TURN
+relay takes success past 99%, at the price of paying for relayed bytes.
+
+What actually kills P2P here is bandwidth. A mesh has every client sending N−1 streams and
+receiving N−1. At 32 kbps Opus, twenty people in earshot is **~600 kbps of upstream per
+client** — beyond most home connections and hopeless on mobile. Mesh tops out around 4–6
+participants. `ROOM_CAPACITY` is 120 and the entire premise of the island is that people
+gather, so the topology contradicts the product. Hybrid P2P (electing relay peers) is worse:
+it makes the weakest uplink in the room everybody's bottleneck, and drops the room when that
+person leaves.
+
+**The shape that fits: SFU + distance-based subscription + client-side spatialisation.**
+
+1. An **SFU** forwards rather than mixes. An MCU (server-side mixing) would halve client
+   bandwidth and destroy positional audio in the same move — you cannot place a stream that
+   has already been mixed. Discrete streams per speaker is the requirement.
+2. **Subscribe only to the nearest 8–12 speakers**, updated as people move. This is the
+   whole scalability trick: upstream is a constant 1 track, downstream is capped regardless
+   of whether the room holds 12 people or 120.
+3. **Position never travels on the voice channel.** The packed-transform stream already
+   carries every player's position at 10 Hz to 1 cm. The client feeds that straight into a
+   WebAudio `PannerNode` (HRTF). The voice transport moves audio; the game protocol answers
+   "who is where" — which it already does, for free.
+
+The server is also already holding everything the subscription decision needs: room shards,
+zone membership, and every transform. "Who should hear whom" is better computed there than
+guessed at on the client.
+
+**Licensing, since it decides the build-vs-buy question:**
+
+| | licence | free to self-host? |
+|---|---|---|
+| **LiveKit server** | Apache 2.0 | Yes — no seat limits, no open-core catch on the SFU |
+| **mediasoup** | ISC | Yes. A Node library, so it stays in one language with this server |
+| **Jitsi Videobridge** | Apache 2.0 | Yes |
+| **Janus** | **GPLv3** | Yes, but the copyleft is worth a lawyer's minute if this is ever commercial |
+| LiveKit Cloud / Agora / Daily / 100ms | commercial SaaS | Free tiers, then usage-based |
+
+**LiveKit is the pick.** Apache 2.0, self-hostable at no licence cost, `setSubscribed` per
+publication is exactly the distance-subscription primitive, and it ships TURN over TLS on
+443 — which is what gets through the networks that block UDP outright. Its multi-node
+coordination is Redis-backed, the same shape as the cross-process sharding already on this
+roadmap, so the two can converge rather than fight.
+
+Costs are infrastructure only, and modest: 100 concurrent players each subscribing to 8
+tracks at 32 kbps is **~26 Mbps of egress**. One ordinary VPS. (Managed SFUs typically bill
+per *subscribed* stream-minute, and proximity voice means everyone subscribes to eight of
+them — price that carefully before choosing a hosted tier over a box.)
+
+**A cheaper first step worth taking seriously.** Opus over the existing WebSocket: no
+WebRTC, no NAT, no TURN, no signalling, no second auth path — it reuses the connection that
+already has resume tokens and reconnection. The cost is TCP head-of-line blocking: stutter
+under packet loss, and 100–300 ms more latency than WebRTC.
+
+For a competitive game that is disqualifying. For a quiet island where people stand around
+talking, it may well not be — 250 ms is close to unnoticeable in conversation. It is days of
+work against weeks for an SFU, and **the spatialisation half (PannerNode driven by the
+existing transform stream) is identical either way**, so nothing is wasted by proving the
+feel first and migrating the transport later.
+
+**Things that will bite, noted while they are fresh:**
+- **WebTransport** (unreliable datagrams without WebRTC) is where this is heading, but
+  Safari support has trailed. Not a primary path while this is a mobile-capable web world.
+- **Mobile battery.** Continuous upstream plus eight decoders is expensive. `ClientHello`
+  already carries `caps: { mobile, lowMemory }`; the subscription cap belongs there.
+- **Moderation is not optional** in a public world: self-mute, block-a-player, and an
+  admin mute. It hangs off the existing `Role` and `permissions.ts` — do not grow a second
+  authority for it.
+- **Zone ambience must duck** when someone nearby speaks, or the two layers smear.
+
 ### Near term — finish what is started
 - **Announcement scope filtering** server-side (limitation 2).
 - **Room-partitioned persistence** (limitation 1).

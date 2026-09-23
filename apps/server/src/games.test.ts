@@ -361,7 +361,19 @@ test('quiz: when everyone is wrong nobody goes out', () => {
   const view = runner.view();
   assert.equal(view.phase, 'reveal');
   assert.deepEqual(view.fell, []);
+  assert.equal(view.replay, true, 'the reveal says why nobody fell');
   assert.equal(view.alive.length, 2);
+
+  // Next round: B drops. Even if A is wrong again, B — who cannot answer — is out.
+  runner.tick(t0 + QUESTION_MS + REVEAL_MS);
+  const q2 = getQuizQuestion(runner.view().questionId!)!;
+  const wrong2 = q2.answer ? QUIZ_ARENA!.x : QUIZ_ARENA!.o;
+  place(a.player, wrong2.x, wrong2.z);
+  room.disconnect(b.player.id);
+  runner.tick(t0 + QUESTION_MS * 2 + REVEAL_MS);
+  const view2 = runner.view();
+  assert.deepEqual(view2.fell, [b.player.id], 'the absent player falls');
+  assert.deepEqual(view2.alive, [a.player.id], 'the present one is spared by the house rule');
   assert.ok(QUIZ_BANK.length >= 8, 'enough statements for a whole quiz');
 });
 

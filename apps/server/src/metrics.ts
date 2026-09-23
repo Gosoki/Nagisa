@@ -23,9 +23,19 @@ function sanitize(name: string): string {
   return name.replace(/[^a-zA-Z0-9_:]/g, '_');
 }
 
+/**
+ * Escape a label value per the exposition format: backslash, double quote and newline.
+ * Label values should never be player-controlled in the first place (see `index.ts`, which
+ * only ever records known message types) — this is the second line of defence, so that a
+ * value that slipped through can at worst look odd rather than forge a whole metric line.
+ */
+function escapeLabel(v: string): string {
+  return v.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+}
+
 function formatLabels(labels?: Record<string, string>): string {
   if (!labels || Object.keys(labels).length === 0) return '';
-  const parts = Object.entries(labels).map(([k, v]) => `${sanitize(k)}="${String(v).replace(/"/g, '\\"')}"`);
+  const parts = Object.entries(labels).map(([k, v]) => `${sanitize(k)}="${escapeLabel(String(v))}"`);
   return `{${parts.join(',')}}`;
 }
 
@@ -71,6 +81,13 @@ class Gauge {
     const key = seriesKey(this.name, labels);
     this.values.set(key, value);
     this.series.set(key, { name: this.name, labels });
+  }
+
+  /** Forget a series (a room that has gone to sleep), so it stops being reported. */
+  remove(labels?: Record<string, string>): void {
+    const key = seriesKey(this.name, labels);
+    this.values.delete(key);
+    this.series.delete(key);
   }
 
   inc(labels?: Record<string, string>, by = 1): void {
@@ -161,7 +178,10 @@ class Metrics {
   readonly errorsTotal = new Counter('nagisa_errors_total', 'Errors, by kind.');
   readonly rateLimited = new Counter('nagisa_rate_limited_total', 'Messages rejected by rate limiting, by type.');
   readonly tickDurationMs = new Histogram('nagisa_tick_duration_ms', 'Room tick loop duration, milliseconds.');
-  readonly roomPopulation = new Gauge('nagisa_room_population', 'Current population, by room.');
+  readonly roomPopulation = new Gauge(
+    'nagisa_room_population',
+    'Current population of each public shard, by room; private islands summed as room="private".',
+  );
   readonly roomsCurrent = new Gauge('nagisa_rooms_current', 'Number of active room shards.');
   readonly activitiesCurrent = new Gauge('nagisa_activities_current', 'Number of activities, by state.');
 

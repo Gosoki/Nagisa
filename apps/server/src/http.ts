@@ -58,6 +58,16 @@ const MIME: Record<string, string> = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
+/**
+ * Headers every response carries. `nosniff` stops a browser treating a file as something
+ * other than its declared type; `same-origin` keeps the invite code in the address bar
+ * (`?island=…`) from travelling to any other site in a `Referer`.
+ */
+const BASE_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'same-origin',
+} as const;
+
 function mimeFor(path: string): string {
   return MIME[extname(path).toLowerCase()] ?? 'application/octet-stream';
 }
@@ -65,6 +75,7 @@ function mimeFor(path: string): string {
 function json(res: ServerResponse, status: number, body: unknown, corsOrigin: string): void {
   const buf = Buffer.from(JSON.stringify(body));
   res.writeHead(status, {
+    ...BASE_HEADERS,
     'content-type': 'application/json; charset=utf-8',
     'content-length': buf.length,
     'access-control-allow-origin': corsOrigin,
@@ -74,7 +85,7 @@ function json(res: ServerResponse, status: number, body: unknown, corsOrigin: st
 
 function text(res: ServerResponse, status: number, body: string, contentType = 'text/plain; charset=utf-8'): void {
   const buf = Buffer.from(body);
-  res.writeHead(status, { 'content-type': contentType, 'content-length': buf.length });
+  res.writeHead(status, { ...BASE_HEADERS, 'content-type': contentType, 'content-length': buf.length });
   res.end(buf);
 }
 
@@ -102,7 +113,7 @@ async function tryServeStatic(staticDir: string, urlPath: string, res: ServerRes
   }
   if (stats.isDirectory()) return false; // Directory requests fall through to index.html.
 
-  res.writeHead(200, { 'content-type': mimeFor(abs), 'content-length': stats.size });
+  res.writeHead(200, { ...BASE_HEADERS, 'content-type': mimeFor(abs), 'content-length': stats.size });
   createReadStream(abs).pipe(res);
   return true;
 }

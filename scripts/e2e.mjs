@@ -492,8 +492,29 @@ async function main() {
   const unknownCode = await eve.wait('error', (f) => f.key === 'room_not_found', 2000);
   check('…and says the island was not found', !!unknownCode, unknownCode);
 
+  const metricsAfter = await (await fetch(`${BASE}/metrics`)).text();
+  check('/metrics never names a private island', !!code && !metricsAfter.includes(code) && !metricsAfter.includes('isle-'), metricsAfter.split('\n').filter((l) => l.includes('room_population')));
+
+  // -- Hostile frames -----------------------------------------------------
+  console.log('\nHostile frames');
+  const probe = await arrive('Probe');
+  probe.send({ t: '__proto__' });
+  const unknownType = await probe.wait('error', (f) => f.code === 'bad_message' && /unknown message type/.test(f.message), 2000);
+  check('a message type that is not one is refused as such', !!unknownType, unknownType);
+  const metricsNow = await (await fetch(`${BASE}/metrics`)).text();
+  check('…and never becomes a metric label', !metricsNow.includes('__proto__'));
+  let probeClosed = false;
+  probe.socket.once('close', () => (probeClosed = true));
+  for (let i = 0; i < 30; i++) probe.socket.send('not json at all');
+  await sleep(600);
+  check('a stream of garbage frames gets the connection closed', probeClosed);
+
   // -- Whispers and dice --------------------------------------------------
   console.log('\nWhispers and dice');
+  carol.send({ t: 'chat', text: 'ab\u202ecd\u200b', to: dave.welcome.self });
+  const cleaned = await dave.wait('whisper', (f) => f.text.startsWith('ab'), 3000);
+  check('direction overrides and invisible marks are stripped from what people type', cleaned?.text === 'abcd', cleaned?.text);
+  await sleep(1100); // the chat bucket: a burst of four, then one a second
   carol.send({ t: 'chat', text: 'psst', to: dave.welcome.self });
   const daveWhisper = await dave.wait('whisper', (f) => f.text === 'psst', 3000);
   const carolReceipt = await carol.wait('whisper', (f) => f.text === 'psst', 3000);

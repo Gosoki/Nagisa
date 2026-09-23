@@ -149,6 +149,11 @@ export interface RoomOptions {
   random?: () => number;
   /** Keep the day's programme on the board. Tests switch it off to control the schedule. */
   schedule?: boolean;
+  /**
+   * Told whenever the population changes. The room does not publish its own population
+   * metric: a private island's id carries its invite code, and a metric label is public.
+   */
+  onPopulation?: () => void;
 }
 
 export class Room implements GameRoom {
@@ -208,6 +213,7 @@ export class Room implements GameRoom {
   private pendingQuiz: { value: QuizView | null } | null = null;
 
   private readonly persistFn: () => void;
+  private readonly onPopulation: () => void;
   private readonly randomFn: () => number;
   private readonly scheduleEnabled: boolean;
 
@@ -225,6 +231,7 @@ export class Room implements GameRoom {
     this.code = opts.code ?? null;
     this.owner = opts.owner ?? null;
     this.persistFn = opts.persist ?? (() => {});
+    this.onPopulation = opts.onPopulation ?? (() => {});
     this.randomFn = opts.random ?? Math.random;
     this.scheduleEnabled = opts.schedule ?? true;
 
@@ -318,7 +325,7 @@ export class Room implements GameRoom {
     // The keeper's name follows the keeper: a private island shows who made it.
     if (this.isKeeper(player) && this.owner) this.owner.name = player.name;
     this.pendingJoins.push(player.toView());
-    metrics.roomPopulation.set(this.population, { room: this.id });
+    this.onPopulation();
     this.log.info('player_joined', { room: this.id, playerId: player.id, name: player.name });
   }
 
@@ -426,7 +433,7 @@ export class Room implements GameRoom {
     this.pendingPlayerChanges.delete(playerId);
     this.pendingLeaves.push(playerId);
     if (this.players.size === 0) this.emptySince = Date.now();
-    metrics.roomPopulation.set(this.population, { room: this.id });
+    this.onPopulation();
     this.log.info('player_removed', { room: this.id, playerId, reason });
     return player;
   }

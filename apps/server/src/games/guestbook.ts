@@ -21,6 +21,7 @@ import {
   type PlayerId,
 } from '@nagisa/shared';
 import type { Player } from '../player.js';
+import { cleanLine, textLength } from '../text.js';
 import type { PersistedGuestbookEntry } from '../persistence.js';
 import type { GameRoom } from './context.js';
 
@@ -70,12 +71,12 @@ export class Guestbook {
       this.room.refuse(player.id, 'not_here');
       return;
     }
-    const text = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : '';
+    const text = cleanLine(raw);
     if (!text) {
       this.room.refuse(player.id, 'empty');
       return;
     }
-    if ([...text].length > PROTOCOL.MAX_GUESTBOOK_LENGTH) {
+    if (textLength(text) > PROTOCOL.MAX_GUESTBOOK_LENGTH) {
       this.room.refuse(player.id, 'too_long', { max: PROTOCOL.MAX_GUESTBOOK_LENGTH });
       return;
     }

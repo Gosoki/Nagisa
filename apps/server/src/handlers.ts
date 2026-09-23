@@ -72,6 +72,7 @@ import { AuditLog } from './audit.js';
 import { canAnnounce, canHostActivity, assertRole, PermissionError } from './permissions.js';
 import { issueResumeToken, verifyResumeToken } from './resume.js';
 import { hashVisitorKey, profileView, type ProfileStore } from './games/profiles.js';
+import { cleanLine, cleanName, textLength } from './text.js';
 import type { Logger } from './logger.js';
 import type { Config } from './config.js';
 
@@ -137,24 +138,13 @@ function refuse(ctx: ConnState, key: string, params?: Record<string, string | nu
 // ---------------------------------------------------------------------------------
 
 function clampName(raw: unknown): string {
-  // Control characters and runs of whitespace are not part of anybody's name, and they are
-  // how a name is made to look like somebody else's in a chat log.
-  const s = typeof raw === 'string' ? raw.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g, '').replace(/\s+/g, ' ').trim() : '';
-  if (s.length === 0) return 'Visitor';
-  return [...s].slice(0, PROTOCOL.MAX_NAME_LENGTH).join('');
+  return cleanName(raw, PROTOCOL.MAX_NAME_LENGTH, 'Visitor');
 }
 
 function sanitizeAppearance(raw: unknown): Appearance {
   const a = (raw ?? {}) as Partial<Appearance>;
   const clampIdx = (v: unknown): number => (Number.isFinite(v) && (v as number) >= 0 ? Math.floor(v as number) % 64 : 0);
   return { outfit: clampIdx(a.outfit), skin: clampIdx(a.skin), accessory: clampIdx(a.accessory) };
-}
-
-/** Strip what a chat line must not carry: control characters, direction overrides. */
-function cleanText(raw: unknown): string {
-  return typeof raw === 'string'
-    ? raw.replace(/[\u0000-\u0008\u000b-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, '').trim()
-    : '';
 }
 
 /**
@@ -334,8 +324,8 @@ function handleEmote(ctx: ConnState, msg: ClientEmote): void {
 }
 
 function handleChat(ctx: ConnState, msg: ClientChat): void {
-  const text = cleanText(msg.text);
-  if (text.length === 0 || [...text].length > PROTOCOL.MAX_CHAT_LENGTH) {
+  const text = cleanLine(msg.text);
+  if (text.length === 0 || textLength(text) > PROTOCOL.MAX_CHAT_LENGTH) {
     sendError(ctx.session, ErrorCode.BadMessage, `chat must be 1-${PROTOCOL.MAX_CHAT_LENGTH} characters`);
     return;
   }
@@ -546,8 +536,8 @@ function handleHostActivityState(ctx: ConnState, msg: ClientHostActivityState, d
 }
 
 function handleHostAnnounce(ctx: ConnState, msg: ClientHostAnnounce, deps: HandlerDeps): void {
-  const text = cleanText(msg.text);
-  if (text.length === 0 || [...text].length > PROTOCOL.MAX_ANNOUNCEMENT_LENGTH) {
+  const text = cleanLine(msg.text);
+  if (text.length === 0 || textLength(text) > PROTOCOL.MAX_ANNOUNCEMENT_LENGTH) {
     sendError(ctx.session, ErrorCode.BadMessage, `announcement must be 1-${PROTOCOL.MAX_ANNOUNCEMENT_LENGTH} characters`);
     return;
   }

@@ -63,6 +63,16 @@ export interface Config {
   readonly ROOM_CAPACITY: number;
   /** Maximum players on one private island. Default 40 — a gathering of friends, not a festival. */
   readonly PRIVATE_ROOM_CAPACITY: number;
+  /** Open WebSocket connections the process accepts in total. Default 2000. */
+  readonly MAX_CONNECTIONS: number;
+  /**
+   * Open connections accepted from one client address. Default 0 = no per-address limit,
+   * because behind a reverse proxy every visitor shares the proxy's address unless
+   * `TRUST_PROXY` is set — a default limit would lock out everyone at once.
+   */
+  readonly MAX_CONNECTIONS_PER_IP: number;
+  /** Read the client address from `X-Forwarded-For` (set this behind nginx/Caddy). Default off. */
+  readonly TRUST_PROXY: boolean;
   /** Number of room shards to pre-create at boot. Default 1. More are opened on demand. */
   readonly ROOM_COUNT: number;
   /** Simulation/broadcast tick rate, Hz. Sourced from the protocol, not independently configurable. */
@@ -127,6 +137,9 @@ function buildConfig(): Config {
   const HOST = envStr('HOST', '0.0.0.0');
   const ROOM_CAPACITY = envInt('ROOM_CAPACITY', 120);
   const PRIVATE_ROOM_CAPACITY = envInt('PRIVATE_ROOM_CAPACITY', 40);
+  const MAX_CONNECTIONS = envInt('MAX_CONNECTIONS', 2000);
+  const MAX_CONNECTIONS_PER_IP = envInt('MAX_CONNECTIONS_PER_IP', 0);
+  const TRUST_PROXY = ['1', 'true', 'yes'].includes(envStr('TRUST_PROXY', '').trim().toLowerCase());
   const ROOM_COUNT = envInt('ROOM_COUNT', 1);
   const LOG_LEVEL = envLogLevel('LOG_LEVEL', 'info');
   const MAP_ID = envStr('NAGISA_MAP', DEFAULT_MAP_ID);
@@ -148,6 +161,8 @@ function buildConfig(): Config {
   if (PORT < 1 || PORT > 65535) throw new Error(`PORT out of range: ${PORT}`);
   if (ROOM_CAPACITY < 1) throw new Error(`ROOM_CAPACITY must be >= 1, got ${ROOM_CAPACITY}`);
   if (PRIVATE_ROOM_CAPACITY < 1) throw new Error(`PRIVATE_ROOM_CAPACITY must be >= 1, got ${PRIVATE_ROOM_CAPACITY}`);
+  if (MAX_CONNECTIONS < 1) throw new Error(`MAX_CONNECTIONS must be >= 1, got ${MAX_CONNECTIONS}`);
+  if (MAX_CONNECTIONS_PER_IP < 0) throw new Error(`MAX_CONNECTIONS_PER_IP must be >= 0, got ${MAX_CONNECTIONS_PER_IP}`);
   if (ROOM_COUNT < 1) throw new Error(`ROOM_COUNT must be >= 1, got ${ROOM_COUNT}`);
   // Fail at boot, not at the first player's first step. resolveMapId throws with the list of
   // registered ids, which is the only thing an operator who mistyped one actually wants.
@@ -158,6 +173,9 @@ function buildConfig(): Config {
     HOST,
     ROOM_CAPACITY,
     PRIVATE_ROOM_CAPACITY,
+    MAX_CONNECTIONS,
+    MAX_CONNECTIONS_PER_IP,
+    TRUST_PROXY,
     ROOM_COUNT,
     TICK_HZ: PROTOCOL.TICK_HZ,
     LOG_LEVEL,

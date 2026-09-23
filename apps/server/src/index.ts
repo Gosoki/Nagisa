@@ -15,7 +15,8 @@
  * connected why, stop the simulation, flush the store, then close sockets and exit.
  */
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import type { IncomingMessage } from 'node:http';
 import { WebSocketServer } from 'ws';
 import {
   decode,
@@ -35,6 +36,42 @@ import { ConnState, HANDLERS, handleHello, type HandlerDeps } from './handlers.j
 import { PermissionError } from './permissions.js';
 import { createServer, WS_PATH } from './http.js';
 import { ProfileStore } from './games/profiles.js';
+
+/** Every message type a client may send. Anything else is an invalid frame. */
+const CLIENT_TYPES: ReadonlySet<string> = new Set(['hello', ...Object.keys(HANDLERS)]);
+
+/** Invalid frames answered with an error before the rest are ignored… */
+const REPLIED_INVALID_FRAMES = 3;
+/** …and tolerated before the connection is closed. */
+const MAX_INVALID_FRAMES = 20;
+
+/** How long a new connection has to say hello. */
+const HELLO_DEADLINE_MS = 10_000;
+
+/**
+ * Whether `presented` is the admin token, compared in constant time (hashing both first makes
+ * the lengths equal, which `timingSafeEqual` requires, without leaking the real length).
+ */
+function adminTokenMatches(presented: string | null): boolean {
+  if (!CONFIG.ADMIN_TOKEN || !presented) return false;
+  const a = createHash('sha256').update(presented).digest();
+  const b = createHash('sha256').update(CONFIG.ADMIN_TOKEN).digest();
+  return timingSafeEqual(a, b);
+}
+
+/**
+ * The address a connection comes from, for the per-address cap: the socket's peer, or —
+ * behind a reverse proxy that says so (`TRUST_PROXY`) — the first `X-Forwarded-For` hop.
+ * Without `TRUST_PROXY`, a proxied deployment sees every visitor as the proxy.
+ */
+function clientAddress(req: IncomingMessage): string {
+  if (CONFIG.TRUST_PROXY) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  return req.socket.remoteAddress ?? 'unknown';
+}
 
 /** Largest frame a client may send, bytes. See the WebSocketServer options below. */
 const MAX_CLIENT_FRAME_BYTES = 16 * 1024;
@@ -144,7 +181,23 @@ async function main(): Promise<void> {
   /** Every session currently attached to a connection, live across all rooms — used for idle sweep and shutdown broadcast. */
   const activeSessions = new Set<Session>();
 
+  /** Open connections per client address, for `MAX_CONNECTIONS_PER_IP`. */
+  const perAddress = new Map<string, number>();
+  /** Connections that have not said hello yet, and since when. See the sweep below. */
+  const awaitingHello = new Map<Session, number>();
+
   wss.on('connection', (ws, req) => {
+    // Capacity first, before any per-connection state exists. A refused socket is told why
+    // (1013, "try again later") and costs nothing further.
+    const address = clientAddress(req);
+    const fromHere = perAddress.get(address) ?? 0;
+    if (activeSessions.size >= CONFIG.MAX_CONNECTIONS || (CONFIG.MAX_CONNECTIONS_PER_IP > 0 && fromHere >= CONFIG.MAX_CONNECTIONS_PER_IP)) {
+      metrics.errorsTotal.inc({ kind: 'connection_refused' });
+      ws.close(1013, 'server_busy');
+      return;
+    }
+    perAddress.set(address, fromHere + 1);
+
     const connId = randomUUID();
     const connLog = log.child({ connId });
     metrics.connectionsTotal.inc();
@@ -152,20 +205,41 @@ async function main(): Promise<void> {
 
     const session = new Session(ws, connId, connLog);
     activeSessions.add(session);
+    awaitingHello.set(session, Date.now());
 
     const url = new URL(req.url ?? '/', 'http://internal');
-    const adminGranted = Boolean(CONFIG.ADMIN_TOKEN) && url.searchParams.get('admin') === CONFIG.ADMIN_TOKEN;
+    const adminGranted = adminTokenMatches(url.searchParams.get('admin'));
 
     /** Set once `hello` succeeds. Every later message on this socket dispatches through it. */
     let state: ConnState | null = null;
+    /** Frames that were not a message we know. A few are a bug; many are an attack. */
+    let invalidFrames = 0;
 
-    ws.on('message', (raw) => {
-      session.touch();
-      const msg = decode<ClientMessage>(raw as Buffer);
-      if (!msg) {
-        session.send({ t: 'error', code: ErrorCode.BadMessage, message: 'unparsable frame' });
+    /** A frame we cannot use: answered a few times, then the connection is closed. */
+    const invalid = (why: string): void => {
+      invalidFrames++;
+      metrics.messagesIn.inc({ type: 'invalid' });
+      if (invalidFrames > MAX_INVALID_FRAMES) {
+        session.close(1008, 'invalid_frames');
         return;
       }
+      if (invalidFrames <= REPLIED_INVALID_FRAMES) session.send({ t: 'error', code: ErrorCode.BadMessage, message: why });
+    };
+
+    ws.on('message', (raw) => {
+      const msg = decode<ClientMessage>(raw as Buffer);
+      // The type is checked against the messages that exist before it is used for anything —
+      // a metric label, a handler lookup, a rate-limit bucket. An arbitrary `t` used as a
+      // label is a new time series per value (memory that is never given back), and one
+      // named after an `Object.prototype` member found a "handler" and a bucket that
+      // never ran dry.
+      if (!msg || !CLIENT_TYPES.has(msg.t)) {
+        invalid(msg ? 'unknown message type' : 'unparsable frame');
+        return;
+      }
+      // Only a frame we understood counts as the connection being alive: garbage must not
+      // keep a socket open past the idle timeout.
+      session.touch();
       metrics.messagesIn.inc({ type: msg.t });
 
       if (!state) {
@@ -188,6 +262,7 @@ async function main(): Promise<void> {
           return;
         }
         if (!state) session.close(1002, 'version_mismatch'); // handleHello already sent the error frame.
+        else awaitingHello.delete(session);
         return;
       }
 
@@ -195,10 +270,6 @@ async function main(): Promise<void> {
 
       const type = msg.t as Exclude<ClientMessageType, 'hello'>;
       const handler = HANDLERS[type];
-      if (!handler) {
-        session.send({ t: 'error', code: ErrorCode.BadMessage, message: `unknown message type ${msg.t}` });
-        return;
-      }
       if (!session.allow(type)) {
         session.send({ t: 'error', code: ErrorCode.RateLimited, message: `rate limited: ${type}` });
         return;
@@ -222,6 +293,10 @@ async function main(): Promise<void> {
     ws.on('close', () => {
       metrics.connectionsCurrent.dec();
       activeSessions.delete(session);
+      awaitingHello.delete(session);
+      const left = (perAddress.get(address) ?? 1) - 1;
+      if (left > 0) perAddress.set(address, left);
+      else perAddress.delete(address);
       if (state) state.room.disconnect(state.player.id);
     });
 
@@ -237,6 +312,14 @@ async function main(): Promise<void> {
     const now = Date.now();
     for (const session of activeSessions) {
       if (session.isIdle(now)) session.close(4000, 'idle_timeout');
+    }
+    // A socket that never says hello is not a visitor. Every real client says it the moment
+    // the socket opens.
+    for (const [session, since] of awaitingHello) {
+      if (now - since > HELLO_DEADLINE_MS) {
+        awaitingHello.delete(session);
+        session.close(4001, 'no_hello');
+      }
     }
   }, 5_000);
   connectionSweep.unref?.();

@@ -102,6 +102,7 @@ export class RoomManager {
       kind: 'public',
       persist: this.opts.persist,
       random: this.opts.random,
+      onPopulation: () => this.publishPopulation(),
     });
     return this.wake(room);
   }
@@ -148,6 +149,7 @@ export class RoomManager {
       owner,
       persist: this.opts.persist,
       random: this.opts.random,
+      onPopulation: () => this.publishPopulation(),
     });
     this.log.info('island_opened', { code });
     return this.wake(room);
@@ -166,6 +168,20 @@ export class RoomManager {
     metrics.roomsCurrent.set(this.rooms.size);
     this.log.info('room_awake', { room: room.id, kind: room.kind, restored: Boolean(state) });
     return room;
+  }
+
+  /**
+   * Population metrics: each public shard by id, and every private island summed under
+   * `room="private"`. A private island's id contains its invite code, and `/metrics` is
+   * readable by anyone who can reach the port — labelling by id would publish every code.
+   */
+  private publishPopulation(): void {
+    let islands = 0;
+    for (const room of this.rooms.values()) {
+      if (room.kind === 'public') metrics.roomPopulation.set(room.population, { room: room.id });
+      else islands += room.population;
+    }
+    metrics.roomPopulation.set(islands, { room: 'private' });
   }
 
   private liveIslandCount(): number {
@@ -303,6 +319,7 @@ export class RoomManager {
       room.stop();
       this.dormant.set(room.id, room.exportState());
       this.rooms.delete(room.id);
+      if (room.kind === 'public') metrics.roomPopulation.remove({ room: room.id });
       if (room.code) {
         const entry = this.islands.get(room.code);
         if (entry) entry.lastActiveAt = now;

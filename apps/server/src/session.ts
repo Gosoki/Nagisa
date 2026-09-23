@@ -119,7 +119,9 @@ export class Session {
     let bucket = this.buckets.get(type);
     if (!bucket) {
       const limits = PROTOCOL.RATE_LIMIT as Record<string, { rate: number; burst: number }>;
-      const { rate, burst } = limits[type] ?? PROTOCOL.RATE_LIMIT.default;
+      // Own properties only: a type named after an `Object.prototype` member must not find
+      // a "limit" there (with no numbers in it, a bucket that never runs dry).
+      const { rate, burst } = Object.hasOwn(limits, type) ? limits[type] : PROTOCOL.RATE_LIMIT.default;
       bucket = new TokenBucket(rate, burst);
       this.buckets.set(type, bucket);
     }

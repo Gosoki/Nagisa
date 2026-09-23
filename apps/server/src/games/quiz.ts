@@ -52,6 +52,8 @@ export class QuizRunner {
   private readonly field = new Set<PlayerId>();
   private alive = new Set<PlayerId>();
   private fell: PlayerId[] = [];
+  /** The last judged round had nobody right, so nobody went out. */
+  private replay = false;
   private winners: PlayerId[] = [];
   private done = false;
 
@@ -118,7 +120,10 @@ export class QuizRunner {
       alive: [...this.alive],
     };
     if (this.phase === 'reveal' || this.phase === 'finished') v.answer = this.answer ?? undefined;
-    if (this.phase === 'reveal') v.fell = [...this.fell];
+    if (this.phase === 'reveal') {
+      v.fell = [...this.fell];
+      if (this.replay) v.replay = true;
+    }
     if (this.phase === 'finished') v.winners = [...this.winners];
     return v;
   }
@@ -160,21 +165,22 @@ export class QuizRunner {
   }
 
   private judge(now: number): void {
-    const right = new Set<PlayerId>();
     const want = this.answer ? 'o' : 'x';
+    // Whoever is not here to answer — dropped, or gone — is out whatever else happens.
+    const present = new Set<PlayerId>();
+    const right = new Set<PlayerId>();
     for (const id of this.alive) {
       const p = this.room.getPlayer(id);
       if (!p || p.away) continue;
+      present.add(id);
       if (quizSide(p.pos[0], p.pos[2]) === want) right.add(id);
     }
-    if (right.size === 0) {
-      // Everyone was wrong: nobody goes out. A quiz that ends with no winner because one
-      // statement was hard is no fun for anyone.
-      this.fell = [];
-    } else {
-      this.fell = [...this.alive].filter((id) => !right.has(id));
-      this.alive = right;
-    }
+    // Everyone here was wrong: none of them goes out. A quiz that ends with no winner because
+    // one statement was hard is no fun for anyone.
+    this.replay = right.size === 0 && present.size > 0;
+    const survivors = this.replay ? present : right;
+    this.fell = [...this.alive].filter((id) => !survivors.has(id));
+    this.alive = survivors;
     this.phase = 'reveal';
     this.endsAt = now + REVEAL_MS;
     this.publish();

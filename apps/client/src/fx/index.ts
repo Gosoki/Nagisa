@@ -61,6 +61,12 @@ const HEAT_GLYPH: Record<DigHeat, string> = { hot: '🔥', warm: '♨️', cool:
 /** How high over a find its gold burst goes, metres above the ground. Low: it is a small one. */
 const TREASURE_BURST_HEIGHT = 7;
 
+/** Rain heavier than this puts umbrellas up; lighter than the second takes them down. */
+const UMBRELLAS_UP = 0.35;
+const UMBRELLAS_DOWN = 0.2;
+/** How often every figure is told whether its umbrella is up, seconds: newcomers included. */
+const UMBRELLA_RECONCILE = 1;
+
 /** What the effects layer may ask of the rest of the client. */
 export interface FxHost {
   readonly scene: THREE.Scene;
@@ -98,6 +104,12 @@ export class GameFx {
 
   private readonly unsubscribers: Array<() => void> = [];
 
+  /** Umbrellas, in the rain: whether they are up, and when everyone was last told. */
+  private rainLevel = 0;
+  private umbrellas = false;
+  private umbrellaTimer = 0;
+  private playerIds: PlayerId[] = [];
+
   constructor(private readonly host: FxHost) {
     this.group.name = 'game-fx';
     this.bells = new Bells(host, this.group);
@@ -117,6 +129,7 @@ export class GameFx {
       players.subscribe((list) => {
         this.fishing.setPlayers(list);
         this.lanterns.setPlayers(list);
+        this.playerIds = list.map((p) => p.id);
       }),
       self.subscribe((state) => this.lanterns.setSelfActivity(state.activity)),
     );
@@ -161,6 +174,24 @@ export class GameFx {
   /** How hard it is raining, 0–1 (`weatherLevels` in the shared package). */
   setRain(level: number): void {
     this.rain.setLevel(level);
+    this.rainLevel = level;
+  }
+
+  /**
+   * Umbrellas up when it rains properly, down when it has all but stopped — two thresholds,
+   * so a drizzle on the edge does not flick them up and down. Everyone is told once a
+   * second, which also catches whoever has just come into view.
+   */
+  private updateUmbrellas(dt: number): void {
+    const up = this.umbrellas ? this.rainLevel > UMBRELLAS_DOWN : this.rainLevel > UMBRELLAS_UP;
+    const changed = up !== this.umbrellas;
+    this.umbrellas = up;
+    this.umbrellaTimer -= dt;
+    if (!changed && this.umbrellaTimer > 0) return;
+    this.umbrellaTimer = UMBRELLA_RECONCILE;
+    const self = this.host.selfId();
+    if (self) this.host.characterOf(self)?.setUmbrella(up);
+    for (const id of this.playerIds) this.host.characterOf(id)?.setUmbrella(up);
   }
 
   /** Someone emoted (you included); float the glyph over their head. */
@@ -179,6 +210,7 @@ export class GameFx {
     this.lighthouse.update(dt);
     this.concert.update(dt);
     this.rain.update(elapsed);
+    this.updateUmbrellas(dt);
   }
 
   dispose(): void {

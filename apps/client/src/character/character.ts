@@ -61,7 +61,7 @@
 import * as THREE from 'three';
 import { AnimState } from '@nagisa/shared';
 import { createInkMaterial, inkDepthMaterial } from '../engine/ink/ink-material.js';
-import { hair as hairMaterial, outfit as outfitMaterial, shoji, skin as skinMaterial, surface, wood } from '../world/materials.js';
+import { cloth, hair as hairMaterial, outfit as outfitMaterial, shoji, skin as skinMaterial, surface, wood } from '../world/materials.js';
 import { paperLantern } from '../world/props/kit.js';
 import { mergeByMaterial } from '../world/props/geometry.js';
 
@@ -202,6 +202,20 @@ const ROD_BUTT = 0.25;
  */
 const POLE_PITCH = 2.5;
 const POLE_LENGTH = 0.72;
+
+/**
+ * The umbrella: a wagasa of oiled paper on a bamboo shaft, the canopy this far above the
+ * hand and this wide — clear over the head and a straw hat's crown with the arm in the
+ * umbrella pose, and wide enough to cover the shoulders.
+ */
+const UMBRELLA_RISE = 0.78;
+const UMBRELLA_RADIUS = 0.52;
+const UMBRELLA_DEPTH = 0.2;
+/** Oiled-paper colours an umbrella may be, chosen per figure so a crowd is not one umbrella. */
+const UMBRELLA_COLORS = [0xb4412f, 0x2f4a6b, 0xc58a3a, 0x5e7d4f] as const;
+
+/** Poses that need the left arm for themselves; an umbrella is held up through anything else. */
+const ARM_BUSY: ReadonlySet<AnimState> = new Set([AnimState.Clap, AnimState.Bow, AnimState.Cheer]);
 
 /**
  * How opaque a disconnected ("away") player is drawn. Enough to be clearly there — they
@@ -468,8 +482,14 @@ export class Character {
    */
   private lantern: { pole: THREE.Group; hanger: THREE.Group; body: THREE.Object3D } | null = null;
 
+  /** Whether it is raining on this figure (see `setUmbrella`), and the umbrella once built. */
+  private umbrellaUp = false;
+  private umbrella: THREE.Group | null = null;
+  private readonly umbrellaColor: number;
+
   constructor(appearance: CharacterAppearance) {
     this.root.name = 'character';
+    this.umbrellaColor = UMBRELLA_COLORS[(appearance.outfit + appearance.skin) % UMBRELLA_COLORS.length];
 
     // Three garment tones, not two: jacket, under-layer and trousers. With only two, the
     // trousers inherit the vest's colour and the figure reads as a one-piece suit — and
@@ -693,6 +713,26 @@ export class Character {
     this.held = prop;
     if (prop === 'lantern' && !this.lantern) this.lantern = this.buildLantern();
     if (this.lantern) this.lantern.pole.visible = prop === 'lantern';
+    this.refreshUmbrella();
+  }
+
+  /**
+   * Put an umbrella up (in the rain) or down. Held in the left hand — the lantern's hand, and
+   * the lantern wins: in a procession in the rain, the lantern is the point of the walk.
+   */
+  setUmbrella(up: boolean): void {
+    if (this.umbrellaUp === up) return;
+    this.umbrellaUp = up;
+    if (up && !this.umbrella) this.umbrella = this.buildUmbrella();
+    this.refreshUmbrella();
+  }
+
+  private get umbrellaShown(): boolean {
+    return this.umbrellaUp && this.held !== 'lantern';
+  }
+
+  private refreshUmbrella(): void {
+    if (this.umbrella) this.umbrella.visible = this.umbrellaShown;
   }
 
   get heldProp(): 'lantern' | null {
@@ -757,6 +797,32 @@ export class Character {
     this.elbowR.add(rod);
     this.applyFade(rod);
     return rod;
+  }
+
+  /**
+   * A wagasa in the left hand: a bamboo shaft and a shallow cone of oiled paper, with a small
+   * cap at the crown. Built upright and turned every frame to stay upright
+   * (`standUmbrella`), so it is held straight whatever the arm is doing.
+   */
+  private buildUmbrella(): THREE.Group {
+    const holder = new THREE.Group();
+    holder.name = 'umbrella';
+    holder.position.set(0, -0.235, 0);
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.011, UMBRELLA_RISE + 0.1, 5), wood('light'));
+    shaft.position.y = (UMBRELLA_RISE - 0.1) / 2;
+    const canopy = new THREE.Mesh(new THREE.ConeGeometry(UMBRELLA_RADIUS, UMBRELLA_DEPTH, 12, 1, true), cloth(this.umbrellaColor));
+    canopy.position.y = UMBRELLA_RISE;
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.035, 0.05, 6), wood('dark'));
+    cap.position.y = UMBRELLA_RISE + UMBRELLA_DEPTH / 2;
+    for (const part of [shaft, canopy, cap]) {
+      part.castShadow = true;
+      part.customDepthMaterial = inkDepthMaterial();
+      holder.add(part);
+    }
+    holder.visible = false;
+    this.elbowL.add(holder);
+    this.applyFade(holder);
+    return holder;
   }
 
   /**
@@ -867,6 +933,7 @@ export class Character {
     const pose = this.effectiveState;
     this.applyPoseOverrides(pose);
     if (this.held === 'lantern' && !TWO_HANDED.has(pose)) this.applyCarryPose();
+    else if (this.umbrellaShown && !ARM_BUSY.has(pose)) this.applyUmbrellaPose();
 
     // Plant the stride: lower the body by however much the longer leg falls short of the
     // ground. Without it the hips rode at a fixed height while the legs opened beneath them,
@@ -886,6 +953,29 @@ export class Character {
     this.head.rotation.x = -this.blended.lean * 0.55;
 
     if (this.held === 'lantern' && this.lantern) this.hangLantern();
+    if (this.umbrella && this.umbrellaShown) this.standUmbrella();
+  }
+
+  /**
+   * The left forearm raised in front of the chest, holding the shaft: the hand at about
+   * shoulder height and a little forward, so the canopy sits over the head rather than in
+   * front of the face.
+   */
+  private applyUmbrellaPose(): void {
+    this.shoulderL.rotation.set(-0.55, 0, -0.18);
+    this.elbowL.rotation.set(-1.35, 0, 0);
+  }
+
+  /**
+   * Stand the umbrella straight up from the hand, however the arm is turned — the same
+   * cancellation as the lantern's plumb line, with a slight backward tilt so the canopy
+   * leans over the head, and the stride's small sway.
+   */
+  private standUmbrella(): void {
+    this.elbowL.getWorldQuaternion(POLE_WORLD);
+    this.root.getWorldQuaternion(ROOT_WORLD);
+    SWAY.setFromAxisAngle(X_AXIS, -0.12 + Math.sin(this.phase) * 0.04 * this.blended.legSwing);
+    this.umbrella!.quaternion.copy(POLE_WORLD.invert()).multiply(ROOT_WORLD).multiply(SWAY);
   }
 
   /**

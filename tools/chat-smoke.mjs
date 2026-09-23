@@ -188,6 +188,10 @@ try {
   }
   check('Bob is following Alice', (await bob.page.evaluate(() => window.nagisa?.following?.()?.id ?? null)) === aliceId);
 
+  const bobStart = await bob.page.evaluate(() => {
+    const p = window.nagisa?.local?.position;
+    return p ? { x: p.x, z: p.z } : null;
+  });
   const gapBefore = await bob.page.evaluate((id) => {
     const me = window.nagisa?.local?.position;
     const them = window.nagisa?.remote?.positionOf?.(id);
@@ -224,8 +228,8 @@ try {
   let gapAfter = await measureGap();
   const followDeadline = Date.now() + 40_000;
   while (Date.now() < followDeadline) {
-    // Arrived: inside conversational distance and no longer closing.
-    if (gapAfter !== null && gapBefore !== null && gapAfter <= gapBefore + 1 && gapAfter < 4) break;
+    // Arrived: inside conversational distance.
+    if (gapAfter !== null && gapAfter < 4) break;
     await bob.page.waitForTimeout(500);
     gapAfter = await measureGap();
   }
@@ -235,9 +239,14 @@ try {
   });
 
   check('the gap was measurable at both ends', gapBefore !== null && gapAfter !== null, { gapBefore, gapAfter });
-  check('Bob closed the distance to Alice', gapAfter !== null && gapBefore !== null && gapAfter <= gapBefore + 1, {
+  // Following stops a pace or two short (see FOLLOW_STOP_DISTANCE in app.ts), so the end gap
+  // is compared with conversational distance, not with the start: two arrivals can share a
+  // spawn point, and then the gap before is zero. That Bob went after her is his own walk.
+  const walked = bobStart && bobMoved ? Math.hypot(bobMoved.x - bobStart.x, bobMoved.z - bobStart.z) : 0;
+  check('Bob followed Alice and stopped near her', gapAfter !== null && gapAfter < 4 && walked > 2, {
     before: gapBefore?.toFixed?.(1),
     after: gapAfter?.toFixed?.(1),
+    walked: walked.toFixed(1),
     bob: bobMoved,
   });
   check('Bob did not walk into Alice', gapAfter !== null && gapAfter > 0.6, { after: gapAfter?.toFixed?.(2) });

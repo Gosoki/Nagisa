@@ -47,7 +47,7 @@
     isLand,
     type Interactable,
   } from '@nagisa/shared';
-  import { currentZone, followTarget, planImage, players, profile, remotePose, selfPose, settings, weather, islandNight } from '../state/stores.js';
+  import { currentZone, followTarget, planImage, players, profile, remotePose, selfPose, settings, weather, islandNight, friendsHere } from '../state/stores.js';
 
   /** The weather beside the place name: the sky you are under, at a glance. */
   const WEATHER_GLYPH = { clear: '☀️', cloudy: '☁️', rain: '🌧️' } as const;
@@ -271,14 +271,14 @@
       }
     }
 
-    // Other people.
+    // Other people. Friends in the sea's blue, so they can be found in a crowd.
     const following = $followTarget?.id;
     for (const p of $players) {
       // Where they are now, not where they arrived (see `remotePose`).
       const live = remotePose.at(p.id);
       const [px, pz] = project(live ? live.x : p.pos[0], live ? live.z : p.pos[2], size);
       const isFollowed = p.id === following;
-      ctx.fillStyle = isFollowed ? '#C4503A' : 'rgba(38, 34, 30, 0.78)';
+      ctx.fillStyle = isFollowed ? '#C4503A' : $friendsHere.has(p.id) ? '#4E7C8C' : 'rgba(38, 34, 30, 0.78)';
       ctx.beginPath();
       ctx.arc(px, pz, isFollowed ? 4 : 2.6, 0, Math.PI * 2);
       ctx.fill();

@@ -73,6 +73,7 @@ import { adminToken, inviteCodeFromUrl, reflectIslandInUrl, visitorKey } from '.
 import { Ambience } from './audio/ambience.js';
 import { GameFx } from './fx/index.js';
 import { markPhoto } from './engine/photo.js';
+import { chimeVoice } from './fx/audio.js';
 import { badgeIcon, badgeName, interactLabel, roomName, tr, zoneName } from './i18n/index.js';
 import {
   activities,
@@ -420,6 +421,10 @@ export class App {
     this.sync = new WorldSync(this.connection, this.remote, rebuilt, this.speech);
     this.sync.onWorldEvent = (event) => this.fx.onEvent(event);
     this.sync.onEmote = (id, emote) => this.fx.onEmote(id, emote);
+    this.sync.onForYou = () => {
+      const sound = this.ambience.sfx();
+      if (sound) chimeVoice(sound.ctx, sound.out);
+    };
     // Keep the hint and the address bar on whatever island we are actually on.
     room.subscribe((view) => this.adoptRoom(view));
     this.connection.connect();

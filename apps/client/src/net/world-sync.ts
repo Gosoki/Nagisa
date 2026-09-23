@@ -162,6 +162,9 @@ export class WorldSync {
    */
   onWorldEvent: ((event: WorldEvent) => void) | null = null;
 
+  /** Something arrived that is for you alone — a whisper, a friend coming on. The app chimes. */
+  onForYou: (() => void) | null = null;
+
   private readonly unsubscribers: Array<() => void> = [];
 
   constructor(
@@ -319,6 +322,7 @@ export class WorldSync {
       case 'whisper': {
         const mine = msg.from === this.selfId();
         if (!mine && isMuted(msg.from)) break;
+        if (!mine) this.onForYou?.();
         pushChat({
           playerId: msg.from,
           name: msg.fromName,
@@ -675,7 +679,10 @@ export class WorldSync {
     for (const f of msg.friends) {
       const old = was.get(f.id);
       if (!old) notify(tr('friend.added', { name: f.name }), 'good', 4000);
-      else if (!old.online && f.online && f.room) pushSystemChat(tr('friend.online', { name: f.name, place: this.placeOf(f.room) }));
+      else if (!old.online && f.online && f.room) {
+        pushSystemChat(tr('friend.online', { name: f.name, place: this.placeOf(f.room) }));
+        this.onForYou?.();
+      }
     }
   }
 

@@ -274,6 +274,28 @@ export function splashVoice(ctx: AudioContext, into: AudioNode, big: boolean): v
  */
 const plucks = new WeakMap<AudioContext, Map<number, AudioBuffer>>();
 
+/**
+ * Two soft plucked notes, a fourth apart, straight into `into` (not placed in the world):
+ * the island saying "this is for you" — a whisper, a friend arriving. Quiet on purpose; it
+ * is a tap on the shoulder, not a bell.
+ */
+export function chimeVoice(ctx: AudioContext, into: AudioNode): void {
+  const now = ctx.currentTime;
+  for (const [frequency, at] of [
+    [880, 0],
+    [1174.7, 0.11],
+  ] as const) {
+    const source = ctx.createBufferSource();
+    source.buffer = pluckBuffer(ctx, frequency);
+    const gain = ctx.createGain();
+    gain.gain.value = 0.22;
+    source.connect(gain);
+    gain.connect(into);
+    source.start(now + at);
+    source.stop(now + at + 1.6);
+  }
+}
+
 export function pluckBuffer(ctx: AudioContext, frequency: number): AudioBuffer {
   let byPitch = plucks.get(ctx);
   if (!byPitch) {

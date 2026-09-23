@@ -42,6 +42,7 @@
   import Chat from './Chat.svelte';
   import Minimap from './Minimap.svelte';
   import QuizHud from './QuizHud.svelte';
+  import TreasureHud from './TreasureHud.svelte';
   import FishingHud from './FishingHud.svelte';
   import OmikujiCard from './OmikujiCard.svelte';
   import JankenCard from './JankenCard.svelte';
@@ -111,6 +112,7 @@
     <ZoneCard />
     <NextUp />
     <QuizHud />
+    <TreasureHud />
     <FishingHud />
     <OmikujiCard />
     <JankenCard />

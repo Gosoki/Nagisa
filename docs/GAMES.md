@@ -105,6 +105,8 @@ resync, never kept in a snapshot.
 | `dice` | `by, value, sides` | a line and a bubble |
 | `janken` | `a, b, ha, hb, winner` | both hands as bubbles; a line |
 | `badge` | `by, badge` | a line |
+| `dig` | `by, heat` | the heat as a glyph over the digger (🔥 ♨️ 💧 ❄️) |
+| `treasure` | `by, pos, left` | 💎 over the finder, a small gold burst where it came up, a line |
 
 ---
 
@@ -185,6 +187,25 @@ every 6 s and eight per room per 10 s. The launch site is the nearest of `firewo
 jittered a few metres; burst height 28–42 m. While the fireworks activity is live the server
 sends up its own show every 1.2–3 s.
 
+### Treasure hunt (`feature: 'treasure'`, template `treasure-hunt`, the whole island)
+
+When the hunt goes live the server buries `TREASURE_COUNT` (3) things: random walkable
+ground above the waterline, at least 30 m apart, 12 m clear of the arrival quay, and
+reachable from it on the routing graph. The spots never leave the server.
+
+`dig` from anyone, anywhere, at most once per `DIG_COOLDOWN_MS` (1.5 s). The server measures
+from the digger's last validated position to the nearest thing still buried: within
+`TREASURE_FIND_RADIUS` (2.5 m) it comes up — `dig{result:'found'}` to the digger, a
+`treasure` event to everyone, a point on the activity's `board`, `profile.treasures + 1`,
+and at `TREASURE_HUNTER_FINDS` (3, over all hunts) the Treasure Hunter badge. Otherwise the
+digger is told the heat (`digHeat`: hot ≤ 8 m, warm ≤ 20, cool ≤ 40, cold) and everyone sees
+a `dig` event with it — the crowd that gathers round a hot spade is the point.
+
+`ActivityView.left` counts down; the last find ends the hunt, otherwise its time does, and
+the island hears the podium. One hunt at a time (a second going live is called off, and
+`host_schedule` refuses one while a hunt runs), and a hunt live across a restart is over,
+like a quiz: its spots were never written down. No hunt live: `no_hunt`.
+
 ### Bells (`effect: 'ring_bell'`)
 
 `interact{use}` → `bell` event. Each bell rests 3 s between rings (room-wide); a ring inside
@@ -218,7 +239,7 @@ language (`i18n/core.ts`, `error.<key>`):
 
 `too_far` · `cooldown {seconds}` · `seat_taken` · `muted` · `not_here` · `full` · `not_found` ·
 `forbidden` · `busy` · `already_stamped` · `not_open` · `room_not_found` · `invalid` ·
-`too_long {max}` · `empty`
+`too_long {max}` · `empty` · `no_hunt`
 
 ---
 
@@ -234,5 +255,6 @@ language (`i18n/core.ts`, `error.<key>`):
 | Omikuji, stamps, bells | `games/interactions.ts` | `ui/OmikujiCard.svelte`, `fx/` | `games/omikuji.ts` |
 | Janken | `games/janken.ts` | `ui/JankenCard.svelte` | |
 | Fireworks | `games/fireworks.ts` | `fx/` | `maps/*.ts` (`fireworks`) |
+| Treasure hunt | `games/treasure.ts` | `ui/TreasureHud.svelte`, `fx/` (glyphs, gold burst) | `games/treasure.ts` |
 | Guestbook | `games/guestbook.ts` | `ui/BoardPanel.svelte` | |
 | Languages | — | `i18n/` | names in `maps/*.ts`, `games/*.ts` |

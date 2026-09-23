@@ -26,6 +26,7 @@ import { get } from 'svelte/store';
 import {
   ACTIVITY_TEMPLATES,
   ActivityState,
+  AnimState,
   INTERACTABLES,
   ISLAND_EXTENT,
   PROTOCOL,
@@ -898,6 +899,12 @@ export class App {
         // best met with a fresh page.
         if (get(replacedElsewhere)) this.connection?.connect();
         else location.reload();
+      },
+
+      dig: () => {
+        this.sync?.send({ t: 'dig' });
+        // Bend to the sand; what it says comes back as a `dig` message.
+        this.local.character.playEmote(AnimState.Bow, 0.8);
       },
     };
 

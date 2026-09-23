@@ -461,6 +461,7 @@ Semantics are in [GAMES.md](GAMES.md); these are the messages.
 | `guestbook_write { text }` | Sign the notice board, standing at it. |
 | `guestbook_remove { id }` | Take a line down: your own, or any if admin. |
 | `set_title { badge \| null }` | Wear a badge you hold under your name, or none. |
+| `dig` | Dig where you stand, while a treasure hunt is live. One per 1.5 s. |
 | `chat { text, to? }` | With `to`, a whisper: delivered to both ends only, never in a delta, never bubbled. |
 
 **Server → client, to one player only**
@@ -472,6 +473,7 @@ Semantics are in [GAMES.md](GAMES.md); these are the messages.
 | `omikuji { fortune, item, direction, again }` | Your slip; indices into the shared tables. `again` = you had drawn today already. |
 | `janken { kind, duel, opponent, opponentName, … }` | Your side of a duel: `invited`, `waiting`, `start`, `result`, `cancelled`. |
 | `whisper { from, fromName, to, toName, text, at }` | Sent to both ends. |
+| `dig { result, left }` | What your dig turned up: `found`, or the heat of the nearest still buried (`hot` ≤ 8 m, `warm` ≤ 20, `cool` ≤ 40, `cold`). `left` = still buried. |
 
 **World events** — `delta.events`, for everyone in the room. They ride in the tick's delta
 so they are ordered with everything else that happened in that tick and replayed with it on
@@ -488,6 +490,8 @@ bell that is ringing.
 | `dice` | `by, value, sides` |
 | `janken` | `a, b, ha, hb, winner` (`null` = a draw) |
 | `badge` | `by, badge` |
+| `dig` | `by, heat` |
+| `treasure` | `by, pos, left` |
 
 The quiz travels as `QuizView` in `snapshot.quiz` and `delta.quiz`; the guestbook as
 `GuestbookEntry` lists in `snapshot.guestbook`, `delta.guestbook` and

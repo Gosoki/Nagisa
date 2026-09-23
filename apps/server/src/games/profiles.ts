@@ -42,6 +42,7 @@ export function newProfile(now = Date.now()): ProfileRecord {
     omikuji: null,
     jankenWins: 0,
     quizWins: 0,
+    treasures: 0,
     lastSeen: now,
   };
 }
@@ -71,6 +72,7 @@ function sanitise(raw: Partial<ProfileRecord> | null | undefined): ProfileRecord
     omikuji: raw.omikuji && typeof raw.omikuji === 'object' ? raw.omikuji : null,
     jankenWins: Number.isFinite(raw.jankenWins) ? Number(raw.jankenWins) : 0,
     quizWins: Number.isFinite(raw.quizWins) ? Number(raw.quizWins) : 0,
+    treasures: Number.isFinite(raw.treasures) ? Number(raw.treasures) : 0,
     lastSeen: Number.isFinite(raw.lastSeen) ? Number(raw.lastSeen) : 0,
   };
 }
@@ -133,6 +135,7 @@ export function profileView(rec: ProfileRecord, persistent: boolean): ProfileVie
     omikuji: rec.omikuji ? { ...rec.omikuji } : null,
     jankenWins: rec.jankenWins,
     quizWins: rec.quizWins,
+    treasures: rec.treasures,
     persistent,
   };
 }

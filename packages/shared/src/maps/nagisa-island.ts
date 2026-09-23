@@ -1115,6 +1115,21 @@ const ACTIVITY_TEMPLATES: MapPack['world']['activityTemplates'] = [
     feature: 'derby',
   },
   {
+    id: 'treasure-hunt',
+    title: 'Treasure Hunt',
+    titleZh: '深夜寻宝',
+    titleJa: '真夜中の宝探し',
+    blurb: 'Three things are buried somewhere on the island. Dig, and the sand says warmer or colder.',
+    blurbZh: '岛上某处埋着三件宝物。挖一下，沙子会告诉你近了还是远了。',
+    blurbJa: '島のどこかに宝が三つ。掘ってみれば、砂が近いか遠いかを教えてくれる。',
+    zone: 'plaza',
+    durationMin: 10,
+    capacity: 0,
+    checkinEnabled: false,
+    formation: 'gather',
+    feature: 'treasure',
+  },
+  {
     id: 'fireworks',
     title: 'Fireworks',
     titleZh: '花火大会',
@@ -1134,10 +1149,12 @@ const ACTIVITY_TEMPLATES: MapPack['world']['activityTemplates'] = [
 /**
  * The island's day, in real minutes after island midnight (a day is ninety minutes; dawn is
  * at 22.5, noon at 45, dusk at 67.5). Laid out so each thing happens at the hour it belongs
- * to — the catch at first light, the lamp at dusk, fireworks in the dark — and so no two
- * things share a venue at once.
+ * to — the catch at first light, the lamp at dusk, fireworks in the dark, and the treasure
+ * hunt in the small hours when there is otherwise nothing on — and so no two things share a
+ * venue at once.
  */
 const PROGRAMME: NonNullable<MapPack['world']['programme']> = [
+  { template: 'treasure-hunt', at: 8 },
   { template: 'morning-catch', at: 22 },
   { template: 'morning-assembly', at: 28 },
   { template: 'island-quiz', at: 37 },

@@ -111,6 +111,8 @@ export interface ProfileRecord {
   omikuji: { day: string; fortune: number; item: number; direction: number } | null;
   jankenWins: number;
   quizWins: number;
+  /** Treasures dug up, over every hunt. */
+  treasures: number;
   lastSeen: number;
 }
 

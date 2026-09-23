@@ -601,11 +601,12 @@ function handleHostSchedule(ctx: ConnState, msg: ClientHostSchedule, deps: Handl
     refuse(ctx, 'busy');
     return;
   }
-  // One quiz runs at a time (there is one arena). Asking for another while one is running
-  // would put up an activity that could never do its thing, so it is refused; a scheduled one
-  // that goes live during this one is called off by the room instead (see `Room.onTransition`).
-  if (template.feature === 'quiz') {
-    const running = ctx.room.activities.list().some((a) => a.feature === 'quiz' && a.state === ActivityState.Live);
+  // One quiz runs at a time (there is one arena), and one treasure hunt (one set of spots).
+  // Asking for another while one is running would put up an activity that could never do its
+  // thing, so it is refused; a scheduled one that goes live during this one is called off by
+  // the room instead (see `Room.onTransition`).
+  if (template.feature === 'quiz' || template.feature === 'treasure') {
+    const running = ctx.room.activities.list().some((a) => a.feature === template.feature && a.state === ActivityState.Live);
     if (running) {
       refuse(ctx, 'busy');
       return;
@@ -861,6 +862,10 @@ function handleFirework(ctx: ConnState, msg: ClientFirework): void {
   ctx.room.fireworks.launch(ctx.player, Date.now(), msg.hue, msg.pattern);
 }
 
+function handleDig(ctx: ConnState): void {
+  ctx.room.treasure.dig(ctx.player, Date.now());
+}
+
 function handleGuestbookWrite(ctx: ConnState, msg: ClientGuestbookWrite): void {
   ctx.room.guestbook.write(ctx.player, msg.text, Date.now());
 }
@@ -911,6 +916,7 @@ export const HANDLERS: {
   fish: handleFish,
   janken: handleJanken,
   roll: handleRoll,
+  dig: handleDig,
   firework: handleFirework,
   guestbook_write: handleGuestbookWrite,
   guestbook_remove: handleGuestbookRemove,

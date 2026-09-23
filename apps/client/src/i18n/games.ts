@@ -24,6 +24,8 @@ export const GAMES: Dictionaries = {
     'event.jankenWin': '✌️ {winner} 猜拳赢了 {loser}',
     'event.jankenDraw': '✌️ {a} 和 {b} 猜拳打成平手',
     'event.badge': '{icon} {name} 获得了徽章「{badge}」',
+    'event.treasure': '💎 {name} 挖到了一件宝物！还剩 {n} 件',
+    'event.treasureLast': '💎 {name} 挖到了最后一件宝物！',
 
     'whisper.to': '悄悄话 → {name}',
     'whisper.from': '{name} 对你说悄悄话',
@@ -96,6 +98,19 @@ export const GAMES: Dictionaries = {
     'rarity.epic': '史诗',
     'rarity.legendary': '传说',
     'rarity.junk': '杂物',
+
+    // TreasureHud.
+    'treasure.title': '寻宝',
+    'treasure.left': '还埋着 {n} 件',
+    'treasure.how': '到处挖挖看——沙子会告诉你离宝物有多近',
+    'treasure.dig': '挖',
+    'treasure.key': 'F',
+    'treasure.heat.hot': '好烫！就在附近',
+    'treasure.heat.warm': '温温的，不远了',
+    'treasure.heat.cool': '有点凉',
+    'treasure.heat.cold': '冰凉，离得很远',
+    'treasure.found': '💎 挖到宝物了！',
+    'treasure.board': '寻获',
 
     // OmikujiCard.
     'omikuji.title': '御神签',
@@ -227,6 +242,8 @@ export const GAMES: Dictionaries = {
     'event.jankenWin': '✌️ {winner} さんがじゃんけんで {loser} さんに勝った',
     'event.jankenDraw': '✌️ {a} さんと {b} さんのじゃんけんは引き分け',
     'event.badge': '{icon} {name} さんがバッジ「{badge}」を手に入れた',
+    'event.treasure': '💎 {name} さんが宝を掘り当てた！残り {n} つ',
+    'event.treasureLast': '💎 {name} さんが最後の宝を掘り当てた！',
 
     'whisper.to': 'ひそひそ → {name}',
     'whisper.from': '{name} さんからひそひそ',
@@ -296,6 +313,18 @@ export const GAMES: Dictionaries = {
     'rarity.epic': '超レア',
     'rarity.legendary': '幻',
     'rarity.junk': 'ガラクタ',
+
+    'treasure.title': '宝探し',
+    'treasure.left': 'あと {n} つ埋まっている',
+    'treasure.how': 'どこでも掘ってみよう——砂が宝までの近さを教えてくれる',
+    'treasure.dig': '掘る',
+    'treasure.key': 'F',
+    'treasure.heat.hot': '熱い！すぐ近くだ',
+    'treasure.heat.warm': 'ぬくい、近いぞ',
+    'treasure.heat.cool': 'ひんやり',
+    'treasure.heat.cold': '冷たい、ずっと遠い',
+    'treasure.found': '💎 宝を掘り当てた！',
+    'treasure.board': '発見',
 
     'omikuji.title': 'おみくじ',
     'omikuji.label': 'あなたのおみくじ',
@@ -421,6 +450,8 @@ export const GAMES: Dictionaries = {
     'event.jankenWin': '✌️ {winner} beat {loser} at janken',
     'event.jankenDraw': '✌️ {a} and {b} drew at janken',
     'event.badge': '{icon} {name} earned “{badge}”',
+    'event.treasure': '💎 {name} dug up a treasure! {n} left',
+    'event.treasureLast': '💎 {name} dug up the last treasure!',
 
     'whisper.to': 'Whisper → {name}',
     'whisper.from': '{name} whispers',
@@ -490,6 +521,18 @@ export const GAMES: Dictionaries = {
     'rarity.epic': 'Epic',
     'rarity.legendary': 'Legendary',
     'rarity.junk': 'Junk',
+
+    'treasure.title': 'Treasure hunt',
+    'treasure.left': '{n} still buried',
+    'treasure.how': 'Dig anywhere — the sand tells you how close you are',
+    'treasure.dig': 'Dig',
+    'treasure.key': 'F',
+    'treasure.heat.hot': 'Hot! It’s right around here',
+    'treasure.heat.warm': 'Warm — not far now',
+    'treasure.heat.cool': 'Cool',
+    'treasure.heat.cold': 'Cold — nowhere near',
+    'treasure.found': '💎 You dug up a treasure!',
+    'treasure.board': 'Finds',
 
     'omikuji.title': 'Omikuji',
     'omikuji.label': 'Your fortune',

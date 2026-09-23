@@ -58,6 +58,7 @@ The shipped island's eight (`ACTIVITY_TEMPLATES` in
 | Lantern Walk | `lantern-walk` | Shrine | 12 min | 60 | ✓ | `lanterns` |
 | Beach Concert | `beach-concert` | Sunset Beach | 9 min | 70 | ✓ | `concert` |
 | Fireworks | `fireworks` | Sunset Beach | 8 min | ∞ | — | `fireworks` |
+| Treasure Hunt | `treasure-hunt` | Main Plaza (the field is the whole island) | 10 min | ∞ | — | `treasure` |
 
 Each template carries its title and blurb in English, Chinese and Japanese (`titleZh`,
 `titleJa`, `blurbZh`, `blurbJa`); the wire carries the English and the `templateId`, and
@@ -84,6 +85,7 @@ after island midnight:
 
 | Real min | Island time | Template | Venue |
 |---|---|---|---|
+| 8 | 02:08 | Treasure Hunt | Main Plaza |
 | 22 | 05:52 | Fishing Derby | North Harbour |
 | 28 | 07:28 | Morning Assembly | Main Plaza |
 | 37 | 09:52 | ○× Quiz | Main Plaza |
@@ -95,7 +97,8 @@ after island midnight:
 | 85 | 22:40 | Fireworks | Sunset Beach |
 
 Laid out so each thing happens at the hour it belongs to — the catch at first light, the
-lamp at dusk, fireworks in the dark — and so no two things share a venue at once. A map
+lamp at dusk, fireworks in the dark, the treasure hunt in the small hours when nothing else
+is on — and so no two things share a venue at once. A map
 with no `programme` gets each of its templates once a day, evenly spaced.
 
 ### Per-room scheduling
@@ -188,6 +191,7 @@ gatherings: a place, a time, a roster and a check-in.
 | `quiz` | server | The ○× quiz runs in the map's `quizArena`: lobby, questions, judging by where people stand. |
 | `derby` | server | Every catch by a *participant* scores their biggest single fish; the top five ride on `ActivityView.board`. At the end the winner gets the Derby Champion badge and the island hears the podium. |
 | `fireworks` | server | The server sends up its own show every 1.2–3 s; anyone on a firework shore may add to it. |
+| `treasure` | server | Three things are buried at random places; anyone may dig, anywhere, and hears how close the nearest is. Finds score on `board`, `left` counts down, and the last find ends it. One hunt at a time. |
 | `concert` | client | A musician on the beach stage and generated koto phrases, heard from where you stand. |
 | `lanterns` | client | Everyone attending carries a paper lantern, and after dusk each has a halo. |
 | `lamp` | client | The lighthouse beam. |

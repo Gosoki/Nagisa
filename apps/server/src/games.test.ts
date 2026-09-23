@@ -18,7 +18,11 @@ import {
   QUIZ_BANK,
   Role,
   STAMP_ZONES,
+  DIG_COOLDOWN_MS,
+  TREASURE_COUNT,
+  digHeat,
   getQuizQuestion,
+  isWalkable,
   getZone,
   heightAt,
   interactablePosition,
@@ -41,6 +45,7 @@ import { GUESTBOOK_COOLDOWN_MS, GUESTBOOK_LIMIT } from './games/guestbook.js';
 import { PLAYER_COOLDOWN_MS, ROOM_BURST } from './games/fireworks.js';
 import { ProfileStore, hashVisitorKey, newProfile } from './games/profiles.js';
 import { materialiseProgramme } from './schedule.js';
+import { bury } from './games/treasure.js';
 import { migrate } from './persistence.js';
 
 class FakeSocket {
@@ -380,6 +385,100 @@ test('quiz: when everyone is wrong nobody goes out', () => {
 // ---------------------------------------------------------------------------------------------
 // Bells, omikuji, stamps, dice
 // ---------------------------------------------------------------------------------------------
+
+/** A small seeded generator, for tests that need varied but repeatable randomness. */
+function seeded(seed = 1): () => number {
+  let t = seed >>> 0;
+  return () => {
+    t = (t + 0x6d2b79f5) >>> 0;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+test('treasure: buried apart on open ground, the sand says how close, finds score and the last one ends it', () => {
+  const room = makeRoom(seeded(7));
+  const a = join(room);
+  const b = join(room);
+
+  room.treasure.dig(a.player, 0);
+  assert.equal(lastOf(a.socket, 'error')?.key, 'no_hunt', 'nothing to dig for yet');
+
+  const hunt = room.activities.createFromTemplate('treasure-hunt', Date.now() - 1000);
+  room.activities.sweep(Date.now());
+  assert.equal(hunt.state, ActivityState.Live);
+  const spots = (room.treasure as unknown as { spots: Array<{ x: number; z: number }> }).spots.map((s) => ({ ...s }));
+  assert.equal(spots.length, TREASURE_COUNT);
+  for (const s of spots) assert.ok(isWalkable(s.x, s.z), 'buried on ground you can stand on');
+  for (let i = 0; i < spots.length; i++) {
+    for (let j = i + 1; j < spots.length; j++) assert.ok(Math.hypot(spots[i].x - spots[j].x, spots[i].z - spots[j].z) >= 30);
+  }
+  assert.equal(hunt.toView().left, TREASURE_COUNT);
+
+  // Near one but not on it: the heat is the distance's.
+  place(a.player, spots[0].x + 6, spots[0].z);
+  const near = Math.min(...spots.map((s) => Math.hypot(s.x - a.player.pos[0], s.z - a.player.pos[2])));
+  room.treasure.dig(a.player, 10_000);
+  const told = lastOf(a.socket, 'dig');
+  assert.equal(told?.result, near <= 2.5 ? 'found' : digHeat(near));
+  if (told?.result !== 'found') {
+    const events = flushEvents(room, b.socket);
+    assert.ok(events.some((e) => e.k === 'dig' && e.by === a.player.id), 'everyone sees the spade go in');
+  }
+
+  // Too soon.
+  room.treasure.dig(a.player, 10_000 + DIG_COOLDOWN_MS - 1);
+  assert.equal(lastOf(a.socket, 'error')?.key, 'cooldown');
+
+  // On it: found, scored, on the card, and news for everyone.
+  a.player.profile.treasures = 2; // Two from earlier hunts: this one makes a Treasure Hunter.
+  const remaining = () => (room.treasure as unknown as { spots: Array<{ x: number; z: number }> }).spots;
+  const target = remaining()[0];
+  place(a.player, target.x, target.z);
+  room.treasure.dig(a.player, 20_000);
+  assert.deepEqual(lastOf(a.socket, 'dig'), { t: 'dig', result: 'found', left: TREASURE_COUNT - 1 });
+  const events = flushEvents(room, b.socket);
+  assert.ok(events.some((e) => e.k === 'treasure' && e.by === a.player.id && e.left === TREASURE_COUNT - 1));
+  assert.equal(a.player.profile.treasures, 3);
+  assert.ok(a.player.profile.badges.includes('treasure'));
+  assert.deepEqual(hunt.board, [{ id: a.player.id, name: a.player.name, score: 1 }]);
+
+  // Somebody else digs up the rest; the last one ends the hunt and the island hears who won.
+  let t = 30_000;
+  while (remaining().length) {
+    const next = remaining()[0];
+    place(b.player, next.x, next.z);
+    room.treasure.dig(b.player, (t += DIG_COOLDOWN_MS));
+  }
+  assert.equal(hunt.state, ActivityState.Ended);
+  assert.equal(b.player.profile.treasures, TREASURE_COUNT - 1);
+  assert.equal(hunt.board?.[0]?.id, b.player.id, 'most finds leads the board');
+  room.forceTick();
+  const podium = of(a.socket, 'delta').flatMap((d) => d.announcements ?? []).find((an) => an.text.startsWith('💎'));
+  assert.ok(podium && podium.text.includes(b.player.name), JSON.stringify(podium));
+
+  room.treasure.dig(a.player, (t += DIG_COOLDOWN_MS));
+  assert.equal(lastOf(a.socket, 'error')?.key, 'no_hunt', 'nothing left once it is over');
+});
+
+test('treasure: one hunt at a time, and a restart ends one that was running', async () => {
+  const room = makeRoom(seeded(3));
+  const first = room.activities.createFromTemplate('treasure-hunt', Date.now() - 2000);
+  const second = room.activities.createFromTemplate('treasure-hunt', Date.now() - 1000);
+  room.activities.sweep(Date.now());
+  await Promise.resolve();
+  assert.equal(first.state, ActivityState.Live);
+  assert.equal(second.state, ActivityState.Ended, 'the second is called off rather than left doing nothing');
+  assert.equal(room.treasure.running, first.id);
+
+  const after = makeRoom(seeded(3));
+  after.restoreState(room.exportState());
+  assert.equal(after.activities.get(first.id)?.state, ActivityState.Ended, 'the spots were never written down');
+
+  // Buried spots are reachable from the harbour for any seed.
+  for (let seed = 1; seed <= 20; seed++) assert.equal(bury(TREASURE_COUNT, seeded(seed)).length, TREASURE_COUNT, `seed ${seed}`);
+});
 
 test('bells ring for everyone, and rest between rings', () => {
   const room = makeRoom();

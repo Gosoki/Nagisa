@@ -37,6 +37,7 @@ import {
   stagePosition,
   type ActivityId,
   type ActivityView,
+  type DigHeat,
   type Emote,
   type PlayerId,
   type WorldEvent,
@@ -52,6 +53,12 @@ import { Lanterns } from './lanterns.js';
 import { LighthouseBeam } from './lighthouse.js';
 import { Concert } from './music.js';
 import { QuizArena } from './quiz-arena.js';
+
+/** What a dig's heat looks like over the digger's head. ♨ is a hot spring: warm. */
+const HEAT_GLYPH: Record<DigHeat, string> = { hot: '🔥', warm: '♨️', cool: '💧', cold: '❄️' };
+
+/** How high over a find its gold burst goes, metres above the ground. Low: it is a small one. */
+const TREASURE_BURST_HEIGHT = 7;
 
 /** What the effects layer may ask of the rest of the client. */
 export interface FxHost {
@@ -89,7 +96,7 @@ export class GameFx {
 
   private readonly unsubscribers: Array<() => void> = [];
 
-  constructor(host: FxHost) {
+  constructor(private readonly host: FxHost) {
     this.group.name = 'game-fx';
     this.bells = new Bells(host, this.group);
     this.fireworks = new Fireworks(host, this.group);
@@ -123,6 +130,24 @@ export class GameFx {
         break;
       case 'catch':
         this.fishing.onCatch(event);
+        break;
+      case 'dig':
+        // What the sand said, over the digger's head: a crowd reads it from across the plaza.
+        this.emotes.showGlyph(event.by, HEAT_GLYPH[event.heat]);
+        break;
+      case 'treasure':
+        // A find is a small celebration where it came up — a gold shell, seen island-wide.
+        this.emotes.showGlyph(event.by, '💎');
+        this.fireworks.launch({
+          k: 'firework',
+          x: event.pos[0],
+          z: event.pos[2],
+          h: event.pos[1] + TREASURE_BURST_HEIGHT,
+          hue: 0.13,
+          pattern: 0,
+          at: this.host.serverNow(),
+          by: event.by,
+        });
         break;
       default:
         // Fortunes, stamps, dice, janken and badges are the interface's: lines and bubbles.

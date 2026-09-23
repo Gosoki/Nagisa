@@ -82,6 +82,8 @@ export class Activity {
   closedAt: number | null = null;
   /** The activity's small leaderboard, if it keeps score. */
   board: Array<{ id: PlayerId; name: string; score: number }> | null = null;
+  /** A treasure hunt's count of things still buried; null for anything else. */
+  left: number | null = null;
 
   readonly participants = new Set<PlayerId>();
   readonly audience = new Set<PlayerId>();
@@ -247,6 +249,7 @@ export class Activity {
       templateId: this.templateId,
       feature: this.feature,
       board: this.board ? this.board.map((b) => ({ ...b })) : undefined,
+      left: this.left ?? undefined,
     };
   }
 }

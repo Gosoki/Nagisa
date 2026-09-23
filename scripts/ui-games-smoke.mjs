@@ -41,6 +41,7 @@ const COMPONENTS = [
   'BoardPanel',
   'CollectionPanel',
   'IslandPanel',
+  'TreasureHud',
 ];
 
 /**
@@ -166,6 +167,7 @@ const dynamic = [
   ...['common', 'uncommon', 'rare', 'epic', 'legendary', 'junk'].map((r) => 'rarity.' + r),
   ...shared.HANDS.map((h) => 'hand.' + h),
   ...['declined', 'timeout', 'left', 'busy', 'far', 'other'].map((r) => 'janken.cancel.' + r),
+  ...['hot', 'warm', 'cool', 'cold'].map((h) => 'treasure.heat.' + h),
 ];
 check('every key built at runtime exists', dynamic.every((k) => k in GAMES.en), dynamic.filter((k) => !(k in GAMES.en)).join(', '));
 
@@ -179,7 +181,7 @@ stores.commands.update((c) => ({
   ...c,
   ...Object.fromEntries(
     ['fishHook', 'fishStop', 'jankenRespond', 'jankenThrow', 'jankenChallenge', 'whisper', 'follow', 'admin',
-     'guestbookWrite', 'guestbookRemove', 'setTitle', 'createIsland', 'joinIsland'].map((n) => [n, spy(n)]),
+     'guestbookWrite', 'guestbookRemove', 'setTitle', 'createIsland', 'joinIsland', 'dig'].map((n) => [n, spy(n)]),
   ),
 }));
 
@@ -213,8 +215,8 @@ for (const name of ${JSON.stringify(COMPONENTS)}) {
 }
 await settle();
 check('the cards stay out of sight while nothing is happening',
-  ['QuizHud', 'FishingHud', 'OmikujiCard', 'JankenCard', 'PlayerCard'].every((n) => text(n).trim() === ''),
-  ['QuizHud', 'FishingHud', 'OmikujiCard', 'JankenCard', 'PlayerCard'].map((n) => n + ':' + text(n).slice(0, 40)).join(' | '));
+  ['QuizHud', 'FishingHud', 'OmikujiCard', 'JankenCard', 'PlayerCard', 'TreasureHud'].every((n) => text(n).trim() === ''),
+  ['QuizHud', 'FishingHud', 'OmikujiCard', 'JankenCard', 'PlayerCard', 'TreasureHud'].map((n) => n + ':' + text(n).slice(0, 40)).join(' | '));
 
 // ---------------------------------------------------------------------------------------
 console.log('\\n○× quiz');
@@ -309,6 +311,30 @@ check('an escape adds nothing here', text('FishingHud').trim() === '', text('Fis
 stores.fishing.set(line('idle', { spot: null }));
 
 // ---------------------------------------------------------------------------------------
+console.log('\\nTreasure hunt');
+let listNow = [];
+stores.activities.subscribe((v) => (listNow = v))();
+stores.activities.set([...listNow, activity('t1', 'Treasure Hunt', 'live', { feature: 'treasure', left: 2, board: [{ id: 'p2', name: 'Keeper', score: 1 }, { id: 'p1', name: 'Sawada', score: 0 }] })]);
+await settle();
+for (const want of ['Treasure hunt', '2 still buried', 'Dig anywhere', 'Keeper', '×1']) {
+  check('the hunt card shows ' + JSON.stringify(want), text('TreasureHud').includes(want), text('TreasureHud'));
+}
+check('you are marked on the board', box('TreasureHud').querySelector('li.me')?.textContent.includes('Sawada'));
+button('TreasureHud', /^Dig/)?.click();
+await settle();
+check('the button digs', called('dig'));
+check('and rests, so a second press is not a refusal', button('TreasureHud', /^Dig/)?.disabled === true);
+stores.lastDig.set({ result: 'warm', at: performance.now() });
+await settle();
+check('what the sand said replaces the how-to', text('TreasureHud').includes('Warm — not far now') && !text('TreasureHud').includes('Dig anywhere'), text('TreasureHud'));
+stores.lastDig.set({ result: 'found', at: performance.now() });
+await settle();
+check('a find says so', text('TreasureHud').includes('You dug up a treasure'));
+stores.activities.set(listNow);
+stores.lastDig.set(null);
+await settle();
+check('and the card goes when the hunt does', text('TreasureHud').trim() === '');
+
 console.log('\\nOmikuji');
 stores.omikujiSlip.set({ fortune: 0, item: 2, direction: 3, again: true });
 await settle();

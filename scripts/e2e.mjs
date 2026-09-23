@@ -625,6 +625,22 @@ async function main() {
   check('a quiz put on now opens its lobby', !!lobby, lobby?.quiz);
   check('the lobby counts down on the server clock', !!lobby && lobby.quiz.endsAt > Date.now() - 2000);
 
+  // -- Treasure hunt ------------------------------------------------------
+  console.log('\nTreasure hunt');
+  jan.send({ t: 'dig' });
+  check('there is nothing to dig for before a hunt', !!(await jan.wait('error', (f) => f.key === 'no_hunt', 3000)));
+  adminSocket.send(JSON.stringify({ t: 'host_schedule', template: 'treasure-hunt', inMin: 0 }));
+  const huntLive = await jan.wait('delta', (f) => f.activities?.some((a) => a.feature === 'treasure' && a.state === 'live'), 4000);
+  const hunt = huntLive?.activities.find((a) => a.feature === 'treasure');
+  check('a hunt put on now goes live with things buried', hunt?.left === shared.TREASURE_COUNT, hunt);
+  ken.send({ t: 'dig' });
+  const told = await ken.wait('dig', () => true, 3000);
+  check('a dig is answered with how close', !!told && ['found', 'hot', 'warm', 'cool', 'cold'].includes(told.result), told);
+  const seen = await jan.wait('delta', (f) => f.events?.some((e) => (e.k === 'dig' || e.k === 'treasure') && e.by === ken.welcome.self), 3000);
+  check('and everyone sees the spade go in', !!seen);
+  ken.send({ t: 'dig' });
+  check('one dig at a time', !!(await ken.wait('error', (f) => f.key === 'cooldown', 3000)));
+
   for (const c of [carol, dave, eve, pilgrimAgain, angler, signer, jan, ken, sparky]) c.close();
 
   // -- Protocol version ---------------------------------------------------

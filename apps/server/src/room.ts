@@ -79,6 +79,7 @@ import { Fishing } from './games/fishing.js';
 import { Janken } from './games/janken.js';
 import { QuizRunner } from './games/quiz.js';
 import { Fireworks } from './games/fireworks.js';
+import { TreasureHunt } from './games/treasure.js';
 import { Interactions } from './games/interactions.js';
 import { Guestbook } from './games/guestbook.js';
 import { profileView } from './games/profiles.js';
@@ -174,6 +175,7 @@ export class Room implements GameRoom {
   readonly fishing: Fishing;
   readonly janken: Janken;
   readonly fireworks: Fireworks;
+  readonly treasure: TreasureHunt;
   readonly interactions: Interactions;
   readonly guestbook: Guestbook;
   private quiz: QuizRunner | null = null;
@@ -245,6 +247,7 @@ export class Room implements GameRoom {
     this.fishing = new Fishing(this);
     this.janken = new Janken(this);
     this.fireworks = new Fireworks(this);
+    this.treasure = new TreasureHunt(this);
     this.interactions = new Interactions(this);
     this.guestbook = new Guestbook(this);
 
@@ -426,6 +429,7 @@ export class Room implements GameRoom {
     this.fishing.onLeave(playerId);
     this.janken.onLeave(playerId);
     this.fireworks.onLeave(playerId);
+    this.treasure.onLeave(playerId);
     this.interactions.onLeave(playerId);
     this.guestbook.onLeave(playerId);
     this.quiz?.onLeave(playerId);
@@ -642,11 +646,18 @@ export class Room implements GameRoom {
         });
       }
     }
+    // One set of spots, so one hunt at a time; a second is called off the same way.
+    if (to === ActivityState.Live && activity.feature === 'treasure' && !this.treasure.start(activity)) {
+      queueMicrotask(() => {
+        if (activity.state === ActivityState.Live) this.activities.transition(activity, ActivityState.Ended);
+      });
+    }
     if (to === ActivityState.Ended || to === ActivityState.Cancelled) {
       if (this.quiz && this.quiz.activity === activity.id) {
         this.quiz.abort();
         this.quiz = null;
       }
+      if (activity.feature === 'treasure') this.treasure.finish(activity, to === ActivityState.Ended);
       if (activity.feature === 'derby' && to === ActivityState.Ended) this.fishing.finishDerby(activity);
     }
     this.persist();
@@ -921,8 +932,9 @@ export class Room implements GameRoom {
       const activity = restoreActivity(pa);
       if (!activity) continue;
       // A quiz is its runner, and the runner did not survive the restart: a quiz restored as
-      // live would sit on the board doing nothing (and block a new one). It is over.
-      if (activity.feature === 'quiz' && activity.state === ActivityState.Live) {
+      // live would sit on the board doing nothing (and block a new one). It is over. So is a
+      // treasure hunt, whose spots were never written down.
+      if ((activity.feature === 'quiz' || activity.feature === 'treasure') && activity.state === ActivityState.Live) {
         activity.state = ActivityState.Ended;
         activity.closedAt = Date.now();
       }

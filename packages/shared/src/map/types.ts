@@ -327,8 +327,9 @@ export type InteractableEffect =
  * - `concert` — music on the beach (client).
  * - `lanterns` — attendees carry paper lanterns (client).
  * - `lamp` — the lighthouse lamp is lit and turning (client).
+ * - `treasure` — things are buried around the island and anyone may dig for them (server).
  */
-export type ActivityFeature = 'quiz' | 'derby' | 'fireworks' | 'concert' | 'lanterns' | 'lamp';
+export type ActivityFeature = 'quiz' | 'derby' | 'fireworks' | 'concert' | 'lanterns' | 'lamp' | 'treasure';
 
 /**
  * Generators available in the client's prop library. Adding a kind here without adding

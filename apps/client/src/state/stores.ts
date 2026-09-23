@@ -34,6 +34,7 @@ import {
   type QuizView,
   type RoomView,
   type ServerFish,
+  type ServerDig,
   type ServerOmikuji,
   type ZoneId,
 } from '@nagisa/shared';
@@ -546,6 +547,15 @@ export const fishing: Writable<FishingState> = writable({
 /** The omikuji slip you just drew, while it is being shown. */
 export const omikujiSlip: Writable<Omit<ServerOmikuji, 't'> | null> = writable(null);
 
+/** The treasure hunt that is running, if one is. */
+export const treasureHunt: Readable<ActivityView | null> = derived(
+  activities,
+  ($activities) => $activities.find((a) => a.feature === 'treasure' && a.state === ActivityState.Live) ?? null,
+);
+
+/** What your last dig turned up, and when (`performance.now()`), for the treasure card. */
+export const lastDig: Writable<{ result: ServerDig['result']; at: number } | null> = writable(null);
+
 /** A janken duel you are in. */
 export interface JankenState {
   duel: string;
@@ -687,6 +697,8 @@ export interface WorldCommands {
   takePhoto(): void;
   /** After the connection closed for good: take the island back from another tab, or reload. */
   reconnect(): void;
+  /** Dig where you stand, during a treasure hunt. */
+  dig(): void;
 }
 
 /** No-op implementations, replaced at boot. Keeps components safe before wiring. */
@@ -727,6 +739,7 @@ export const commands: Writable<WorldCommands> = writable({
   endVista: noop,
   takePhoto: noop,
   reconnect: noop,
+  dig: noop,
 });
 
 /** Convenience for components: `cmd().joinActivity(...)`. */

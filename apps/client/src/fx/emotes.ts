@@ -83,7 +83,7 @@ interface Glyph {
 export class EmoteFloats {
   private readonly glyphs: Glyph[] = [];
   private readonly quad = new THREE.PlaneGeometry(1, 1);
-  private readonly textures = new Map<Emote, THREE.CanvasTexture>();
+  private readonly textures = new Map<string, THREE.CanvasTexture>();
 
   constructor(
     private readonly host: FxHost,
@@ -111,9 +111,15 @@ export class EmoteFloats {
     }
   }
 
-  /** Raise a glyph over someone's head. */
+  /** Raise an emote's glyph over someone's head. */
   show(id: PlayerId, emote: Emote): void {
-    const texture = this.textureFor(emote);
+    const glyph = GLYPH[emote];
+    if (glyph) this.showGlyph(id, glyph);
+  }
+
+  /** Raise any single emoji over someone's head: a game's answer, seen by everyone near. */
+  showGlyph(id: PlayerId, emoji: string): void {
+    const texture = this.textureFor(emoji);
     if (!texture) return;
     const position = this.host.playerPosition(id);
     if (!position) return;
@@ -161,11 +167,9 @@ export class EmoteFloats {
   }
 
   /** The emoji, drawn once at 128 px into a canvas. Null where there is no 2D canvas. */
-  private textureFor(emote: Emote): THREE.CanvasTexture | null {
-    const known = this.textures.get(emote);
+  private textureFor(glyph: string): THREE.CanvasTexture | null {
+    const known = this.textures.get(glyph);
     if (known) return known;
-    const glyph = GLYPH[emote];
-    if (!glyph) return null;
     const canvas = document.createElement('canvas');
     canvas.width = 128;
     canvas.height = 128;
@@ -179,7 +183,7 @@ export class EmoteFloats {
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.minFilter = THREE.LinearFilter;
     texture.generateMipmaps = false;
-    this.textures.set(emote, texture);
+    this.textures.set(glyph, texture);
     return texture;
   }
 }

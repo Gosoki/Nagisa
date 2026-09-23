@@ -17,6 +17,7 @@ export const BADGE_IDS = [
   'derby-champ',
   'lucky',
   'janken',
+  'treasure',
 ] as const;
 
 export type BadgeId = (typeof BADGE_IDS)[number];
@@ -37,6 +38,8 @@ export interface BadgeInfo {
 export const ANGLER_CATCHES = 10;
 /** How many janken wins make a master. */
 export const JANKEN_MASTER_WINS = 10;
+/** How many finds make a treasure hunter. Mirrors `TREASURE_HUNTER_FINDS` in `treasure.ts`. */
+const TREASURE_FINDS = 3;
 
 export const BADGES: readonly BadgeInfo[] = [
   { id: 'walker', icon: '🗺️', zh: '环岛旅人', ja: '島めぐり', en: 'Island Walker', howZh: '集齐全岛印章', howJa: 'スタンプを全部集める', howEn: 'Collect every stamp on the island' },
@@ -46,6 +49,7 @@ export const BADGES: readonly BadgeInfo[] = [
   { id: 'derby-champ', icon: '🏆', zh: '钓鱼大赛冠军', ja: '釣り大会優勝', en: 'Derby Champion', howZh: '在钓鱼大赛中夺冠', howJa: '釣り大会で優勝する', howEn: 'Win the fishing derby' },
   { id: 'lucky', icon: '🌸', zh: '大吉', ja: '大吉', en: 'Lucky Star', howZh: '抽到大吉', howJa: '大吉を引く', howEn: 'Draw 大吉 at the shrine' },
   { id: 'janken', icon: '✌️', zh: '猜拳高手', ja: 'じゃんけん名人', en: 'Janken Master', howZh: `猜拳赢 ${JANKEN_MASTER_WINS} 次`, howJa: `じゃんけんで${JANKEN_MASTER_WINS}回勝つ`, howEn: `Win ${JANKEN_MASTER_WINS} rounds of janken` },
+  { id: 'treasure', icon: '💎', zh: '寻宝达人', ja: '宝探し名人', en: 'Treasure Hunter', howZh: `在寻宝中挖到 ${TREASURE_FINDS} 件宝物`, howJa: `宝探しで宝を${TREASURE_FINDS}つ掘り当てる`, howEn: `Dig up ${TREASURE_FINDS} treasures in the treasure hunt` },
 ];
 
 const BADGE_INDEX = new Map(BADGES.map((b) => [b.id, b]));

@@ -59,6 +59,7 @@ import {
   guestbook,
   isMuted,
   janken,
+  lastDig,
   latency,
   notify,
   omikujiSlip,
@@ -269,6 +270,14 @@ export class WorldSync {
 
       case 'janken':
         this.onJanken(msg);
+        break;
+
+      case 'dig':
+        lastDig.set({ result: msg.result, at: performance.now() });
+        if (msg.result === 'found') {
+          notify(tr('treasure.found'), 'good', 3200);
+          this.local.character.playEmote(AnimState.Cheer, 1.6);
+        }
         break;
 
       case 'whisper': {
@@ -573,6 +582,11 @@ export class WorldSync {
         this.bubbles.say(event.b, HAND_GLYPH[event.hb]);
         break;
       }
+      case 'treasure':
+        pushSystemChat(
+          tr(event.left > 0 ? 'event.treasure' : 'event.treasureLast', { name: this.nameOf(event.by), n: event.left }),
+        );
+        break;
       case 'badge': {
         const badge = getBadge(event.badge);
         if (!badge) break;
@@ -699,6 +713,7 @@ export class WorldSync {
     fishing.set({ phase: 'idle', spot: null, biteAt: 0, window: 0, caught: null, reason: null });
     janken.set(null);
     omikujiSlip.set(null);
+    lastDig.set(null);
     this.local.setFishing(false);
   }
 

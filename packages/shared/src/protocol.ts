@@ -156,6 +156,7 @@ export type { ZoneId } from './world.js';
 import type { ZoneId } from './world.js';
 import type { ActivityFeature } from './map/types.js';
 import type { BadgeId } from './games/badges.js';
+import type { DigHeat } from './games/treasure.js';
 
 /**
  * Authority a player holds. Ordered — a numerically higher role subsumes every
@@ -310,6 +311,8 @@ export interface ActivityView {
    * quiz's survivors). Top few only; `score` is in the activity's own unit.
    */
   board?: Array<{ id: PlayerId; name: string; score: number }>;
+  /** For a treasure hunt: how many things are still in the ground. */
+  left?: number;
 }
 
 /** A message pushed to the island, a zone, or one activity's attendees. */
@@ -591,6 +594,14 @@ export type ClientJanken =
   | { t: 'janken'; action: 'respond'; duel: string; accept: boolean }
   | { t: 'janken'; action: 'throw'; duel: string; hand: Hand };
 
+/**
+ * Dig where you stand, while a treasure hunt is live. The server answers with
+ * {@link ServerDig}; a find is also a `treasure` event for everyone.
+ */
+export interface ClientDig {
+  t: 'dig';
+}
+
 /** Roll a die with `sides` faces (2–1000, default 100). Everyone sees the result. */
 export interface ClientRoll {
   t: 'roll';
@@ -669,7 +680,8 @@ export type ClientMessage =
   | ClientGuestbookRemove
   | ClientSetTitle
   | ClientRoomCreate
-  | ClientHostSchedule;
+  | ClientHostSchedule
+  | ClientDig;
 
 export type ClientMessageType = ClientMessage['t'];
 
@@ -875,6 +887,8 @@ export interface ProfileView {
   omikuji: { day: string; fortune: number; item: number; direction: number } | null;
   jankenWins: number;
   quizWins: number;
+  /** Treasures dug up, over every hunt. */
+  treasures: number;
   /**
    * Whether any of this outlives the session. False when the client sent no usable
    * visitor key — the card still fills in, and is gone when the tab is.
@@ -945,7 +959,11 @@ export type WorldEvent =
   /** A janken round was decided. `winner` null = a draw after the tie limit. */
   | { k: 'janken'; a: PlayerId; b: PlayerId; ha: Hand; hb: Hand; winner: PlayerId | null }
   /** Somebody earned a badge. */
-  | { k: 'badge'; by: PlayerId; badge: BadgeId };
+  | { k: 'badge'; by: PlayerId; badge: BadgeId }
+  /** Somebody dug and came up empty; `heat` is what the sand told them. */
+  | { k: 'dig'; by: PlayerId; heat: DigHeat }
+  /** Somebody dug up a treasure at `pos`; `left` are still buried. */
+  | { k: 'treasure'; by: PlayerId; pos: Vec3; left: number };
 
 export type WorldEventKind = WorldEvent['k'];
 
@@ -975,6 +993,16 @@ export interface ServerFish {
   /** Biggest of its kind you have ever landed. */
   personalBest?: boolean;
   reason?: 'early' | 'late' | 'moved';
+}
+
+/**
+ * What your dig turned up: a treasure (`found`), or how close the nearest one still buried
+ * is. `left` is how many remain after this dig.
+ */
+export interface ServerDig {
+  t: 'dig';
+  result: 'found' | DigHeat;
+  left: number;
 }
 
 /** Your omikuji slip. `again` = you had already drawn today, and this is that slip. */
@@ -1033,7 +1061,8 @@ export type ServerMessage =
   | ServerFish
   | ServerOmikuji
   | ServerJanken
-  | ServerWhisper;
+  | ServerWhisper
+  | ServerDig;
 
 export type ServerMessageType = ServerMessage['t'];
 

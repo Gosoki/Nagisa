@@ -20,16 +20,23 @@
    * knows each one's venue, length and shape — and a handful of fixed delays covers "a quiz
    * in five minutes" without a time picker. It is shown whether or not the admin is hosting
    * anything, since scheduling is how they would come to be.
+   *
+   * Last, the check-in register: who checked in to what, in order, for the activities this
+   * player may read (their own; for admins, any that took check-ins). It is asked for when
+   * opened — the server keeps it, the board only carries the count — kept fresh while open by
+   * asking again once the count stops moving, and saved as a CSV for whoever keeps the
+   * attendance sheet.
    */
   import {
     ACTIVITY_TEMPLATES,
     ActivityState,
     canTransition,
     PROTOCOL,
+    type ActivityId,
     type ActivityView,
     type AnnouncementView,
   } from '@nagisa/shared';
-  import { activities, hostedActivities, isAdmin, isHost, cmd, notify } from '../state/stores.js';
+  import { activities, checkinList, hostedActivities, isAdmin, isHost, self, cmd, notify } from '../state/stores.js';
   import { activityTitle, lang, t, templateTitle, tr } from '../i18n/index.js';
 
   type Scope = 'activity' | 'zone' | 'island';
@@ -90,6 +97,80 @@
           : { kind: 'activity', activity: activity.id };
     cmd().announce(text.slice(0, PROTOCOL.MAX_ANNOUNCEMENT_LENGTH), scope);
     draft.text = '';
+  }
+
+  /** Registers this player may read: their own; for an admin, any activity that has taken check-ins. */
+  const registers = $derived(
+    $activities.filter(
+      (a) =>
+        a.checkinEnabled &&
+        (a.hostId === $self.id ||
+          ($isAdmin && (a.checkinCount > 0 || a.state === ActivityState.Live || a.state === ActivityState.Ended))),
+    ),
+  );
+
+  /** The register that is open, if any. */
+  let registerOf = $state<ActivityId | null>(null);
+  const shown = $derived($checkinList && $checkinList.activity === registerOf ? $checkinList.list : null);
+
+  function toggleRegister(id: ActivityId): void {
+    if (registerOf === id) {
+      registerOf = null;
+      return;
+    }
+    registerOf = id;
+    cmd().checkinList(id);
+  }
+
+  // Gone from the board (swept, or the island changed): nothing to show.
+  $effect(() => {
+    if (registerOf && !registers.some((a) => a.id === registerOf)) registerOf = null;
+  });
+
+  // More check-ins since it was fetched: ask again once they stop coming, not once for each.
+  $effect(() => {
+    const id = registerOf;
+    const count = registers.find((a) => a.id === id)?.checkinCount;
+    if (!id || !shown || count === undefined || count === shown.length) return;
+    const timer = setTimeout(() => cmd().checkinList(id), 1500);
+    return () => clearTimeout(timer);
+  });
+
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  const clock = (at: number): string => {
+    const d = new Date(at);
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const stamp = (at: number): string => {
+    const d = new Date(at);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
+
+  /**
+   * One CSV cell. Quoted when it has to be; and a name that starts like a formula gets a
+   * leading apostrophe, so a spreadsheet shows it rather than running it.
+   */
+  function cell(value: string): string {
+    const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+    return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+  }
+
+  function saveRegister(a: ActivityView, list: NonNullable<typeof shown>): void {
+    const rows = [
+      [tr('host.csvOrdinal'), tr('host.csvName'), tr('host.csvTime')],
+      ...list.map((r) => [String(r.ordinal), r.name, stamp(r.at)]),
+    ];
+    // The BOM is what makes a spreadsheet read the names as UTF-8 rather than mojibake.
+    const csv = '\ufeff' + rows.map((r) => r.map(cell).join(',')).join('\r\n') + '\r\n';
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const d = new Date(a.startsAt);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `nagisa-checkin-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${a.templateId || a.id}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 </script>
 
@@ -171,6 +252,42 @@
         </select>
         <button type="button" class="send" onclick={schedule}>{$t('host.scheduleButton')}</button>
       </div>
+    </div>
+  {/if}
+
+  {#if registers.length > 0}
+    <div class="registers">
+      <span class="label">{$t('host.register')}</span>
+      {#each registers as a (a.id)}
+        <div class="register-row">
+          <span class="register-title">{activityTitle(a, $lang)}</span>
+          <span class="register-count">{$t('host.registerCount', { n: a.checkinCount })}</span>
+          <button type="button" class="action register-toggle" aria-expanded={registerOf === a.id} onclick={() => toggleRegister(a.id)}>
+            {registerOf === a.id ? $t('host.registerHide') : $t('host.registerView')}
+          </button>
+        </div>
+        {#if registerOf === a.id}
+          <div class="register">
+            {#if !shown}
+              <p class="empty">{$t('host.registerLoading')}</p>
+            {:else if shown.length === 0}
+              <p class="empty">{$t('host.registerEmpty')}</p>
+            {:else}
+              <ol class="names">
+                {#each shown as r (r.ordinal)}
+                  <li><span class="ordinal">{r.ordinal}</span><span class="who">{r.name}</span><span class="at">{clock(r.at)}</span></li>
+                {/each}
+              </ol>
+            {/if}
+            <div class="composer-row">
+              <button type="button" class="action" onclick={() => cmd().checkinList(a.id)}>{$t('host.registerRefresh')}</button>
+              <button type="button" class="send" disabled={!shown?.length} onclick={() => shown && saveRegister(a, shown)}>
+                {$t('host.registerDownload')}
+              </button>
+            </div>
+          </div>
+        {/if}
+      {/each}
     </div>
   {/if}
 {/if}
@@ -312,5 +429,85 @@
   .when {
     flex: 1 1 0;
     min-width: 0;
+  }
+
+  .registers {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: var(--sp-sm);
+    padding-top: var(--sp-sm);
+    border-top: 1px solid var(--ui-line);
+  }
+
+  .register-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-xs);
+    font-size: var(--fs-xs);
+  }
+
+  .register-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .register-count {
+    color: var(--ui-ink-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .register-toggle {
+    flex: 0 0 auto;
+    padding: 2px var(--sp-sm);
+  }
+
+  .register {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 0 var(--sp-xs);
+  }
+
+  .names {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 12rem;
+    overflow-y: auto;
+    font-size: var(--fs-xs);
+  }
+
+  .names li {
+    display: flex;
+    gap: var(--sp-sm);
+    padding: 1px 0;
+  }
+
+  .ordinal,
+  .at {
+    color: var(--ui-ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ordinal {
+    min-width: 1.6em;
+    text-align: right;
+  }
+
+  .who {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .send:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
 </style>

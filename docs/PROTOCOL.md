@@ -377,6 +377,13 @@ Check-in is accepted **only** while `live`, only for someone attending, **once**
 and returns a 1-based `ordinal` in arrival order. `checkin_ack.reason` on failure is
 `not_found`, `not_live`, `already` or `not_attending`.
 
+The register itself — who checked in, in what order, when — is asked for with
+`checkin_list { activity }` and answered with `checkin_list { activity, list: [{ ordinal,
+name, at }] }`. Only the activity's host or an admin may ask (anyone else gets
+`error { key: "forbidden" }`); the name is the one the player had when they checked in, so
+the register still reads right after they leave or rename. Records saved before names were
+kept show `…`.
+
 ---
 
 ## 8. Announcements

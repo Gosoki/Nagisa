@@ -245,7 +245,14 @@ Attendance recording, for activities that want it.
 - **Visible**: `PlayerView.checkedIn` goes true for everyone to see, and is cleared whenever
   that player's attachment changes — joining something else, leaving, the activity being
   cleared off the board, or moving to another island.
-- Records are persisted with the activity, so a restart does not lose them.
+- Records are persisted with the activity, so a restart does not lose them. Each keeps the
+  name the player checked in under, so the register reads right after they have gone.
+- **The register**: the host console lists, for each activity that takes check-ins and that
+  this player may read (their own; for an admin, any that has taken check-ins), the count and
+  a *View* button. Opened, it shows who checked in, in order, with the time, refetches itself
+  once new check-ins stop arriving, and saves as a CSV (UTF-8 with a BOM, formula-like names
+  defused) for whoever keeps the attendance sheet — the morning assembly's roll call, a club
+  night's sign-in.
 
 There are two ways to check in: the action on the activity strip, and walking to the
 `plaza-post` interactable (`effect: 'checkin_nearby'`) and using it, which checks you in to

@@ -45,6 +45,7 @@ import {
   type ClientFirework,
   type ClientFish,
   type ClientGuestbookRemove,
+  type ClientCheckinList,
   type ClientFriend,
   type ClientGuestbookWrite,
   type ClientHello,
@@ -450,7 +451,7 @@ function checkIn(ctx: ConnState, activityId: string, deps: HandlerDeps): void {
     ctx.session.send({ t: 'checkin_ack', activity: activityId, ok: false, reason: 'not_found' });
     return;
   }
-  const result = activity.checkin(ctx.player.id, Date.now());
+  const result = activity.checkin(ctx.player.id, Date.now(), ctx.player.name);
   ctx.session.send(
     result.ok
       ? { t: 'checkin_ack', activity: activity.id, ok: true, ordinal: result.ordinal }
@@ -873,6 +874,24 @@ function handleFirework(ctx: ConnState, msg: ClientFirework): void {
   ctx.room.fireworks.launch(ctx.player, Date.now(), msg.hue, msg.pattern);
 }
 
+/** An activity's check-in list, for its host or an admin. */
+function handleCheckinList(ctx: ConnState, msg: ClientCheckinList): void {
+  const activity = typeof msg.activity === 'string' ? ctx.room.activities.get(msg.activity) : undefined;
+  if (!activity) {
+    refuse(ctx, 'not_found', undefined, ErrorCode.NotFound);
+    return;
+  }
+  if (ctx.player.role < Role.Admin && activity.hostId !== ctx.player.id) {
+    refuse(ctx, 'forbidden', undefined, ErrorCode.Forbidden);
+    return;
+  }
+  ctx.session.send({
+    t: 'checkin_list',
+    activity: activity.id,
+    list: activity.checkinRecords().map((r) => ({ ordinal: r.ordinal, name: r.name ?? '…', at: r.at })),
+  });
+}
+
 function handleFriend(ctx: ConnState, msg: ClientFriend, deps: HandlerDeps): void {
   deps.rooms.friends.handle(ctx.player, msg.action, msg.target);
 }
@@ -933,6 +952,7 @@ export const HANDLERS: {
   roll: handleRoll,
   dig: handleDig,
   friend: handleFriend,
+  checkin_list: handleCheckinList,
   firework: handleFirework,
   guestbook_write: handleGuestbookWrite,
   guestbook_remove: handleGuestbookRemove,

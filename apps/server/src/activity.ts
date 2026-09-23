@@ -45,6 +45,11 @@ export interface CheckinRecord {
   /** 1-based position in check-in arrival order. Stable once assigned — never renumbered. */
   readonly ordinal: number;
   readonly at: number;
+  /**
+   * The name they checked in under: the register outlives the people on it, who leave and
+   * take their player (and its name) with them. Absent in files from before it was kept.
+   */
+  readonly name?: string;
 }
 
 /** Outcome of a join attempt. */
@@ -199,13 +204,13 @@ export class Activity {
    * they are a historical record ("you were the 12th person here"), not a live seat
    * count.
    */
-  checkin(playerId: PlayerId, nowMs: number): CheckinResult {
+  checkin(playerId: PlayerId, nowMs: number, name?: string): CheckinResult {
     if (this.state !== ActivityState.Live) return { ok: false, reason: 'not_live' };
     if (!this.checkinEnabled) return { ok: false, reason: 'not_live' };
     if (!this.isAttending(playerId)) return { ok: false, reason: 'not_attending' };
     const existing = this.checkins.get(playerId);
     if (existing) return { ok: false, reason: 'already' };
-    const record: CheckinRecord = { playerId, ordinal: this.nextOrdinal++, at: nowMs };
+    const record: CheckinRecord = { playerId, ordinal: this.nextOrdinal++, at: nowMs, ...(name ? { name } : {}) };
     this.checkins.set(playerId, record);
     return { ok: true, ordinal: record.ordinal };
   }
@@ -218,7 +223,8 @@ export class Activity {
   /** Restore check-in records from persisted state (server restart). Does not re-validate attendance. */
   restoreCheckins(records: readonly CheckinRecord[]): void {
     for (const r of records) {
-      this.checkins.set(r.playerId, r);
+      if (!r || typeof r.playerId !== 'string' || !Number.isFinite(r.ordinal) || !Number.isFinite(r.at)) continue;
+      this.checkins.set(r.playerId, { playerId: r.playerId, ordinal: r.ordinal, at: r.at, ...(typeof r.name === 'string' ? { name: r.name } : {}) });
       this.nextOrdinal = Math.max(this.nextOrdinal, r.ordinal + 1);
     }
   }

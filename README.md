@@ -54,7 +54,7 @@ with particular people, you make an island of your own and send them the link.
 |---|---|
 | **Friends hanging out** | Make a private island from the Island panel, copy the invite link into the group chat, and everyone lands on the same island. Walk round together, fish, play the quiz, and end up on the beach for the fireworks. |
 | **A remote team's break room or morning check-in** | The programme runs itself, including a morning gathering on the plaza that takes check-ins. A standing link to the team's own island is somewhere to drop into between meetings; its keeper can put a quiz on in five minutes from the host panel. |
-| **Club and community events** | An admin makes someone host of an activity. The host opens and starts it from the host panel, announces to the people attending, and watches the check-in count; the quiz hosts itself and judges itself. |
+| **Club and community events** | An admin makes someone host of an activity. The host opens and starts it from the host panel, announces to the people attending, and watches the check-ins come in — then saves the register as a CSV for the attendance sheet; the quiz hosts itself and judges itself. |
 | **On your own** | Sit on the teahouse mats and watch the day go round, look out from the lighthouse door, fill the stamp card and the fish book. |
 
 ---

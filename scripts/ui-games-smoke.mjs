@@ -42,6 +42,7 @@ const COMPONENTS = [
   'CollectionPanel',
   'IslandPanel',
   'TreasureHud',
+  'HostPanel',
 ];
 
 /**
@@ -182,7 +183,7 @@ for (const [name, dict] of [['games.ts', GAMES], ['core.ts', CORE]]) {
 }
 const missingErrors = SERVER_KEYS.filter((k) => !('error.' + k in CORE.en));
 check('every refusal the server can send has words (' + SERVER_KEYS.length + ' keys)', SERVER_KEYS.length > 10 && missingErrors.length === 0, missingErrors.join(', '));
-const unknown = USED_KEYS.filter((k) => !(k in GAMES.en));
+const unknown = USED_KEYS.filter((k) => !(k in GAMES.en) && !(k in CORE.en));
 check('every key the components ask for exists', unknown.length === 0, unknown.join(', '));
 const dynamic = [
   ...['common', 'uncommon', 'rare', 'epic', 'legendary', 'junk'].map((r) => 'rarity.' + r),
@@ -203,7 +204,7 @@ stores.commands.update((c) => ({
   ...c,
   ...Object.fromEntries(
     ['fishHook', 'fishStop', 'jankenRespond', 'jankenThrow', 'jankenChallenge', 'whisper', 'follow', 'admin',
-     'guestbookWrite', 'guestbookRemove', 'setTitle', 'createIsland', 'joinIsland', 'dig', 'friend'].map((n) => [n, spy(n)]),
+     'guestbookWrite', 'guestbookRemove', 'setTitle', 'createIsland', 'joinIsland', 'dig', 'friend', 'checkinList'].map((n) => [n, spy(n)]),
   ),
 }));
 
@@ -728,6 +729,61 @@ for (const want of ['○×クイズ', '釣り上げる！', 'マグロ', '中吉
 }
 check('en shows the English reading of a fortune, zh and ja do not', !zh.includes('ちゅうきち') && !ja.includes('Middle blessing'));
 stores.settings.update((s) => ({ ...s, lang: 'en' }));
+
+// ---------------------------------------------------------------------------------------
+console.log('\\nCheck-in register');
+const read = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
+const roleBefore = read(stores.self).role;
+stores.self.update((s) => ({ ...s, role: shared.Role.Host }));
+const activitiesBefore = read(stores.activities);
+stores.activities.set([
+  ...activitiesBefore,
+  activity('m1', 'Morning Assembly', 'live', { hostId: 'p1', checkinEnabled: true, checkinCount: 2, templateId: 'morning-assembly' }),
+  activity('m2', 'Club Night', 'live', { hostId: 'p9', checkinEnabled: true, checkinCount: 1 }),
+]);
+await settle();
+check('a host sees the register of what they host', text('HostPanel').includes('Check-in register') && /Morning Assembly\\s*2\\b/.test(text('HostPanel')), text('HostPanel'));
+check('and not of what somebody else hosts', !text('HostPanel').includes('Club Night'));
+button('HostPanel', /^View$/).click();
+await settle();
+check('opening it asks the server for it', called('checkinList', 'm1'));
+check('and says so until it comes', text('HostPanel').includes('Fetching the register'), text('HostPanel'));
+const at = new Date(2026, 8, 24, 7, 5, 9).getTime();
+stores.checkinList.set({ activity: 'm1', list: [{ ordinal: 1, name: 'Aki', at }, { ordinal: 2, name: '=1+1, "hi"', at: at + 60_000 }] });
+await settle();
+check('it lists who checked in, in order, with the time', /1\\s*Aki\\s*07:05/.test(text('HostPanel')) && text('HostPanel').includes('07:06'), text('HostPanel'));
+let saved = null;
+const createObjectURL = URL.createObjectURL, revokeObjectURL = URL.revokeObjectURL;
+URL.createObjectURL = (blob) => { saved = blob; return 'blob:register'; };
+URL.revokeObjectURL = () => {};
+// jsdom cannot follow a download link; the file is in hand before the click anyway.
+const anchorClick = dom.window.HTMLAnchorElement.prototype.click;
+dom.window.HTMLAnchorElement.prototype.click = () => {};
+button('HostPanel', /Save CSV/).click();
+await settle();
+URL.createObjectURL = createObjectURL; URL.revokeObjectURL = revokeObjectURL;
+dom.window.HTMLAnchorElement.prototype.click = anchorClick;
+const bytes = saved ? new Uint8Array(await saved.arrayBuffer()) : new Uint8Array();
+// Decoding drops the BOM, so it is looked for in the bytes.
+const csv = new TextDecoder().decode(bytes);
+check('the CSV starts with a BOM so spreadsheets read it as UTF-8', bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf, String(bytes.slice(0, 3)));
+check('the CSV has a header and one row per name',
+  csv.split('\\r\\n').filter(Boolean).length === 3 && csv.includes('No.,Name,Checked in') && csv.includes('1,Aki,2026-09-24 07:05:09'), JSON.stringify(csv));
+check('a name that looks like a formula is quoted and defused', csv.includes('"\\'=1+1, ""hi"""'), JSON.stringify(csv));
+const asks = sent.filter((c) => c[0] === 'checkinList').length;
+stores.activities.update((list) => list.map((a) => (a.id === 'm1' ? { ...a, checkinCount: 3 } : a)));
+await settle(1700);
+check('a new check-in while it is open fetches it again', sent.filter((c) => c[0] === 'checkinList').length === asks + 1);
+stores.self.update((s) => ({ ...s, role: shared.Role.Admin }));
+await settle();
+check('an admin sees every register that has taken check-ins', text('HostPanel').includes('Club Night'));
+button('HostPanel', /^Hide$/).click();
+await settle();
+check('hiding it closes it', !text('HostPanel').includes('Aki'));
+stores.checkinList.set(null);
+stores.activities.set(activitiesBefore);
+stores.self.update((s) => ({ ...s, role: roleBefore }));
+await settle();
 
 // ---------------------------------------------------------------------------------------
 console.log('\\nAccessibility');

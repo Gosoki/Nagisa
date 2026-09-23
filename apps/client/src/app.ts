@@ -1014,6 +1014,8 @@ export class App {
 
       dance: (on) => this.setDancing(on),
 
+      checkinList: (activity) => this.sync?.send({ t: 'checkin_list', activity }),
+
       dig: () => {
         this.sync?.send({ t: 'dig' });
         // Bend to the sand; what it says comes back as a `dig` message.

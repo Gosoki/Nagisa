@@ -34,6 +34,7 @@ import {
   type QuizView,
   type RoomView,
   type ServerFish,
+  type ServerCheckinList,
   type ServerDig,
   type ServerFriends,
   type ServerOmikuji,
@@ -588,6 +589,9 @@ export const treasureHunt: Readable<ActivityView | null> = derived(
 /** What your last dig turned up, and when (`performance.now()`), for the treasure card. */
 export const lastDig: Writable<{ result: ServerDig['result']; at: number } | null> = writable(null);
 
+/** The last check-in register the server sent this host or admin, for the host console. */
+export const checkinList: Writable<Omit<ServerCheckinList, 't'> | null> = writable(null);
+
 /** A janken duel you are in. */
 export interface JankenState {
   duel: string;
@@ -743,6 +747,8 @@ export interface WorldCommands {
   dance(on: boolean): void;
   /** Ask a player here to be friends; accept, decline or end one by its id. */
   friend(action: 'request' | 'accept' | 'decline' | 'remove', target: string): void;
+  /** Host or admin: ask for who has checked in to an activity. */
+  checkinList(activity: ActivityId): void;
 }
 
 /** No-op implementations, replaced at boot. Keeps components safe before wiring. */
@@ -786,6 +792,7 @@ export const commands: Writable<WorldCommands> = writable({
   dig: noop,
   friend: noop,
   dance: noop,
+  checkinList: noop,
 });
 
 /** Convenience for components: `cmd().joinActivity(...)`. */

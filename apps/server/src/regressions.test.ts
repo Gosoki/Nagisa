@@ -388,3 +388,32 @@ test('a damaged saved room loses the damaged records, not the room', () => {
   room.forceTick();
   room.stop();
 });
+
+// ---------------------------------------------------------------------------------------------
+// The register
+// ---------------------------------------------------------------------------------------------
+
+test('a check-in list keeps names, is shown to the host and admins only, and survives a restart', () => {
+  const deps = makeDeps();
+  const { conn: admin, socket: adminSocket } = connect(deps, {}, true);
+  const { conn: guest, socket: guestSocket } = connect(deps);
+  const activity = admin.room.activities.createFromTemplate('morning-assembly', Date.now() - 1000);
+  admin.room.activities.sweep(Date.now());
+  send(guest, { t: 'activity_join', activity: activity.id, mode: 'participant' }, deps);
+  send(guest, { t: 'checkin', activity: activity.id }, deps);
+
+  send(guest, { t: 'checkin_list', activity: activity.id }, deps);
+  assert.equal(lastOf(guestSocket, 'error')?.key, 'forbidden', 'not for everyone');
+
+  send(admin, { t: 'checkin_list', activity: activity.id }, deps);
+  const list = lastOf(adminSocket, 'checkin_list');
+  assert.equal(list?.activity, activity.id);
+  assert.deepEqual(list?.list.map((r) => [r.ordinal, r.name]), [[1, 'Nao']]);
+
+  // The name is kept with the record, so the register reads the same after a restart.
+  const saved = admin.room.exportState();
+  const after = bareRoom();
+  after.restoreState(saved);
+  assert.equal(after.activities.get(activity.id)?.checkinRecords()[0]?.name, 'Nao');
+  after.stop();
+});

@@ -54,6 +54,7 @@ import { rememberPose } from './last-pose.js';
 import {
   activities,
   announcements,
+  checkinList,
   currentToast,
   fishing,
   followTarget,
@@ -309,6 +310,10 @@ export class WorldSync {
 
       case 'friends':
         this.onFriends(msg);
+        break;
+
+      case 'checkin_list':
+        checkinList.set({ activity: msg.activity, list: msg.list });
         break;
 
       case 'dig':
@@ -801,6 +806,7 @@ export class WorldSync {
     janken.set(null);
     omikujiSlip.set(null);
     lastDig.set(null);
+    checkinList.set(null);
     this.local.setFishing(false);
     // The seat goes with the connection too (the server frees it on a drop and on a room
     // switch). Left sitting, every movement key would be swallowed at the new harbour.

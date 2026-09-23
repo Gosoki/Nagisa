@@ -598,6 +598,16 @@ export type ClientJanken =
   | { t: 'janken'; action: 'throw'; duel: string; hand: Hand };
 
 /**
+ * Host or admin: the check-in list of an activity — who checked in, in what order, when.
+ * For the morning assembly that is the register; for a club's meet-up, the attendance.
+ * Answered with {@link ServerCheckinList}; hosts may ask for their own activities only.
+ */
+export interface ClientCheckinList {
+  t: 'checkin_list';
+  activity: ActivityId;
+}
+
+/**
  * Friends. `request` asks a player in your room (`target` is their `PlayerId`); the others
  * act on a friend or a request by its opaque id (`FriendView.id`, `FriendRequestView.id`).
  * A friendship is kept against both visitor keys, so both sides need one; `remove` ends it
@@ -697,7 +707,8 @@ export type ClientMessage =
   | ClientRoomCreate
   | ClientHostSchedule
   | ClientDig
-  | ClientFriend;
+  | ClientFriend
+  | ClientCheckinList;
 
 export type ClientMessageType = ClientMessage['t'];
 
@@ -988,6 +999,13 @@ export type WorldEvent =
 
 export type WorldEventKind = WorldEvent['k'];
 
+/** An activity's check-ins, in arrival order, with the names they checked in under. */
+export interface ServerCheckinList {
+  t: 'checkin_list';
+  activity: ActivityId;
+  list: Array<{ ordinal: number; name: string; at: number }>;
+}
+
 /** One of your friends, as you see them. */
 export interface FriendView {
   /** Stable and opaque: the same friend has the same id from visit to visit. Not their key. */
@@ -1119,7 +1137,8 @@ export type ServerMessage =
   | ServerJanken
   | ServerWhisper
   | ServerDig
-  | ServerFriends;
+  | ServerFriends
+  | ServerCheckinList;
 
 export type ServerMessageType = ServerMessage['t'];
 

@@ -154,6 +154,7 @@ export const CORE: Dictionaries = {
 
     // People.
     'people.you': '你',
+    'panel.peopleAsks': '在岛上的人（{n} 个好友请求）',
     'people.alone': '暂时只有你一个人。',
     'people.openCard': '{name} 的名片',
     'people.wearing': '佩戴着「{badge}」',
@@ -406,6 +407,7 @@ export const CORE: Dictionaries = {
     'panel.close': '閉じる',
 
     'people.you': 'あなた',
+    'panel.peopleAsks': '島にいる人（フレンド申請 {n} 件）',
     'people.alone': 'いまはあなただけです。',
     'people.openCard': '{name} さんのカード',
     'people.wearing': '「{badge}」をつけています',
@@ -656,6 +658,7 @@ export const CORE: Dictionaries = {
 
     // People.
     'people.you': 'You',
+    'panel.peopleAsks': 'People ({n} friend requests)',
     'people.alone': 'Just you, for now.',
     'people.openCard': "{name}'s card",
     'people.wearing': 'Wearing {badge}',

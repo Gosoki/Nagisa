@@ -257,6 +257,7 @@ stores.friends.set({
 stores.room.set({ id: 'shore-1', name: 'Nagisa — Shore 1', population: 3, capacity: 60, kind: 'public' });
 await sleep(80);
 check('an ask waits with its answers', text().includes('Mio would like to be friends') && !!byText(/^Accept$/) && !!byText(/^Decline$/));
+check('and the people button carries a mark until it is answered', !!dom.window.document.querySelector('.icon-btn .pip'));
 byText(/^Accept$/)?.click();
 check('accept answers it', friendCalls.some(([a, id]) => a === 'accept' && id === 'fr-mio'));
 check('a friend here says so, and is marked in the list above', text().includes('On this island') && [...dom.window.document.querySelectorAll('.friend-mark')].length === 1);

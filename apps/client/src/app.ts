@@ -136,6 +136,19 @@ const FOLLOW_AIM_SHORT = FOLLOW_STOP_DISTANCE - 1.3;
 const FOLLOW_RETRY_MS = 1000;
 
 /**
+ * Development only: `?weather=rain` (or `cloudy`, `clear`) holds the sky at that weather, so a
+ * rainy frame can be looked at without waiting for one. The server's fish do not know.
+ */
+const FORCED_WEATHER = ((): { weather: Weather; cloud: number; rain: number } | null => {
+  if (!import.meta.env.DEV) return null;
+  const w = new URLSearchParams(location.search).get('weather');
+  if (w === 'rain') return { weather: 'rain', cloud: 1, rain: 1 };
+  if (w === 'cloudy') return { weather: 'cloudy', cloud: 0.75, rain: 0 };
+  if (w === 'clear') return { weather: 'clear', cloud: 0, rain: 0 };
+  return null;
+})();
+
+/**
  * How far from a person's middle, in CSS pixels, a tap still picks them. About a fingertip:
  * a figure in the crowd is only a few dozen pixels tall, and a tap has to land somewhere.
  */
@@ -598,7 +611,7 @@ export class App {
    * start biting sooner.
    */
   private updateWeather(serverTime: number): void {
-    const now = weatherLevels(serverTime);
+    const now = FORCED_WEATHER ?? weatherLevels(serverTime);
     this.island.setWeather(now.cloud, now.rain);
     this.fx.setRain(now.rain);
     this.ambience.setRain(now.rain);

@@ -49,6 +49,7 @@
     emoteOpen,
     connectionState,
     connectionTroubled,
+    friends,
     replacedElsewhere,
     devMode,
     settings,
@@ -164,11 +165,13 @@
     type="button"
     class="icon-btn"
     class:active={$openPanel === 'people'}
-    aria-label={$t('panel.people')}
+    aria-label={$friends.requests.length ? $t('panel.peopleAsks', { n: $friends.requests.length }) : $t('panel.people')}
     aria-pressed={$openPanel === 'people'}
     data-panel-toggle
     onclick={() => togglePanel('people')}
   >
+    <!-- Someone asked to be friends: the notice was brief, the answer is in this panel. -->
+    {#if $friends.requests.length}<span class="pip" aria-hidden="true"></span>{/if}
     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
       <circle cx="9" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.5" />
       <circle cx="17" cy="9.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.5" />
@@ -471,6 +474,21 @@
   .icon-btn.active {
     color: var(--ui-ink);
     background: var(--ui-surface-raised);
+  }
+
+  .icon-btn {
+    position: relative;
+  }
+
+  .pip {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ui-accent);
+    box-shadow: 0 0 0 1.5px var(--ui-surface);
   }
 
   .icon-btn:focus-visible {

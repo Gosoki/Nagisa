@@ -124,7 +124,6 @@ export const CORE: Dictionaries = {
     'loader.lanterns': '挂上灯笼',
     'loader.ground': '平整地面',
     'loader.ready': '准备好了',
-    'loader.unreachable': '暂时到不了小岛',
 
     // The entry card.
     'entry.tagline': '岛很小，可人总得待在某个地方。',
@@ -405,7 +404,6 @@ export const CORE: Dictionaries = {
     'loader.lanterns': '提灯を吊るしています',
     'loader.ground': '地面をならしています',
     'loader.ready': '準備ができました',
-    'loader.unreachable': '島にたどり着けませんでした',
 
     'entry.tagline': '小さな島。でも、誰だってどこかにはいなくちゃ。',
     'entry.name': '名前',
@@ -676,7 +674,6 @@ export const CORE: Dictionaries = {
     'loader.lanterns': 'Hanging the lanterns',
     'loader.ground': 'Settling the ground',
     'loader.ready': 'Ready',
-    'loader.unreachable': 'The island could not be reached',
 
     // The entry card.
     'entry.tagline': "It's a small island, but everyone has to be somewhere.",

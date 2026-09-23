@@ -42,16 +42,18 @@ const overlay = mountOverlay(container);
 
 /**
  * Building the renderer is where a browser without WebGL2 fails — before `boot`, so its catch
- * below never sees it, and the page would stay on a loading screen saying nothing. Say why.
+ * below never sees it, and the page would stay on a loading screen saying nothing. Say why:
+ * "needs WebGL2" only when that is so, since anything else thrown here is not the browser's fault.
  */
 const app = ((): App => {
   try {
     return new App(container);
   } catch (err) {
     console.error('[nagisa] the island cannot be drawn here', err);
-    loadProgress.set({ value: 1, label: tr('app.noWebgl') });
+    const why = document.createElement('canvas').getContext('webgl2') ? tr('app.bootFailed') : tr('app.noWebgl');
+    loadProgress.set({ value: 1, label: why });
     appPhase.set('loading');
-    notify(tr('app.noWebgl'), 'warn', 120_000);
+    notify(why, 'warn', 120_000);
     throw err;
   }
 })();

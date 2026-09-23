@@ -42,7 +42,7 @@ import { treasureGround } from './games/treasure.js';
 const CLIENT_TYPES: ReadonlySet<string> = new Set(['hello', ...Object.keys(HANDLERS)]);
 
 /** Rate-limited messages the player is told about: deliberate actions that otherwise vanish. */
-const SAY_WHEN_LIMITED: ReadonlySet<string> = new Set(['room_switch', 'room_create', 'chat']);
+const SAY_WHEN_LIMITED: ReadonlySet<string> = new Set(['room_switch', 'room_create', 'room_title', 'chat']);
 
 /** Invalid frames answered with an error before the rest are ignored… */
 const REPLIED_INVALID_FRAMES = 3;

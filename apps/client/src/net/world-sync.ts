@@ -274,6 +274,8 @@ export class WorldSync {
         this.remote.clear();
         this.roster = [];
         this.lastTick = -1;
+        // The old island's programme too: its ids mean nothing here, and the snapshot brings ours.
+        activities.set([]);
         this.resetGames();
         followTarget.set(null);
         // Nothing of the old island follows us: not its toast, not the view from its lookout.

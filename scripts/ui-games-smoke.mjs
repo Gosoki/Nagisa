@@ -797,6 +797,18 @@ check('an admin sees every register that has taken check-ins', text('HostPanel')
 button('HostPanel', /^Hide$/).click();
 await settle();
 check('hiding it closes it', !text('HostPanel').includes('Aki'));
+button('HostPanel', /^View$/).click();
+await settle();
+check('opened again, it shows nothing old while the new one comes', text('HostPanel').includes('Fetching the register') && !text('HostPanel').includes('Aki'), text('HostPanel'));
+stores.checkinList.set({ activity: 'm1', list: [{ ordinal: 1, name: 'Aki', at }] });
+await settle();
+const asksBeforeDrop = sent.filter((c) => c[0] === 'checkinList').length;
+// A reconnect clears what the server sent; the open register asks again by itself.
+stores.checkinList.set(null);
+await settle();
+check('after a reconnect it asks again, once', sent.filter((c) => c[0] === 'checkinList').length === asksBeforeDrop + 1);
+button('HostPanel', /^Hide$/).click();
+await settle();
 stores.checkinList.set(null);
 stores.activities.set(activitiesBefore);
 stores.self.update((s) => ({ ...s, role: roleBefore }));

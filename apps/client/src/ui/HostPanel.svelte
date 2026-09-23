@@ -112,25 +112,44 @@
   /** The register that is open, if any. */
   let registerOf = $state<ActivityId | null>(null);
   const shown = $derived($checkinList && $checkinList.activity === registerOf ? $checkinList.list : null);
+  /** Its count on the board: a number, so the board changing elsewhere does not count as a change. */
+  const openCount = $derived(registers.find((a) => a.id === registerOf)?.checkinCount);
+
+  /** Asked for and not yet answered. Plain, not state: it only stops asking twice. */
+  let asked: ActivityId | null = null;
+
+  /** Forget what is on screen and fetch it afresh: nothing stale is shown, or saved. */
+  function fetchRegister(): void {
+    asked = null;
+    checkinList.set(null);
+  }
 
   function toggleRegister(id: ActivityId): void {
-    if (registerOf === id) {
-      registerOf = null;
-      return;
-    }
-    registerOf = id;
-    cmd().checkinList(id);
+    registerOf = registerOf === id ? null : id;
+    fetchRegister();
   }
 
   // Gone from the board (swept, or the island changed): nothing to show.
   $effect(() => {
-    if (registerOf && !registers.some((a) => a.id === registerOf)) registerOf = null;
+    if (registerOf && openCount === undefined) registerOf = null;
+  });
+
+  // Open with nothing to show — just opened, refreshed, or cleared by a reconnect: ask, once.
+  $effect(() => {
+    const id = registerOf;
+    if (!id || openCount === undefined || shown) {
+      if (shown) asked = null;
+      return;
+    }
+    if (asked === id) return;
+    asked = id;
+    cmd().checkinList(id);
   });
 
   // More check-ins since it was fetched: ask again once they stop coming, not once for each.
   $effect(() => {
     const id = registerOf;
-    const count = registers.find((a) => a.id === id)?.checkinCount;
+    const count = openCount;
     if (!id || !shown || count === undefined || count === shown.length) return;
     const timer = setTimeout(() => cmd().checkinList(id), 1500);
     return () => clearTimeout(timer);
@@ -280,7 +299,7 @@
               </ol>
             {/if}
             <div class="composer-row">
-              <button type="button" class="action" onclick={() => cmd().checkinList(a.id)}>{$t('host.registerRefresh')}</button>
+              <button type="button" class="action" onclick={fetchRegister}>{$t('host.registerRefresh')}</button>
               <button type="button" class="send" disabled={!shown?.length} onclick={() => shown && saveRegister(a, shown)}>
                 {$t('host.registerDownload')}
               </button>

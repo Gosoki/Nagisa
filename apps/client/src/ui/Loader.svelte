@@ -34,7 +34,6 @@
     'Hanging the lanterns': 'loader.lanterns',
     'Settling the ground': 'loader.ground',
     Ready: 'loader.ready',
-    'The island could not be reached': 'loader.unreachable',
   };
 
   const label = $derived(

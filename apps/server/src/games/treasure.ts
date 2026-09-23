@@ -27,7 +27,8 @@ import {
   digHeat,
   heightAt,
   isWalkable,
-  routeTo,
+  onMapChange,
+  reachableFrom,
   spawnPoint,
   type ActivityId,
   type PlayerId,
@@ -153,23 +154,58 @@ export class TreasureHunt {
   }
 }
 
+/** How many places the pool offers. Enough that no two hunts need look alike. */
+const POOL_SIZE = 64;
+
+let pool: Spot[] | null = null;
+// Another island is other places.
+onMapChange(() => {
+  pool = null;
+});
+
 /**
- * Pick `count` places to bury things: open ground anyone can walk to from the harbour, apart
- * from each other and from where people arrive. Exported for the tests.
+ * Places a thing may be buried: open ground above the waterline, clear of where people
+ * arrive, and reachable from the harbour. The island does not change while the server runs,
+ * so this is worked out once — reachability is the slow part, milliseconds a place, and a
+ * hunt goes live in every room on the same tick (they share one clock), so it must not be
+ * paid for there. `index.ts` warms it at boot; the first hunt would otherwise.
  */
-export function bury(count: number, random: () => number): Array<{ x: number; z: number }> {
+export function treasureSpots(): readonly Spot[] {
+  if (pool) return pool;
   const spawns = Array.from({ length: 8 }, (_, i) => spawnPoint(i).pos);
   const [hx, , hz] = spawns[0];
-  const spots: Spot[] = [];
-  for (let tries = 0; spots.length < count && tries < 4000; tries++) {
-    const x = (random() * 2 - 1) * ISLAND_EXTENT;
-    const z = (random() * 2 - 1) * ISLAND_EXTENT;
+  const reachable = reachableFrom(hx, hz);
+  // Its own fixed sequence, so every process offers the same places and tests are stable.
+  let seed = 0x7ea5;
+  const next = (): number => {
+    seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+    return seed / 4294967296;
+  };
+  const found: Spot[] = [];
+  for (let tries = 0; found.length < POOL_SIZE && tries < 4000; tries++) {
+    const x = (next() * 2 - 1) * ISLAND_EXTENT;
+    const z = (next() * 2 - 1) * ISLAND_EXTENT;
     if (!isWalkable(x, z) || heightAt(x, z) < 0) continue;
-    if (spots.some((s) => Math.hypot(s.x - x, s.z - z) < MIN_APART_M)) continue;
     if (spawns.some(([sx, , sz]) => Math.hypot(sx - x, sz - z) < SPAWN_CLEARANCE_M)) continue;
     // Walkable is not the same as reachable: a ledge nobody can climb onto is walkable too.
-    if (!routeTo(hx, hz, x, z).length) continue;
-    spots.push({ x, z });
+    if (!reachable(x, z)) continue;
+    found.push({ x, z });
+  }
+  pool = found;
+  return pool;
+}
+
+/**
+ * Pick `count` places to bury things from {@link treasureSpots}, apart from each other.
+ * Exported for the tests.
+ */
+export function bury(count: number, random: () => number): Array<{ x: number; z: number }> {
+  const candidates = treasureSpots();
+  const spots: Spot[] = [];
+  for (let tries = 0; spots.length < count && tries < 400; tries++) {
+    const s = candidates[Math.floor(random() * candidates.length)];
+    if (!s || spots.some((t) => Math.hypot(t.x - s.x, t.z - s.z) < MIN_APART_M)) continue;
+    spots.push({ ...s });
   }
   return spots;
 }

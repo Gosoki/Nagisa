@@ -36,6 +36,7 @@ import { ConnState, HANDLERS, handleHello, type HandlerDeps } from './handlers.j
 import { PermissionError } from './permissions.js';
 import { createServer, WS_PATH } from './http.js';
 import { ProfileStore } from './games/profiles.js';
+import { treasureSpots } from './games/treasure.js';
 
 /** Every message type a client may send. Anything else is an invalid frame. */
 const CLIENT_TYPES: ReadonlySet<string> = new Set(['hello', ...Object.keys(HANDLERS)]);
@@ -130,6 +131,12 @@ async function main(): Promise<void> {
   // rooms.ts); private islands come back from the registry when their code is next used.
   // Every room keeps the island's daily programme on its own board (schedule.ts), so there
   // is no demo seeding: the day simply runs.
+  // Where a treasure hunt may bury things: slow to work out, and needed by every room on the
+  // same tick when a hunt starts, so it is done now, before anyone is waiting.
+  const warmStart = performance.now();
+  const treasurePlaces = treasureSpots().length;
+  log.info('treasure_spots', { places: treasurePlaces, ms: Math.round(performance.now() - warmStart) });
+
   const rooms = new RoomManager({
     log: log.child({ component: 'rooms' }),
     roomCapacity: CONFIG.ROOM_CAPACITY,

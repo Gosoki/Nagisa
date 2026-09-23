@@ -876,6 +876,11 @@ export class Room implements GameRoom {
           this.pushHistory(empty);
           try {
             this.broadcast(empty);
+            // What this tick would have said — someone arriving, someone leaving — is lost,
+            // and with the sequence whole nobody would ask for it again: everyone is given
+            // the room as it now stands instead. Snapshots are idempotent by construction.
+            const snapshot = this.buildSnapshot();
+            for (const session of this.sessions.values()) session.send(snapshot);
           } catch {
             /* Whoever missed it asks for a replay, which now has it. */
           }

@@ -353,6 +353,8 @@ test('a game that throws in a tick costs nobody their join, and the tick sequenc
   room.forceTick();
   const ticks = of(watcher.socket, 'delta').map((d) => d.tick);
   assert.deepEqual(ticks.slice(-2), [before + 2, before + 3], 'the failed tick went out empty');
+  const snaps = of(watcher.socket, 'snapshot');
+  assert.equal(snaps.at(-1)?.tick, before + 2, 'and everyone was given the room as it stood');
   assert.ok(ticks.every((t, i) => i === 0 || t === ticks[i - 1] + 1), `no gaps: ${ticks.join(',')}`);
   assert.deepEqual(room.getDeltasSince(before + 1)?.map((d) => d.tick), [before + 2, before + 3]);
   room.stop();

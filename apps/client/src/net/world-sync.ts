@@ -658,7 +658,11 @@ export class WorldSync {
       return;
     }
     const knownAsks = new Set(before.requests.map((r) => r.id));
-    for (const r of msg.requests) if (!knownAsks.has(r.id)) notify(tr('friend.asked', { name: r.name }), 'good', 5000);
+    for (const r of msg.requests) {
+      // Someone you have muted still asks — the panel lists it — but does not interrupt you.
+      if (knownAsks.has(r.id) || (r.player && isMuted(r.player))) continue;
+      notify(tr('friend.asked', { name: r.name }), 'good', 5000);
+    }
     const was = new Map(before.friends.map((f) => [f.id, f]));
     for (const f of msg.friends) {
       const old = was.get(f.id);

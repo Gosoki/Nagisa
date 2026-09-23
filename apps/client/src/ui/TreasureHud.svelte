@@ -11,8 +11,8 @@
    * arena, the whole island is the field. The quiz and the hunt are never on the programme at
    * the same time, so they can share the slot under the Next Up strip.
    *
-   * The button rests for as long as the server's own interval between digs, so a second press
-   * does not earn a refusal. F is ignored while typing, like every other game key.
+   * The button rests a little longer than the server's own interval between digs, so a
+   * second press does not earn a refusal. F is ignored while typing, like every other game key.
    */
   import { DIG_COOLDOWN_MS } from '@nagisa/shared';
   import { cmd, lastDig, self, treasureHunt } from '../state/stores.js';
@@ -20,6 +20,13 @@
 
   /** How long what the sand said stays on the card, ms. */
   const RESULT_MS = 6000;
+
+  /**
+   * How long the button rests after a dig: the server's interval, plus a little. The server
+   * measures between arrivals, and two digs sent exactly the interval apart can arrive a
+   * little closer than that.
+   */
+  const REST_MS = DIG_COOLDOWN_MS + 250;
 
   let resting = $state(false);
   let now = $state(performance.now());
@@ -40,7 +47,7 @@
     if (resting || !hunt) return;
     cmd().dig();
     resting = true;
-    setTimeout(() => (resting = false), DIG_COOLDOWN_MS);
+    setTimeout(() => (resting = false), REST_MS);
   }
 
   function typing(target: EventTarget | null): boolean {

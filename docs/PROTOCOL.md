@@ -527,13 +527,16 @@ socket stays open. A rejected activity join must never cost you the world.
 
 A refusal the player should understand carries `key` (and sometimes `params`), which the
 client looks up as `error.<key>` in its own language (`apps/client/src/i18n/core.ts`).
-`message` stays English, for logs and as a fallback. Errors that are not the player's
-business — malformed frames, internal faults, role checks a normal interface never lets
-you attempt — carry no key.
+`message` stays English and is for logs: the client never shows it, and says something
+generic in the player's language for an error without a key. Errors that are not the
+player's business — malformed frames, internal faults, role checks a normal interface never
+lets you attempt — carry no key.
 
 `too_far` · `cooldown {seconds}` · `seat_taken` · `muted` · `not_here` · `full` ·
 `not_found` · `forbidden` · `busy` (a janken opponent mid-duel) · `islands_busy` · `schedule_full` · `already_running` · `no_hunt` · `already_stamped` · `not_open` · `room_not_found` ·
-`invalid` · `too_long {max}` · `empty`
+`invalid` · `too_long {max}` · `empty` · `too_fast` (a room switch, island or chat line over
+its rate limit) · `friend_needs_key` · `friend_unavailable {name}` · `already_friends {name}` ·
+`friends_full {max}`
 
 ### Rate limits
 
@@ -552,7 +555,9 @@ back; the rate is what stops a script.
 
 Game-level cooldowns sit on top and say so when they refuse (`cooldown {seconds}`): one
 private island per connection per 30 s, one firework per player per 6 s and eight per room
-per 10 s, one guestbook line per 30 s, one die per 2 s, 3 s between rings of the same bell.
+per 10 s, one guestbook line per 30 s, one die per 2 s, 3 s between rings of the same bell,
+one dig per 1.5 s, one friend request per 3 s (and a request turned down is not passed on
+again for ten minutes).
 
 ### Text
 

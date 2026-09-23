@@ -39,7 +39,14 @@
     now = serverNow();
   });
 
-  const canSign = $derived($atBoard && draft.trim().length > 0 && draft.length <= MAX);
+  /**
+   * The lines already on the board when ours was sent. The draft is cleared when a new line
+   * of ours shows up, not when the button is pressed: a refused one (the half-minute rest
+   * between signatures) would otherwise take what was typed with it.
+   */
+  let awaiting = $state<Set<string> | null>(null);
+
+  const canSign = $derived($atBoard && draft.trim().length > 0 && draft.length <= MAX && !awaiting);
 
   function ago(at: number): string {
     const seconds = Math.max(0, (now - at) / 1000);
@@ -65,19 +72,23 @@
     return $isAdmin || (entry.authorId !== null && entry.authorId === $self.id);
   }
 
-  /**
-   * The lines already on the board when ours was sent. The draft is cleared when a new line
-   * of ours shows up, not when the button is pressed: a refused one (the half-minute rest
-   * between signatures) would otherwise take what was typed with it.
-   */
-  let awaiting = $state<Set<string> | null>(null);
+  let awaitTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** How long to wait for the line to show up before letting the words be sent again, ms. */
+  const AWAIT_MS = 3000;
 
   function sign(): void {
     const text = draft.trim();
-    if (!$atBoard || !text) return;
+    // One at a time: a second Enter while the first is on its way would only be refused.
+    if (!$atBoard || !text || awaiting) return;
     awaiting = new Set($guestbook.map((g) => g.id));
     cmd().guestbookWrite(text);
+    clearTimeout(awaitTimer);
+    // Refused (the half-minute rest), or lost: the words are still there to send again.
+    awaitTimer = setTimeout(() => (awaiting = null), AWAIT_MS);
   }
+
+  $effect(() => () => clearTimeout(awaitTimer));
 
   $effect(() => {
     const before = awaiting;
@@ -85,6 +96,7 @@
     if ($guestbook.some((g) => !before.has(g.id) && g.authorId !== null && g.authorId === $self.id)) {
       draft = '';
       awaiting = null;
+      clearTimeout(awaitTimer);
     }
   });
 

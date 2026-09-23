@@ -46,6 +46,10 @@ import type { ProfileRecord } from './persistence.js';
 export const FRIEND_REQUEST_TTL_MS = 10 * 60_000;
 /** One ask per person this often, ms. */
 export const FRIEND_REQUEST_COOLDOWN_MS = 3_000;
+/** Asks one visitor may have waiting; past it the oldest goes. */
+export const FRIEND_ASKS_LIMIT = 20;
+/** How often every standing ask is checked for expiry, ms. */
+const ASK_SWEEP_MS = 60_000;
 
 /** What the friends list needs from the rest of the server. */
 export interface FriendsHost {
@@ -75,6 +79,12 @@ export class Friends {
   /** Standing asks, by the hash asked, then by the hash asking. */
   private readonly asks = new Map<string, Map<string, Ask>>();
   private readonly lastAsk = new Map<PlayerId, number>();
+  /**
+   * Asks turned down, by the hash asked, then by the hash asking, for as long as an ask
+   * would have stood: asking again straight after a no is not a question, it is pestering.
+   */
+  private readonly declined = new Map<string, Map<string, number>>();
+  private lastSweep = 0;
   /** Hashes whose lists must be re-sent when the current task is done. */
   private readonly dirty = new Set<string>();
   private flushQueued = false;
@@ -107,8 +117,12 @@ export class Friends {
     const hash = player.visitorHash;
     if (!hash) return { t: 'friends', friends: [], requests: [], enabled: false };
     const friends: FriendView[] = player.profile.friends.map((f) => {
+      // Where someone is, only while they still count you as a friend. A record the store
+      // evicted comes back empty, and its owner — who no longer has you, and cannot remove
+      // you — must not be seen, private island code and all, by a list only you still keep.
       const on = this.onlinePlayer(f.hash);
-      const room = on ? this.host.roomOf(on.id) : undefined;
+      const mutual = !!on && on.profile.friends.some((x) => x.hash === hash);
+      const room = on && mutual ? this.host.roomOf(on.id) : undefined;
       const view: FriendView = { id: friendId(f.hash), name: on?.name ?? f.name, online: !!room };
       if (on && room) {
         view.player = on.id;
@@ -144,8 +158,13 @@ export class Friends {
       return;
     }
 
+    this.sweep(now);
     switch (action) {
       case 'request': {
+        if (player.muted) {
+          room.refuse(player.id, 'muted');
+          return;
+        }
         const other = room.getPlayer(target);
         // Someone standing here — not yourself, and not yourself in another tab.
         if (!other || other.visitorHash === me) {
@@ -172,9 +191,15 @@ export class Friends {
           this.befriend(player, me, them, other.name, now);
           return;
         }
-        let asked = this.asks.get(them);
-        if (!asked) this.asks.set(them, (asked = new Map()));
+        // Turned down a moment ago: dropped without a word, so the no stands.
+        const no = this.declined.get(them)?.get(me);
+        if (no !== undefined && now - no < FRIEND_REQUEST_TTL_MS) return;
+        const asked = this.standingAsks(them, now);
+        if (asked.size === 0) this.asks.set(them, asked);
+        asked.delete(me);
         asked.set(me, { name: player.name, at: now });
+        // A Map keeps insertion order, so the first key is the oldest ask.
+        while (asked.size > FRIEND_ASKS_LIMIT) asked.delete(asked.keys().next().value!);
         this.touch(them);
         return;
       }
@@ -184,10 +209,15 @@ export class Friends {
         const from = [...standing.keys()].find((h) => friendId(h) === target);
         if (!from) {
           room.refuse(player.id, 'not_found');
+          // Most likely it expired while still shown: send the list that no longer has it.
+          this.touch(me);
           return;
         }
         if (action === 'decline') {
           standing.delete(from);
+          let noes = this.declined.get(me);
+          if (!noes) this.declined.set(me, (noes = new Map()));
+          noes.set(from, now);
           this.touch(me);
           return;
         }
@@ -239,6 +269,17 @@ export class Friends {
     // through it.
     this.touch(a);
     this.touch(b);
+  }
+
+  /** Forget expired asks and noes everywhere, at most once a minute. */
+  private sweep(now: number): void {
+    if (now - this.lastSweep < ASK_SWEEP_MS) return;
+    this.lastSweep = now;
+    for (const hash of [...this.asks.keys()]) this.standingAsks(hash, now);
+    for (const [hash, noes] of this.declined) {
+      for (const [from, at] of noes) if (now - at >= FRIEND_REQUEST_TTL_MS) noes.delete(from);
+      if (noes.size === 0) this.declined.delete(hash);
+    }
   }
 
   /** The asks standing for `hash`, expired ones dropped. */

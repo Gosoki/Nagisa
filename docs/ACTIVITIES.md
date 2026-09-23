@@ -192,7 +192,7 @@ gatherings: a place, a time, a roster and a check-in.
 | `derby` | server | Every catch by a *participant* scores their biggest single fish; the top five ride on `ActivityView.board`. At the end the winner gets the Derby Champion badge and the island hears the podium. |
 | `fireworks` | server | The server sends up its own show every 1.2–3 s; anyone on a firework shore may add to it. |
 | `treasure` | server | Three things are buried at random places; anyone may dig, anywhere, and hears how close the nearest is. Finds score on `board`, `left` counts down, and the last find ends it. One hunt at a time. |
-| `concert` | client | A musician on the beach stage and generated koto phrases, heard from where you stand. |
+| `concert` | client | A musician on the beach stage and generated koto phrases, heard from where you stand; anyone on the beach can join a bon-odori, all dancing on one beat. |
 | `lanterns` | client | Everyone attending carries a paper lantern, and after dusk each has a halo. |
 | `lamp` | client | The lighthouse beam. |
 

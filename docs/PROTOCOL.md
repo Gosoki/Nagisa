@@ -214,8 +214,8 @@ Quiet ticks therefore carry integers and nothing else, and `permessage-deflate` 
 runs of similar integers extremely well.
 
 `anim` is an `AnimState`: `Idle 0`, `Walk 1`, `Run 2`, `Jump 3`, `Fall 4`, `Sit 5`, `Clap 6`,
-`Wave 7`, `Bow 8`, `Fish 9` (holding a rod over the water, so everyone sees the rod) and
-`Cheer 10`.
+`Wave 7`, `Bow 8`, `Fish 9` (holding a rod over the water, so everyone sees the rod),
+`Cheer 10` and `Dance 11` (bon-odori at the concert: the arms move on a beat read off the server clock, so everyone dancing is in step and nothing but the state is sent).
 
 At 120 players this is ~720 integers per tick ≈ **3 KB/s** per client, against ~60 KB/s
 for the equivalent JSON objects.

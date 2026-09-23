@@ -178,8 +178,9 @@ Honest list of what is imperfect today.
    browser — are unreachable from there, and the server, holding only hashes, cannot help.
 4. **Private island codes are unlisted, not secret.** Five characters from a 31-letter
    alphabet is about 28.6 million codes, drawn from the system CSPRNG, and unknown codes open
-   nothing — but anyone who has the link can walk in, and a kick is not a ban. There is no
-   lock, no guest list and no way to change an island's code.
+   nothing — but anyone who has the link can walk in. A kick keeps a keyed visitor off for
+   half an hour, not for good, and a visitor without a key not at all. There is no lock, no
+   guest list and no way to change an island's code.
 5. **One process.** Every room lives in one Node process and one event loop; the registry,
    the profiles and every room's state live in one JSON file, rewritten whole on each save.
    Fine at the current caps; the first thing to change before scaling out (see
@@ -392,8 +393,8 @@ and the SFU together; the binding constraint is the network, not the compute.
 - **Carry a profile to another browser** (limitation 3): a short one-time transfer code
   shown in the collection panel, redeemed in the other browser, re-keying the profile and
   any keeperships. No account, and no new secret to guard.
-- **Keeper tools for private islands** (limitation 4): a session ban that outlasts a kick,
-  and a way to retire a code and issue a new one.
+- **Keeper tools for private islands** (limitation 4): a way to retire a code and issue a
+  new one, and a guest list for an island that should not be open to anyone with the link.
 
 ### Medium term — deepen the world
 - **Interior spaces** — the shrine hall and the teahouse are currently solid. Making two of

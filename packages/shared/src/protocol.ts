@@ -95,6 +95,8 @@ export const PROTOCOL = {
   MAX_GUESTBOOK_LENGTH: 80,
   /** A private island's name, as its keeper gives it. */
   MAX_ISLAND_TITLE_LENGTH: 24,
+  /** How long a visitor kicked off a private island is kept off it, minutes. */
+  ISLAND_BAN_MIN: 30,
 
   /**
    * Per-connection rate limits: a token bucket per message type, refilled at `rate` per

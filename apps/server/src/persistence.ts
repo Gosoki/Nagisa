@@ -99,6 +99,8 @@ export interface PersistedIsland {
   ownerName: string | null;
   /** The name its keeper gave it, if any. */
   title?: string;
+  /** Visitors kicked off it, by visitor-key hash, and until when (epoch ms) they stay off. */
+  bans?: Array<{ hash: string; until: number }>;
   createdAt: number;
   lastActiveAt: number;
 }

@@ -24,7 +24,7 @@ import {
   type ServerMessage,
 } from '@nagisa/shared';
 import { HANDLERS, MAX_ADHOC_ACTIVITIES, handleHello, type ConnState, type HandlerDeps } from './handlers.js';
-import { RoomManager } from './rooms.js';
+import { ISLAND_BAN_MS, RoomManager } from './rooms.js';
 import { Room } from './room.js';
 import { Player } from './player.js';
 import { AuditLog } from './audit.js';
@@ -454,4 +454,58 @@ test('a keeper names their island; everyone on it hears; the name outlives sleep
   send(keeper.conn, { t: 'room_title', title: '   ' }, deps);
   assert.equal(lastOf(guest.socket, 'room_info')?.room.title, undefined);
   assert.equal(deps.rooms.exportIslands().find((i) => i.code === island.code)?.title, undefined);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Keeping someone off an island
+// ---------------------------------------------------------------------------------------------
+
+test('kicked off a private island is kept off it for a while — by key, and across a restart', () => {
+  const deps = makeDeps();
+  const keeperKey = 'bankeeperbankeeperbankeeper';
+  const guestKey = 'banguestbanguestbanguest';
+  const island = deps.rooms.createPrivate({ hash: hashVisitorKey(keeperKey), name: 'Mio', playerId: 'p-mio' })!;
+  const keeper = connect(deps, { room: island.code!, visitor: keeperKey });
+  const guest = connect(deps, { room: island.code!, visitor: guestKey });
+  const stranger = connect(deps, { room: island.code! });
+  assert.equal(guest.conn.room, island);
+
+  send(keeper.conn, { t: 'admin_action', action: 'kick', target: guest.conn.player.id }, deps);
+  const told = lastOf(guest.socket, 'error');
+  assert.equal(told?.key, 'kicked_banned');
+  assert.equal(told?.params?.n, PROTOCOL.ISLAND_BAN_MIN);
+  assert.equal(island.getPlayer(guest.conn.player.id), undefined);
+
+  // Following the invite link again lands them on a public shore, told why.
+  const back = connect(deps, { room: island.code!, visitor: guestKey });
+  assert.equal(back.conn.room.kind, 'public');
+  assert.equal(lastOf(back.socket, 'error')?.key, 'island_banned');
+  // Nor can they walk over from the shore.
+  send(back.conn, { t: 'room_switch', room: island.code! }, deps);
+  assert.equal(back.conn.room.kind, 'public');
+  assert.equal(lastOf(back.socket, 'error')?.key, 'island_banned');
+
+  // Without a key there is nothing to recognise them by: a kick is all it can be.
+  send(keeper.conn, { t: 'admin_action', action: 'kick', target: stranger.conn.player.id }, deps);
+  assert.equal(lastOf(stranger.socket, 'error')?.key, undefined);
+  assert.equal(connect(deps, { room: island.code! }).conn.room, island);
+
+  // The registry remembers it through a restart, and forgets it when it runs out.
+  const saved = JSON.parse(JSON.stringify({ rooms: deps.rooms.exportRooms(), islands: deps.rooms.exportIslands() }));
+  const later = new RoomManager({ log, roomCapacity: 40, privateCapacity: 20, initialRoomCount: 1, persist: () => {}, autostart: false, persisted: saved });
+  const woken = later.resolve(island.code!);
+  assert.ok('room' in woken);
+  const hash = hashVisitorKey(guestKey);
+  assert.equal(later.isBanned(woken.room, hash), true);
+  assert.equal(later.isBanned(woken.room, hash, Date.now() + ISLAND_BAN_MS + 1000), false);
+});
+
+test('a kick on a public shore keeps nobody off it', () => {
+  const deps = makeDeps();
+  const admin = connect(deps, {}, true);
+  const guest = connect(deps, { visitor: 'shoreguestshoreguestshore' });
+  const shore = guest.conn.room;
+  send(admin.conn, { t: 'admin_action', action: 'kick', target: guest.conn.player.id }, deps);
+  assert.equal(lastOf(guest.socket, 'error')?.key, undefined);
+  assert.equal(connect(deps, { room: shore.id, visitor: 'shoreguestshoreguestshore' }).conn.room, shore);
 });

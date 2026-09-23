@@ -100,7 +100,7 @@ but no snapshot is in an undefined state and should wait, not render.
 | `name`, `appearance` | Cleaned server-side (`apps/server/src/text.ts`): control characters, bidirectional overrides and isolates, zero-width characters (joiners included), LRM/RLM, the BOM and line separators removed, whitespace collapsed, cut to 20 code points; empty becomes `Visitor`. Appearance indices clamped. |
 | `resumeToken` | Resume a player the server is still holding — in its grace window, or still connected, in which case the old socket is closed with 4002 and this one takes over (§9). Invalid or expired tokens are ignored, not rejected. |
 | `at` | Where the client last stood. Used for a *new* player's spawn when it survives the walkability contract: finite, inside the map, and within 6 m of walkable ground after snapping. Otherwise the player lands at a harbour. See §9. |
-| `room` | A room id **or a private island's invite code**. A registered code the server is not currently holding re-opens that island. An unknown code, a full island or too many awake islands means the player is matchmade onto a public shard instead and then told why (`error` with `key` `room_not_found`, `full` or `islands_busy`). |
+| `room` | A room id **or a private island's invite code**. A registered code the server is not currently holding re-opens that island. An unknown code, a full island or too many awake islands means the player is matchmade onto a public shard instead and then told why (`error` with `key` `room_not_found`, `full`, `islands_busy` or `island_banned`). |
 | `visitor` | This browser's visitor key. The server hashes it (SHA-256) and keys a profile by the hash; the key itself is never stored. Absent or malformed means a profile that lasts only for this session. |
 | `caps` | `{ mobile, lowMemory }`. Advisory. |
 
@@ -336,7 +336,8 @@ removes it on a public shard), so a reload returns you there and a copied URL is
 invitation.
 
 Refusals are `error` frames with a `key`: `room_not_found` (no island has that code),
-`full`, `islands_busy` (too many private islands awake to wake another), and for `room_create`
+`full`, `islands_busy` (too many private islands awake to wake another), `island_banned`
+(kicked off that private island less than `PROTOCOL.ISLAND_BAN_MIN` minutes ago), and for `room_create`
 `cooldown {seconds}` (one island per connection per 30 s).
 
 A keeper — or an admin — can name the private island they are on with
@@ -561,7 +562,7 @@ socket stays open. A rejected activity join must never cost you the world.
 | `not_found` | no | Unknown activity, room, player, interactable or line. |
 | `room_full` / `activity_full` | no | At capacity (also used for a refused room request on `hello`). |
 | `invalid_transition` | no | Illegal activity lifecycle change. |
-| `kicked` | yes | Removed by an admin. The client discards its resume token. |
+| `kicked` | yes | Removed by an admin. The client discards its resume token. On a private island the frame carries `key: "kicked_banned"` and `params.n` (minutes) when the kicked visitor had a key: the registry keeps them off that island for `PROTOCOL.ISLAND_BAN_MIN` minutes, across restarts. A visitor without a key cannot be recognised coming back, so for them a kick is only a kick. |
 | `server_shutdown` | yes | Graceful shutdown. Client *does* reconnect (with backoff). |
 | `internal` | usually no | Server-side fault; logged with the connection id. Fatal only when it happens while handling `hello`, and the socket is then closed with 1011. |
 

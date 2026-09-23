@@ -22,7 +22,7 @@
    * chat on a phone, and closes on Escape, the ×, or a press anywhere outside it — the same
    * three ways out as the panels have.
    */
-  import { ActivityState } from '@nagisa/shared';
+  import { ActivityState, PROTOCOL } from '@nagisa/shared';
   import {
     activities,
     cmd,
@@ -34,6 +34,7 @@
     mutedSet,
     notify,
     players,
+    room,
     selectedPlayer,
     toggleMute,
   } from '../state/stores.js';
@@ -226,6 +227,9 @@
         <p class="mod-label">{$t('player.mod')}</p>
         {#if confirmKick}
           <p class="confirm">{$t('player.kickConfirm', { name: player.name })}</p>
+          {#if $room?.kind === 'private'}
+            <p class="note">{$t('player.kickBanNote', { n: PROTOCOL.ISLAND_BAN_MIN })}</p>
+          {/if}
           <div class="row">
             <button type="button" class="act danger" onclick={kick}>{$t('player.kickYes')}</button>
             <button type="button" class="act" onclick={() => (confirmKick = false)}>{$t('player.cancel')}</button>
@@ -467,6 +471,12 @@
     margin: 0 0 var(--sp-xs);
     font-size: var(--fs-sm);
     color: var(--ui-ink);
+  }
+
+  .note {
+    margin: 0 0 var(--sp-xs);
+    font-size: var(--fs-xs);
+    color: var(--ui-ink-muted);
   }
 
   .host {

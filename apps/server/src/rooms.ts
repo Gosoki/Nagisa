@@ -77,7 +77,16 @@ export interface RoomManagerOptions {
 }
 
 /** Why a requested room could not be had. */
-export type RoomRefusal = 'not_found' | 'full' | 'busy';
+export type RoomRefusal = 'not_found' | 'full' | 'busy' | 'banned';
+
+/**
+ * How long a visitor kicked off a private island stays off it, ms. A kick the kicked could
+ * undo by following the invite link again would be a kick in name only.
+ */
+export const ISLAND_BAN_MS = PROTOCOL.ISLAND_BAN_MIN * 60_000;
+
+/** Bans an island keeps, newest first; past this the oldest are let go. */
+const ISLAND_BANS_LIMIT = 100;
 
 export class RoomManager {
   private readonly rooms = new Map<RoomId, Room>();
@@ -102,8 +111,11 @@ export class RoomManager {
       if (island && typeof island.code === 'string' && normaliseRoomCode(island.code) === island.code) {
         // A name is shown to everyone who visits: cleaned again, as if it had just been typed.
         const title = cleanName(island.title, PROTOCOL.MAX_ISLAND_TITLE_LENGTH, '');
-        const { title: _stored, ...rest } = island;
-        this.islands.set(island.code, title ? { ...rest, title } : rest);
+        const bans = Array.isArray(island.bans)
+          ? island.bans.filter((b) => b && typeof b.hash === 'string' && typeof b.until === 'number' && Number.isFinite(b.until))
+          : [];
+        const { title: _stored, bans: _bans, ...rest } = island;
+        this.islands.set(island.code, { ...rest, ...(title ? { title } : {}), ...(bans.length ? { bans } : {}) });
       }
     }
     for (let i = 0; i < Math.max(1, opts.initialRoomCount); i++) this.createRoom();
@@ -285,10 +297,11 @@ export class RoomManager {
    * too many awake) the player is matchmade instead and `refusal` says why, so the handshake
    * can tell them.
    */
-  pickRoom(preferred?: string): { room: Room; refusal?: RoomRefusal } {
+  pickRoom(preferred?: string, visitorHash: string | null = null): { room: Room; refusal?: RoomRefusal } {
     let refusal: RoomRefusal | undefined;
     if (preferred) {
       const wanted = this.resolve(preferred);
+      if ('room' in wanted && this.isBanned(wanted.room, visitorHash)) return { room: this.pickRoom().room, refusal: 'banned' };
       if ('room' in wanted && wanted.room.hasCapacity) return { room: wanted.room };
       // A public shard id from before a restart is not worth mentioning: any shard will do.
       if ('room' in wanted) refusal = 'full';
@@ -321,6 +334,7 @@ export class RoomManager {
     if (!('room' in resolved)) return { ok: false, reason: resolved.refusal };
     const room = resolved.room;
     if (room === fromRoom) return { ok: true, room: fromRoom };
+    if (this.isBanned(room, player.visitorHash)) return { ok: false, reason: 'banned' };
     if (!room.hasCapacity) return { ok: false, reason: 'full' };
 
     fromRoom.removePlayer(player.id, 'room_switch', { closeSession: false });
@@ -392,6 +406,30 @@ export class RoomManager {
     for (const player of room.allPlayers()) this.friends.presenceChanged(player, true);
     this.log.info('island_titled', { room: room.id, titled: title !== null });
     this.opts.persist();
+  }
+
+  /**
+   * Keep a kicked visitor off a private island for {@link ISLAND_BAN_MS}. Only a visitor key
+   * can be kept off: a visitor without one is a new stranger in every tab, and the server has
+   * nothing that would recognise them coming back.
+   */
+  banFromIsland(room: Room, visitorHash: string | null, now = Date.now()): boolean {
+    const entry = room.code ? this.islands.get(room.code) : undefined;
+    if (!entry || !visitorHash) return false;
+    const bans = (entry.bans ?? []).filter((b) => b.until > now && b.hash !== visitorHash);
+    bans.unshift({ hash: visitorHash, until: now + ISLAND_BAN_MS });
+    entry.bans = bans.slice(0, ISLAND_BANS_LIMIT);
+    this.opts.persist();
+    return true;
+  }
+
+  /** Whether this visitor is being kept off this island just now. Forgets bans that have run out. */
+  isBanned(room: Room, visitorHash: string | null, now = Date.now()): boolean {
+    const entry = room.code ? this.islands.get(room.code) : undefined;
+    if (!entry?.bans || !visitorHash) return false;
+    entry.bans = entry.bans.filter((b) => b.until > now);
+    if (entry.bans.length === 0) delete entry.bans;
+    return entry.bans?.some((b) => b.hash === visitorHash) ?? false;
   }
 
   /** Mark an island visited (called on join), so the registry keeps the ones people use. */

@@ -42,6 +42,11 @@ receives is the public shards plus the room it is in).
   creates the room, moves you there (`room_changed`, carrying your new role and a fresh resume
   token) and records you — by visitor-key hash — as its keeper. Keepers are `Role.Admin`
   *in their own island only*.
+- **Kick**: on a private island a kick keeps the kicked visitor off it for
+  `PROTOCOL.ISLAND_BAN_MIN` (30) minutes, by visitor-key hash, in the registry — following
+  the invite link again lands them on a public shore with `island_banned`. The kick
+  confirmation says so. A visitor without a key cannot be told apart from a newcomer, so
+  for them it is only a kick.
 - **Name**: the keeper (or an admin) can give the island a name from the island panel —
   `room_title`, at most 24 characters, empty to take it away. It shows above the code, in
   the "moved to" notice, on photos and in friends' lists, and is kept in the registry.

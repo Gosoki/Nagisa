@@ -214,7 +214,7 @@ function sendWelcome(session: Session, room: Room, player: Player, resumed: bool
 
 /** The refusal key for a room that could not be had. */
 function roomRefusalKey(reason: RoomRefusal): string {
-  return reason === 'full' ? 'full' : reason === 'busy' ? 'islands_busy' : 'room_not_found';
+  return reason === 'full' ? 'full' : reason === 'busy' ? 'islands_busy' : reason === 'banned' ? 'island_banned' : 'room_not_found';
 }
 
 /**
@@ -284,7 +284,7 @@ export function handleHello(
   // outage, a restart). The second kind comes back where they stood, if that can be believed.
   const id = randomUUID();
   const preferred = typeof msg.room === 'string' ? msg.room : payload?.room;
-  const picked = deps.rooms.pickRoom(preferred);
+  const picked = deps.rooms.pickRoom(preferred, hashVisitorKey(msg.visitor));
   const room = picked.room;
   const spawn = returningSpawn(msg.at) ?? spawnPoint(Math.floor(Math.random() * 1000));
   const player = new Player(id, name, appearance, Role.Guest, spawn);
@@ -704,7 +704,16 @@ function handleAdminAction(ctx: ConnState, msg: ClientAdminAction, deps: Handler
 
   switch (msg.action) {
     case 'kick': {
-      ctx.room.sendTo(target.id, { t: 'error', code: ErrorCode.Kicked, message: 'Kicked by admin', fatal: true });
+      // Off a private island for a while, not just out of the door: the invite link would
+      // bring them straight back otherwise.
+      const banned = ctx.room.kind === 'private' && deps.rooms.banFromIsland(ctx.room, target.visitorHash);
+      ctx.room.sendTo(target.id, {
+        t: 'error',
+        code: ErrorCode.Kicked,
+        message: 'Kicked by admin',
+        fatal: true,
+        ...(banned ? { key: 'kicked_banned', params: { n: PROTOCOL.ISLAND_BAN_MIN } } : {}),
+      });
       ctx.room.removePlayer(target.id, 'kicked_by_admin');
       break;
     }

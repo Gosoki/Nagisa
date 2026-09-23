@@ -749,6 +749,8 @@ export interface WorldCommands {
   friend(action: 'request' | 'accept' | 'decline' | 'remove', target: string): void;
   /** Host or admin: ask for who has checked in to an activity. */
   checkinList(activity: ActivityId): void;
+  /** Keeper: name the private island you are on; empty takes the name away. */
+  nameIsland(title: string): void;
 }
 
 /** No-op implementations, replaced at boot. Keeps components safe before wiring. */
@@ -793,6 +795,7 @@ export const commands: Writable<WorldCommands> = writable({
   friend: noop,
   dance: noop,
   checkinList: noop,
+  nameIsland: noop,
 });
 
 /** Convenience for components: `cmd().joinActivity(...)`. */

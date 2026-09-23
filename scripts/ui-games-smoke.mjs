@@ -204,7 +204,7 @@ stores.commands.update((c) => ({
   ...c,
   ...Object.fromEntries(
     ['fishHook', 'fishStop', 'jankenRespond', 'jankenThrow', 'jankenChallenge', 'whisper', 'follow', 'admin',
-     'guestbookWrite', 'guestbookRemove', 'setTitle', 'createIsland', 'joinIsland', 'dig', 'friend', 'checkinList'].map((n) => [n, spy(n)]),
+     'guestbookWrite', 'guestbookRemove', 'setTitle', 'createIsland', 'joinIsland', 'dig', 'friend', 'checkinList', 'nameIsland'].map((n) => [n, spy(n)]),
   ),
 }));
 
@@ -673,6 +673,23 @@ check('the public list has populations', text('IslandPanel').includes('Nagisa â€
 check('and a full shard cannot be chosen', text('IslandPanel').includes('Full'));
 buttonsIn('IslandPanel').filter((b) => /^Go$/.test(b.textContent.trim())).find((b) => b.closest('.room'))?.click();
 check('go to another shard', called('joinIsland', 'shore-1'));
+check('a guest is not offered a name for the island', !box('IslandPanel').querySelector('.rename'));
+let roleBeforeName;
+stores.self.subscribe((s) => (roleBeforeName = s.role))();
+stores.self.update((s) => ({ ...s, role: shared.Role.Admin }));
+await settle();
+const nameField = box('IslandPanel').querySelector('.rename input');
+const saveName = () => box('IslandPanel').querySelector('.rename button');
+check('the keeper is offered one', !!nameField && saveName()?.disabled === true);
+await type(nameField, '  Design team  ');
+saveName()?.click();
+await settle();
+check('saving sends it, trimmed', called('nameIsland', 'Design team'), JSON.stringify(sent.slice(-2)));
+stores.room.set({ ...mine, title: 'Design team' });
+await settle();
+check('a named island shows its name above its code', /Private island\\s*Design team\\s*K7M2Q/.test(text('IslandPanel')), text('IslandPanel'));
+check('and the field holds the name as it stands', box('IslandPanel').querySelector('.rename input')?.value === 'Design team' && saveName()?.disabled === true);
+stores.self.update((s) => ({ ...s, role: roleBeforeName }));
 stores.room.set(shore1);
 await settle();
 check('on a public island: its name and that you are here', text('IslandPanel').includes('Public island') && text('IslandPanel').includes('Youâ€™re here') && !text('IslandPanel').includes('Copy invite link'), text('IslandPanel'));

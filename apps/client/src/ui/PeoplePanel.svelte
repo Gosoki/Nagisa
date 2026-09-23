@@ -31,7 +31,7 @@
    */
   import type { FriendView } from '@nagisa/shared';
   import { cmd, commands, followTarget, friends, friendsHere, myTitle, mutedSet, players, room, selectedPlayer, self, toggleMute } from '../state/stores.js';
-  import { badgeIcon, badgeName, lang, roomName, t, zoneName } from '../i18n/index.js';
+  import { badgeIcon, badgeName, islandName, lang, t, zoneName } from '../i18n/index.js';
 
   /** The friend whose "remove" has been pressed once, waiting for the second press. */
   let removing = $state<string | null>(null);
@@ -39,7 +39,7 @@
   function place(f: FriendView): string {
     if (!f.room) return '';
     if (f.room.id === $room?.id) return $t('friend.here');
-    return f.room.kind === 'private' ? $t('island.private', { code: f.room.code ?? '' }) : roomName(f.room, $lang);
+    return islandName(f.room, $lang);
   }
 
   function goTo(f: FriendView): void {

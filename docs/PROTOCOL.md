@@ -331,6 +331,12 @@ Refusals are `error` frames with a `key`: `room_not_found` (no island has that c
 `full`, `islands_busy` (too many private islands awake to wake another), and for `room_create`
 `cooldown {seconds}` (one island per connection per 30 s).
 
+A keeper — or an admin — can name the private island they are on with
+`room_title { title }` (cleaned like a player name, at most 24 characters; empty takes the
+name away). Everyone on it is sent `room_info { room }` with `RoomView.title` set, friends'
+lists show it in place of the code, and it is kept in the island registry across sleep and
+restarts. Anyone else, or anywhere public, gets `error { key: "forbidden" }`.
+
 Matchmaking (`rooms.ts`) deliberately **fills the fullest public shard that still has
 comfortable headroom** rather than balancing evenly, and never places anyone on a private
 island. Two half-empty islands feel worse than one busy one; this is a product requirement
@@ -576,6 +582,7 @@ back; the rate is what stops a script.
 | `chat` (whispers included) | 1 | 4 |
 | `room_switch` | 0.2 | 3 |
 | `room_create` | 0.1 | 2 |
+| `room_title` | 0.2 | 3 |
 | everything else | 10 | 10 |
 
 Game-level cooldowns sit on top and say so when they refuse (`cooldown {seconds}`): one

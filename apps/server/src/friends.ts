@@ -127,7 +127,7 @@ export class Friends {
       const view: FriendView = { id: friendId(f.hash), name: on?.name ?? f.name, online: !!room };
       if (on && room) {
         view.player = on.id;
-        view.room = { id: room.id, name: room.name, kind: room.kind, ...(room.code ? { code: room.code } : {}) };
+        view.room = { id: room.id, name: room.name, kind: room.kind, ...(room.code ? { code: room.code } : {}), ...(room.title ? { title: room.title } : {}) };
       }
       return view;
     });

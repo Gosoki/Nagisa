@@ -62,6 +62,7 @@ import {
   type ClientRoll,
   type ClientRoomSwitch,
   type ClientSetTitle,
+  type ClientRoomTitle,
   type Emote,
   type Hand,
   type ServerMessage,
@@ -532,6 +533,32 @@ function handleRoomCreate(ctx: ConnState, _msg: unknown, deps: HandlerDeps): voi
   arrive(ctx, result.room, deps);
 }
 
+/**
+ * Name a private island. Its keeper may, and an admin may (to take a name away that should
+ * not be there); nobody else, and nowhere public — a shard's name is the island's own.
+ */
+function handleRoomTitle(ctx: ConnState, msg: ClientRoomTitle, deps: HandlerDeps): void {
+  if (ctx.room.kind !== 'private' || !(ctx.room.isKeeper(ctx.player) || ctx.player.globalAdmin)) {
+    refuse(ctx, 'forbidden', undefined, ErrorCode.Forbidden);
+    return;
+  }
+  if (ctx.player.muted) {
+    refuse(ctx, 'muted');
+    return;
+  }
+  const title = cleanName(msg.title, PROTOCOL.MAX_ISLAND_TITLE_LENGTH, '') || null;
+  if (title === ctx.room.title) return;
+  deps.rooms.setIslandTitle(ctx.room, title);
+  deps.audit.record({
+    actorId: ctx.player.id,
+    actorName: ctx.player.name,
+    action: 'room_title',
+    targetId: null,
+    reason: title ?? '(none)',
+    room: ctx.room.id,
+  });
+}
+
 function handleResync(ctx: ConnState, msg: ClientResync): void {
   const deltas = typeof msg.haveTick === 'number' ? ctx.room.getDeltasSince(msg.haveTick) : null;
   if (deltas === null) {
@@ -941,6 +968,7 @@ export const HANDLERS: {
   checkin: handleCheckin,
   room_switch: handleRoomSwitch,
   room_create: handleRoomCreate,
+  room_title: handleRoomTitle,
   resync: handleResync,
   host_activity_state: handleHostActivityState,
   host_announce: handleHostAnnounce,

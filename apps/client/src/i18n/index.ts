@@ -138,9 +138,15 @@ export function templateTitle(id: string, l: Lang = currentLang()): string {
  * A public shard's name in the player's language. The server names shards in English
  * ("Nagisa — Shore 2") for logs and metrics; the number is all that differs between them.
  */
-export function roomName(room: Pick<RoomView, 'id' | 'name' | 'kind'>, l: Lang = currentLang()): string {
+export function roomName(room: Pick<RoomView, 'id' | 'name' | 'kind' | 'title'>, l: Lang = currentLang()): string {
   const shore = room.kind === 'public' ? /^shore-(\d+)$/.exec(room.id) : null;
-  return shore ? translate(l, 'island.shore', { n: Number(shore[1]) }) : room.name;
+  return shore ? translate(l, 'island.shore', { n: Number(shore[1]) }) : room.title || room.name;
+}
+
+/** How an island reads in a sentence: a shard's name, or a private island's own name or its code. */
+export function islandName(room: Pick<RoomView, 'id' | 'name' | 'kind' | 'code' | 'title'>, l: Lang = currentLang()): string {
+  if (room.kind !== 'private') return roomName(room, l);
+  return room.title || translate(l, 'island.private', { code: room.code ?? '' });
 }
 
 export function fishName(id: string, l: Lang = currentLang()): string {

@@ -41,6 +41,9 @@ receives is the public shards plus the room it is in).
   creates the room, moves you there (`room_changed`, carrying your new role and a fresh resume
   token) and records you — by visitor-key hash — as its keeper. Keepers are `Role.Admin`
   *in their own island only*.
+- **Name**: the keeper (or an admin) can give the island a name from the island panel —
+  `room_title`, at most 24 characters, empty to take it away. It shows above the code, in
+  the "moved to" notice, on photos and in friends' lists, and is kept in the registry.
 - **Join**: `hello.room` or `room_switch.room` may be a room id *or* a code. A registered code
   the server is not currently holding **re-opens** the island, with its keeper: an invite link
   keeps working after everyone has left and — with `PERSIST_PATH` set — after a restart. A code
@@ -52,7 +55,7 @@ receives is the public shards plus the room it is in).
   beyond that — sleeping ones wake as others fall asleep).
 - **Idle rooms** stop ticking and are dropped from memory after ten empty minutes — private
   islands and any public shard beyond the first `ROOM_COUNT`. Their registry entry (code,
-  keeper, name) and their persisted state (schedule, announcements, guestbook) stay.
+  keeper, keeper's name, island name) and their persisted state (schedule, announcements, guestbook) stay.
 - **Room switch** detaches you from any activity, reels in any line, cancels any duel and
   re-spawns you at the new island's harbour. Your role is recomputed for the new room.
 

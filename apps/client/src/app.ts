@@ -74,7 +74,7 @@ import { Ambience } from './audio/ambience.js';
 import { GameFx } from './fx/index.js';
 import { markPhoto } from './engine/photo.js';
 import { chimeVoice } from './fx/audio.js';
-import { badgeIcon, badgeName, interactLabel, roomName, tr, zoneName } from './i18n/index.js';
+import { badgeIcon, badgeName, interactLabel, islandName, tr, zoneName } from './i18n/index.js';
 import {
   activities,
   appPhase,
@@ -978,7 +978,7 @@ export class App {
         const stamp = new Date();
         const pad = (n: number): string => String(n).padStart(2, '0');
         const here = get(room);
-        const place = here ? (here.kind === 'private' ? tr('island.private', { code: here.code ?? '' }) : roomName(here)) : '';
+        const place = here ? islandName(here) : '';
         // The island's mark, unless the place's own name already carries it (渚岛, 渚島).
         const mark = [place.includes('渚') ? '' : '渚', place, `${stamp.getFullYear()}.${pad(stamp.getMonth() + 1)}.${pad(stamp.getDate())}`, get(weather) === 'clear' && get(islandNight) ? CLEAR_NIGHT_MARK : WEATHER_MARK[get(weather)]]
           .filter(Boolean)
@@ -1015,6 +1015,8 @@ export class App {
       dance: (on) => this.setDancing(on),
 
       checkinList: (activity) => this.sync?.send({ t: 'checkin_list', activity }),
+
+      nameIsland: (title) => this.sync?.send({ t: 'room_title', title }),
 
       dig: () => {
         this.sync?.send({ t: 'dig' });

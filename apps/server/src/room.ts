@@ -146,6 +146,8 @@ export interface RoomOptions {
   /** The invite code, for private islands. */
   code?: string;
   owner?: RoomOwner;
+  /** The name its keeper gave a private island, if any. */
+  title?: string | null;
   /** Ask for a save soon. Defaults to a no-op (tests). */
   persist?: () => void;
   /** Randomness for the games. Defaults to `Math.random`. */
@@ -173,6 +175,8 @@ export class Room implements GameRoom {
   readonly kind: 'public' | 'private';
   readonly code: string | null;
   owner: RoomOwner | null;
+  /** The name its keeper gave a private island. Kept in the island registry, not here. */
+  title: string | null;
   readonly activities = new ActivityManager();
 
   // --- games -------------------------------------------------------------------------------
@@ -243,6 +247,7 @@ export class Room implements GameRoom {
     this.kind = opts.kind ?? 'public';
     this.code = opts.code ?? null;
     this.owner = opts.owner ?? null;
+    this.title = opts.title ?? null;
     this.persistFn = opts.persist ?? (() => {});
     this.onPopulation = opts.onPopulation ?? (() => {});
     this.onProfile = opts.onProfile ?? ((player) => this.sendProfile(player));
@@ -291,7 +296,15 @@ export class Room implements GameRoom {
     };
     if (this.code) view.code = this.code;
     if (this.kind === 'private') view.ownerName = this.owner?.name ?? null;
+    if (this.title) view.title = this.title;
     return view;
+  }
+
+  /** Rename the island and tell everyone on it. The registry is the caller's to update. */
+  setTitle(title: string | null): void {
+    this.title = title;
+    const msg: ServerMessage = { t: 'room_info', room: this.toView() };
+    for (const session of this.sessions.values()) session.send(msg);
   }
 
   /** Whether `player` keeps this island. */

@@ -97,6 +97,8 @@ export interface PersistedIsland {
   /** Hash of the keeper's visitor key. Null when they had none; then nobody keeps it after they leave. */
   ownerHash: string | null;
   ownerName: string | null;
+  /** The name its keeper gave it, if any. */
+  title?: string;
   createdAt: number;
   lastActiveAt: number;
 }

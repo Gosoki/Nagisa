@@ -93,6 +93,8 @@ export const PROTOCOL = {
   MAX_ANNOUNCEMENT_LENGTH: 240,
   /** A guestbook line is a signature, not a letter. */
   MAX_GUESTBOOK_LENGTH: 80,
+  /** A private island's name, as its keeper gives it. */
+  MAX_ISLAND_TITLE_LENGTH: 24,
 
   /**
    * Per-connection rate limits: a token bucket per message type, refilled at `rate` per
@@ -108,6 +110,8 @@ export const PROTOCOL = {
     /** Moving between islands rebuilds your whole world; nobody needs to do it twice a second. */
     room_switch: { rate: 0.2, burst: 3 },
     room_create: { rate: 0.1, burst: 2 },
+    /** Renaming an island is shown to everyone on it: a few tries, then slowly. */
+    room_title: { rate: 0.2, burst: 3 },
     default: { rate: 10, burst: 10 },
   },
 
@@ -350,6 +354,8 @@ export interface RoomView {
   code?: string;
   /** Display name of whoever made it, for private islands, when known. */
   ownerName?: string | null;
+  /** The name its keeper gave a private island, if they gave it one. */
+  title?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -672,6 +678,15 @@ export interface ClientRoomCreate {
 }
 
 /**
+ * Name the private island you are on — its keeper, or an admin, only. An empty `title`
+ * takes the name away. Everyone on the island is sent {@link ServerRoomInfo}.
+ */
+export interface ClientRoomTitle {
+  t: 'room_title';
+  title: string;
+}
+
+/**
  * Admin: put something on the programme now — "a quiz in two minutes". Uses a template,
  * so there is no form to fill in.
  */
@@ -705,6 +720,7 @@ export type ClientMessage =
   | ClientGuestbookRemove
   | ClientSetTitle
   | ClientRoomCreate
+  | ClientRoomTitle
   | ClientHostSchedule
   | ClientDig
   | ClientFriend
@@ -833,6 +849,12 @@ export interface ServerRoleChanged {
   role: Role;
   /** Activity the host role applies to, if role === Host. */
   activity?: ActivityId;
+}
+
+/** The room you are in now presents itself differently — its keeper named it. */
+export interface ServerRoomInfo {
+  t: 'room_info';
+  room: RoomView;
 }
 
 /** Room switch completed. Followed by a fresh snapshot for the new room. */
@@ -1015,7 +1037,7 @@ export interface FriendView {
   online: boolean;
   /** While online: who they are in the room they are in, and which room that is. */
   player?: PlayerId;
-  room?: { id: RoomId; name: string; kind: 'public' | 'private'; code?: string };
+  room?: { id: RoomId; name: string; kind: 'public' | 'private'; code?: string; title?: string };
 }
 
 /** Somebody who would like to be your friend. Accept or decline it by `id`. */
@@ -1130,6 +1152,7 @@ export type ServerMessage =
   | ServerCheckinAck
   | ServerRoleChanged
   | ServerRoomChanged
+  | ServerRoomInfo
   | ServerError
   | ServerProfile
   | ServerFish

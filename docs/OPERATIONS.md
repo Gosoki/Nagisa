@@ -285,6 +285,7 @@ nothing happen after.
 | `chat` (and whispers) | 1 | 4 |
 | `room_switch` | 0.2 | 3 |
 | `room_create` | 0.1 | 2 |
+| `room_title` | 0.2 | 3 |
 | everything else | 10 | 10 |
 
 **Per game** — cooldowns the player is told about (`cooldown {seconds}`): one private island

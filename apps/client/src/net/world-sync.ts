@@ -79,7 +79,7 @@ import {
   zonePopulation,
 } from '../state/stores.js';
 import type { Speech } from '../character/speech.js';
-import { badgeName, fishName, fortuneText, roomName, tr, zoneName } from '../i18n/index.js';
+import { badgeName, fishName, fortuneText, islandName, tr, zoneName } from '../i18n/index.js';
 
 /** Minimum movement before a transform is worth sending, metres. */
 const POSITION_DEADBAND = 0.02;
@@ -258,6 +258,12 @@ export class WorldSync {
         if (msg.role >= Role.Host) notify(tr(msg.activity || msg.role < Role.Admin ? 'role.hosting' : 'role.admin'), 'good');
         break;
 
+      case 'room_info':
+        // Named (or unnamed) by its keeper while we are on it.
+        room.set(msg.room);
+        rooms.update((list) => list.map((r) => (r.id === msg.room.id ? msg.room : r)));
+        break;
+
       case 'room_changed':
         room.set(msg.room);
         rooms.set(msg.rooms);
@@ -277,7 +283,7 @@ export class WorldSync {
         vista.set(null);
         // A new shard spawns us afresh, so the next snapshot's position is authoritative.
         this.adoptedSpawn = false;
-        notify(tr('island.moved', { name: msg.room.kind === 'private' ? tr('island.private', { code: msg.room.code ?? '' }) : roomName(msg.room) }), 'good');
+        notify(tr('island.moved', { name: islandName(msg.room) }), 'good');
         break;
 
       case 'error':
@@ -691,9 +697,9 @@ export class WorldSync {
     }
   }
 
-  /** How a friend's island reads in a line: a shard's name, or a private island's code. */
+  /** How a friend's island reads in a line. */
   private placeOf(r: NonNullable<ServerFriends['friends'][number]['room']>): string {
-    return r.kind === 'private' ? tr('island.private', { code: r.code ?? '' }) : roomName(r);
+    return islandName(r);
   }
 
   private onFish(msg: Extract<ServerMessage, { t: 'fish' }>): void {

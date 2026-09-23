@@ -16,10 +16,13 @@
    * spaces, dashes and lower case are forgiven, look-alike letters are not), or walk over to
    * another public shard. The list shows public shards only; a private island is never listed
    * to strangers, which is the point of it being private.
+   *
+   * On a private island its keeper (and an admin) can also give it a name — "the design
+   * team's break room" says more than a code when it shows up in a friend's list.
    */
   import { tick } from 'svelte';
-  import { normaliseRoomCode, type RoomView } from '@nagisa/shared';
-  import { cmd, population, room, rooms } from '../state/stores.js';
+  import { PROTOCOL, normaliseRoomCode, type RoomView } from '@nagisa/shared';
+  import { cmd, isAdmin, population, room, rooms } from '../state/stores.js';
   import { inviteLink } from '../net/visitor.js';
   import { lang, roomName, t } from '../i18n/index.js';
 
@@ -36,6 +39,18 @@
   const link = $derived(code ? inviteLink(code) : '');
   const typed = $derived(normaliseRoomCode(codeInput));
   const publicRooms = $derived($rooms.filter((r) => r.kind === 'public'));
+
+  let titleInput = $state('');
+  // The field shows the island's name as it stands, and again whenever it is changed.
+  $effect(() => {
+    titleInput = here?.title ?? '';
+  });
+
+  function rename(): void {
+    const title = titleInput.trim();
+    if (title === (here?.title ?? '')) return;
+    cmd().nameIsland(title);
+  }
 
   // The room list arrives with the welcome and is not pushed again, so its populations go
   // stale. Opening this panel is when they are read: ask the server for the current ones.
@@ -105,6 +120,9 @@
       <p class="faint">{$t('island.none')}</p>
     {:else if code}
       <p class="kind">{$t('island.privateTitle')}</p>
+      {#if here.title}
+        <p class="name">{here.title}</p>
+      {/if}
       <p class="code">
         <span aria-hidden="true">{code}</span>
         <!-- Spelled out, so a screen reader reads a code and not a word. -->
@@ -131,6 +149,26 @@
         </label>
       {/if}
       <p class="hint">{$t('island.inviteHow')}</p>
+      {#if $isAdmin}
+        <form
+          class="row rename"
+          onsubmit={(e) => {
+            e.preventDefault();
+            rename();
+          }}
+        >
+          <input
+            type="text"
+            bind:value={titleInput}
+            maxlength={PROTOCOL.MAX_ISLAND_TITLE_LENGTH * 2}
+            autocomplete="off"
+            placeholder={$t('island.namePlaceholder')}
+            aria-label={$t('island.nameLabel')}
+          />
+          <button type="submit" class="go" disabled={titleInput.trim() === (here.title ?? '')}>{$t('island.nameSave')}</button>
+        </form>
+        <p class="hint">{$t('island.nameHow')}</p>
+      {/if}
     {:else}
       <p class="name">{roomName(here, $lang)}</p>
       <p class="meta">{$t('island.public')} · {$t('island.people', { n: $population, cap: here.capacity })}</p>
@@ -379,6 +417,14 @@
     font-weight: 400;
     font-variant-numeric: tabular-nums;
     color: var(--ui-ink-faint);
+  }
+
+  .rename {
+    margin-top: var(--sp-xs);
+  }
+
+  .rename input {
+    flex: 1;
   }
 
   .here-tag {

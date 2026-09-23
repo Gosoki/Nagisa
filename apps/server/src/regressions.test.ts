@@ -417,3 +417,41 @@ test('a check-in list keeps names, is shown to the host and admins only, and sur
   assert.equal(after.activities.get(activity.id)?.checkinRecords()[0]?.name, 'Nao');
   after.stop();
 });
+
+// ---------------------------------------------------------------------------------------------
+// Naming an island
+// ---------------------------------------------------------------------------------------------
+
+test('a keeper names their island; everyone on it hears; the name outlives sleep and a restart', () => {
+  const deps = makeDeps();
+  const key = 'namerkeynamerkeynamerkey';
+  const island = deps.rooms.createPrivate({ hash: hashVisitorKey(key), name: 'Mio', playerId: 'p-mio' })!;
+  const keeper = connect(deps, { room: island.code!, visitor: key });
+  const guest = connect(deps, { room: island.code! });
+
+  send(guest.conn, { t: 'room_title', title: 'Mine now' }, deps);
+  assert.equal(lastOf(guest.socket, 'error')?.key, 'forbidden', 'a guest cannot');
+  const shore = deps.rooms.list().find((r) => r.kind === 'public')!;
+  const admin = connect(deps, {}, true);
+  send(admin.conn, { t: 'room_title', title: 'Shore' }, deps);
+  assert.equal(lastOf(admin.socket, 'error')?.key, 'forbidden', 'nobody renames a public shard');
+  assert.equal(shore.toView().title, undefined);
+
+  send(keeper.conn, { t: 'room_title', title: '  Design‮ team ​ break  room, and a very long tail  ' }, deps);
+  const heard = lastOf(guest.socket, 'room_info')?.room;
+  assert.equal(heard?.id, island.id);
+  assert.equal(heard?.title, 'Design team break room,', 'cleaned and cut to 24 characters');
+  assert.equal(lastOf(keeper.socket, 'room_info')?.room.title, heard?.title);
+
+  // Asleep, then a restart: the registry has it, and the island wakes with it.
+  const saved = JSON.parse(JSON.stringify({ rooms: deps.rooms.exportRooms(), islands: deps.rooms.exportIslands() }));
+  const later = new RoomManager({ log, roomCapacity: 40, privateCapacity: 20, initialRoomCount: 1, persist: () => {}, autostart: false, persisted: saved });
+  const woken = later.resolve(island.code!);
+  assert.ok('room' in woken);
+  assert.equal(woken.room.toView().title, 'Design team break room,');
+
+  // An empty name takes it away.
+  send(keeper.conn, { t: 'room_title', title: '   ' }, deps);
+  assert.equal(lastOf(guest.socket, 'room_info')?.room.title, undefined);
+  assert.equal(deps.rooms.exportIslands().find((i) => i.code === island.code)?.title, undefined);
+});

@@ -23,6 +23,7 @@
 import { randomInt } from 'node:crypto';
 import {
   ActivityState,
+  PROTOCOL,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
   normaliseRoomCode,
@@ -36,6 +37,7 @@ import type { Session } from './session.js';
 import type { Logger } from './logger.js';
 import type { PersistedIsland, PersistedRoom } from './persistence.js';
 import { metrics } from './metrics.js';
+import { cleanName } from './text.js';
 import { Friends } from './friends.js';
 import { ProfileStore } from './games/profiles.js';
 
@@ -98,7 +100,10 @@ export class RoomManager {
     for (const [id, state] of Object.entries(opts.persisted?.rooms ?? {})) this.dormant.set(id, state);
     for (const island of opts.persisted?.islands ?? []) {
       if (island && typeof island.code === 'string' && normaliseRoomCode(island.code) === island.code) {
-        this.islands.set(island.code, island);
+        // A name is shown to everyone who visits: cleaned again, as if it had just been typed.
+        const title = cleanName(island.title, PROTOCOL.MAX_ISLAND_TITLE_LENGTH, '');
+        const { title: _stored, ...rest } = island;
+        this.islands.set(island.code, title ? { ...rest, title } : rest);
       }
     }
     for (let i = 0; i < Math.max(1, opts.initialRoomCount); i++) this.createRoom();
@@ -169,6 +174,7 @@ export class RoomManager {
       kind: 'private',
       code,
       owner,
+      title: entry.title ?? null,
       persist: this.opts.persist,
       random: this.opts.random,
       onPopulation: () => this.publishPopulation(),
@@ -373,6 +379,19 @@ export class RoomManager {
       this.opts.persist();
     }
     return slept;
+  }
+
+  /** Name a private island (or, with null, unname it): the room says so, the registry keeps it. */
+  setIslandTitle(room: Room, title: string | null): void {
+    const entry = room.code ? this.islands.get(room.code) : undefined;
+    if (!entry) return;
+    if (title) entry.title = title;
+    else delete entry.title;
+    room.setTitle(title);
+    // Friends of anyone here see the island by name in their lists: send those again.
+    for (const player of room.allPlayers()) this.friends.presenceChanged(player, true);
+    this.log.info('island_titled', { room: room.id, titled: title !== null });
+    this.opts.persist();
   }
 
   /** Mark an island visited (called on join), so the registry keeps the ones people use. */

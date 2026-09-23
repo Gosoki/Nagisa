@@ -80,6 +80,8 @@ tests cover.
 - Fireworks from two shores, and a show after dark.
 - Four bells that everyone in earshot hears, spatialised; two viewpoints the camera turns to
   take in.
+- Weather off the island clock — fair, grey, rain — with umbrellas in the rain and fireflies at
+  the shrine on clear nights.
 - A treasure hunt in the small hours: three things buried at random, hot-or-cold digging
   that everyone nearby can read, and a board of finds.
 - Today's tasks: three a day, the same for everyone, with a streak and a badge at seven days.

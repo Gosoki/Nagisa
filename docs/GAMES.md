@@ -105,8 +105,8 @@ resync, never kept in a snapshot.
 | `dice` | `by, value, sides` | a line and a bubble |
 | `janken` | `a, b, ha, hb, winner` | both hands as bubbles; a line |
 | `badge` | `by, badge` | a line |
-| `dig` | `by, heat` | the heat as a glyph over the digger (🔥 ♨️ 💧 ❄️) |
-| `treasure` | `by, pos, left` | 💎 over the finder, a small gold burst where it came up, a line |
+| `dig` | `by, heat` | the heat as a glyph over the digger (🔥 ♨️ 💧 ❄️), a ring of sand at their feet |
+| `treasure` | `by, pos, left` | 💎 over the finder, a gold ring and a small gold burst where it came up, a line |
 
 ---
 
@@ -235,8 +235,10 @@ One sky for every island, worked out from the server clock alone, like the time 
 the clock is cut into 15-minute spells and each spell's weather is a hash of its index —
 clear about 60 % of the time, cloudy 25 %, rain 15 % — eased into over 90 s. Nothing about
 it is sent. The client greys and dims the sky and closes the cloud deck as it clouds over,
-draws rain around the camera and plays it under the zone's ambience, shows the weather
-beside the place name, and says so when rain starts. The server's one use of it: in the
+draws rain around the camera and plays it under the zone's ambience, puts an umbrella in
+everyone's hand once it rains properly (a lantern in the lantern walk comes first), keeps the
+shrine's fireflies in the grass, shows the weather beside the place name (a moon on a clear
+night), and says so when rain starts. The server's one use of it: in the
 rain a bite comes after 70 % of the usual wait.
 
 ### Friends (`server/src/friends.ts`)

@@ -329,8 +329,9 @@ export type InteractableEffect =
  * - `lanterns` — attendees carry paper lanterns (client).
  * - `lamp` — the lighthouse lamp is lit and turning (client).
  * - `treasure` — things are buried around the island and anyone may dig for them (server).
+ * - `daruma` — だるまさんがころんだ on the map's `darumaCourse` (server).
  */
-export type ActivityFeature = 'quiz' | 'derby' | 'fireworks' | 'concert' | 'lanterns' | 'lamp' | 'treasure';
+export type ActivityFeature = 'quiz' | 'derby' | 'fireworks' | 'concert' | 'lanterns' | 'lamp' | 'treasure' | 'daruma';
 
 /**
  * Generators available in the client's prop library. Adding a kind here without adding
@@ -473,6 +474,19 @@ export interface MapWorld {
     readonly zone: ZoneId;
     readonly o: { readonly x: number; readonly z: number; readonly r: number };
     readonly x: { readonly x: number; readonly z: number; readonly r: number };
+  };
+
+  /**
+   * The course for だるまさんがころんだ: a straight lane on open, level, walkable ground in a
+   * venue. Racers set off from the line across `start` and make for the line across `goal`;
+   * the oni stands a little way beyond the goal (`darumaOni`). Both lines run `halfWidth`
+   * metres either side of the lane's middle. A map without one never runs the game.
+   */
+  readonly darumaCourse?: {
+    readonly zone: ZoneId;
+    readonly start: { readonly x: number; readonly z: number };
+    readonly goal: { readonly x: number; readonly z: number };
+    readonly halfWidth: number;
   };
 
   /**

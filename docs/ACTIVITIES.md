@@ -46,7 +46,7 @@ Hosts do not fill in a form. Every activity comes from a template, and the templ
 the venue, the length, the shape and what the island does while it runs. This is the
 difference between a calm product and an events dashboard.
 
-The shipped island's nine (`ACTIVITY_TEMPLATES` in
+The shipped island's ten (`ACTIVITY_TEMPLATES` in
 [`maps/nagisa-island.ts`](../packages/shared/src/maps/nagisa-island.ts)):
 
 | Template | id | Venue | Duration | Capacity | Check-in | Feature |
@@ -60,6 +60,7 @@ The shipped island's nine (`ACTIVITY_TEMPLATES` in
 | Beach Concert | `beach-concert` | Sunset Beach | 9 min | 70 | ✓ | `concert` |
 | Fireworks | `fireworks` | Sunset Beach | 8 min | ∞ | — | `fireworks` |
 | Treasure Hunt | `treasure-hunt` | Main Plaza (the field is the whole island) | 10 min | ∞ | — | `treasure` |
+| だるまさんがころんだ (Daruma-san ga Koronda, 一二三木头人) | `daruma` | Sunset Beach | 8 min | ∞ | — | `daruma` |
 
 Each template carries its title and blurb in English, Chinese and Japanese (`titleZh`,
 `titleJa`, `blurbZh`, `blurbJa`); the wire carries the English and the `templateId`, and
@@ -91,6 +92,7 @@ after island midnight:
 | 28 | 07:28 | Morning Assembly | Main Plaza |
 | 37 | 09:52 | ○× Quiz | Main Plaza |
 | 45 | 12:00 | Harbour Market | South Harbour |
+| 48 | 12:48 | だるまさんがころんだ | Sunset Beach |
 | 56 | 14:56 | ○× Quiz | Main Plaza |
 | 65 | 17:20 | Lamp Lighting | Lighthouse Cape |
 | 70 | 18:40 | Lantern Walk | Shrine |
@@ -99,7 +101,8 @@ after island midnight:
 
 Laid out so each thing happens at the hour it belongs to — the catch at first light, the
 lamp at dusk, fireworks in the dark, the treasure hunt in the small hours when nothing else
-is on — and so no two things share a venue at once. A map
+is on, a race on the sand in the early afternoon between the market opening and the second
+quiz — and so no two things share a venue at once. A map
 with no `programme` gets each of its templates once a day, evenly spaced.
 
 ### Per-room scheduling
@@ -126,7 +129,7 @@ rounded and clamped to 0–120. Its slot key is `adhoc:<uuid>`, so it never coll
 programme. The host panel offers it as one row: a template, a delay, a button. Every such
 request goes into the audit log as `schedule:<template>`.
 
-There is one quiz arena, so asking for a quiz while one is live is refused with `already_running` (as is a second treasure hunt).
+There is one quiz arena, so asking for a quiz while one is live is refused with `already_running` (as is a second treasure hunt, or a second race — there is one course).
 
 ---
 
@@ -176,8 +179,8 @@ double-tap from producing an impossible activity.
 
 A host can drive it by hand at any time within the graph.
 
-Some features end their activity themselves: a quiz that has run its course ends it
-whatever the clock says, and a scheduled quiz that goes live while another quiz is running
+Some features end their activity themselves: a quiz or a race that has run its course ends it
+whatever the clock says, and a scheduled quiz (or race) that goes live while another is running
 is ended at once rather than shown as live with nothing happening.
 
 ---
@@ -193,6 +196,7 @@ gatherings: a place, a time, a roster and a check-in.
 | `derby` | server | Every catch by a *participant* scores their biggest single fish; the top five ride on `ActivityView.board`. At the end the winner gets the Derby Champion badge and the island hears the podium. |
 | `fireworks` | server | The server sends up its own show every 1.2–3 s; anyone on a firework shore may add to it. |
 | `treasure` | server | Three things are buried at random places; anyone may dig, anywhere, and hears how close the nearest is. Finds score on `board`, `left` counts down, and the last find ends it. One hunt at a time. |
+| `daruma` | server | だるまさんがころんだ on the map's `darumaCourse`: participants race from the start line while the daruma chants and freeze when it turns; whoever it sees moving goes back to the start. Places ride on `board` (seconds taken); three home ends it. One race at a time. |
 | `concert` | client | A musician on the beach stage and generated koto phrases, heard from where you stand; anyone on the beach can join a bon-odori, all dancing on one beat. |
 | `lanterns` | client | Everyone attending carries a paper lantern, and after dusk each has a halo. |
 | `lamp` | client | The lighthouse beam. |
@@ -208,7 +212,7 @@ Two modes, and the difference is social rather than mechanical:
 
 | Mode | Meaning |
 |---|---|
-| `participant` | You are *in* it. Counted, placed in the crowd's inner rings, scored in a derby, a contestant in a quiz wherever you stand. |
+| `participant` | You are *in* it. Counted, placed in the crowd's inner rings, scored in a derby, a contestant in a quiz wherever you stand, a racer in だるまさんがころんだ. |
 | `audience` | You are watching. Counted separately, placed further back. |
 
 Both are attachments to the *same place*, so switching is instant and costs nothing. A
@@ -217,8 +221,9 @@ new one has accepted them.
 
 Joining is a **request**: the client sends `activity_join`, the server checks state
 (`open` or `live`) and capacity (participants and audience together), and broadcasts the
-resulting attachment. Meanwhile the client starts walking you toward a crowd slot — it does
-not wait for the round trip, because the walk is not the server's business.
+resulting attachment. Meanwhile the client starts walking you toward a crowd slot (a race's
+participants, toward its start line) — it does not wait for the round trip, because the walk
+is not the server's business.
 
 ### Crowd placement
 
@@ -403,7 +408,7 @@ Everything lands on the board, so a player who walks into a zone just after an a
 still finds it there.
 
 The island announces too, under the name 渚 Nagisa: the derby's podium island-wide, a quiz's
-winners to the plaza.
+winners to the plaza, a race's places to the beach.
 
 ---
 

@@ -164,7 +164,8 @@ join, on room switch, and in response to `resync`.
   "announcements": [ /* still within TTL, oldest first */ ],
   "zonePopulation": { "plaza": 14, "south-harbor": 3 },
   "guestbook": [ /* GuestbookEntry, oldest first */ ],
-  "quiz": null                                  // or the QuizView in progress
+  "quiz": null,                                 // or the QuizView in progress
+  "daruma": null                                // or the DarumaView in progress
 }
 ```
 
@@ -192,13 +193,14 @@ transforms of whoever moved.
   "events": [ { "k": "bell", "id": "shrine-bell", "by": "p_5" } ],
   "guestbook": [ /* new GuestbookEntry */ ],
   "guestbookRemoved": [ "g_12" ],
-  "quiz": { /* QuizView */ }                    // null = over; absent = unchanged
+  "quiz": { /* QuizView */ },                   // null = over; absent = unchanged
+  "daruma": { /* DarumaView */ }                // likewise
 }
 ```
 
 Activities are sent whole rather than as patches: they are small, they change rarely, and
-a whole object cannot be applied in the wrong order. `quiz` is three-valued on purpose:
-absent means nothing changed, `null` means the quiz is over and its card should go.
+a whole object cannot be applied in the wrong order. `quiz` and `daruma` are three-valued on
+purpose: absent means nothing changed, `null` means the game is over and its card should go.
 
 The server encodes each tick's delta **once** and hands the same string to every session in
 the room; at 10 Hz, stringifying the same object a hundred times was most of the tick.
@@ -286,7 +288,13 @@ A failed report produces:
 { "t": "correction", "pos": [x, y, z], "yaw": 1.2, "reason": "speed" | "bounds" }
 ```
 
-(`teleport` and `stage` are also in the type; the server does not currently send them.)
+With `reason: "teleport"` it is the island moving the player by its own decision — a race of
+だるまさんがころんだ putting its racers on the start line, or sending back one it saw moving.
+The client treats that as a move, not a disagreement: a walk under way, a follow and a seat all
+end, and it faces the `yaw` it was given. Until a report arrives from within a metre of the spot,
+the server answers every report with the same correction rather than believing it — the ones
+already in flight describe where the player was — so a move can never be undone by the
+client's own lag (`Player.relocate`). `stage` is also in the type; the server does not send it.
 
 The client **hard-snaps**. Blending would fight the server and produce a rubber-band.
 Corrections are not surfaced to the player: they are almost always a terrain edge case,
@@ -361,8 +369,9 @@ client                                     server
 
 `ActivityView` carries, beyond its schedule and counts, `templateId` (the client's key for
 the localised title and the venue's effects), `feature` (`quiz`, `derby`, `fireworks`,
-`concert`, `lanterns`, `lamp`, `treasure`, or `null`), an optional `board` — the top few
-`{ id, name, score }` for an activity that keeps score (the derby's biggest fish, in cm) —
+`concert`, `lanterns`, `lamp`, `treasure`, `daruma`, or `null`), an optional `board` — the top
+few `{ id, name, score }` for an activity that keeps score (the derby's biggest fish, in cm; a
+hunt's finds; a race's places, in seconds taken) —
 and, for a treasure hunt, an optional `left`: how many things are still buried.
 
 Lifecycle, with transitions validated server-side by `canTransition`:
@@ -419,7 +428,7 @@ Scope is validated against the sender's role:
 | `Admin` | anything, including island-wide |
 
 `ttlMs` is clamped to 5 s – 10 min (default 60 s). The island itself announces too, as
-`渚 Nagisa` — the derby's podium, a quiz's winners.
+`渚 Nagisa` — the derby's podium, a quiz's winners, a race's places.
 
 **Delivery is not filtered by scope.** Every session in the room receives every
 announcement. The client decides who is interrupted: it shows a toast only for
@@ -526,7 +535,9 @@ bell that is ringing.
 | `dig` | `by, heat` |
 | `treasure` | `by, pos, left` |
 
-The quiz travels as `QuizView` in `snapshot.quiz` and `delta.quiz`; the guestbook as
+The quiz travels as `QuizView` in `snapshot.quiz` and `delta.quiz`, and だるまさんがころんだ as
+`DarumaView` in `snapshot.daruma` and `delta.daruma` (a race needs no message of its own:
+racers walk, and the server judges where they stand); the guestbook as
 `GuestbookEntry` lists in `snapshot.guestbook`, `delta.guestbook` and
 `delta.guestbookRemoved`.
 

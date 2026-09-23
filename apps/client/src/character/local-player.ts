@@ -133,6 +133,14 @@ export class LocalPlayer {
   private seatWalk: { x: number; z: number; elapsed: number } | null = null;
   /** Holding a rod out while the line is in the water. See `setFishing`. */
   private fishing = false;
+
+  /**
+   * A ceiling on ground speed set from outside, m/s, or null for none: a race's careful step
+   * (`DARUMA_STEP_SPEED`), which the server holds racers to. Applied in the same place as the
+   * client's own clamp, after everything that can produce speed, so neither the run key nor a
+   * slide gets past it.
+   */
+  speedCap: number | null = null;
   /** Dancing at the concert, until the player moves. See `setDancing`. */
   private dancing = false;
 
@@ -373,6 +381,7 @@ export class LocalPlayer {
     const depth = -Math.min(0, heightAt(this.position.x, this.position.z));
     const wading = depth > 0.15;
     let maxSpeed: number = wading ? WADE_SPEED : this.input.run && !this.seated ? RUN_SPEED : WALK_SPEED;
+    if (this.speedCap !== null) maxSpeed = Math.min(maxSpeed, this.speedCap);
     // Ease into the last few centimetres of a step onto a seat rather than overshooting it:
     // at walking pace one physics step is 15 cm.
     if (this.seatWalk) {
@@ -408,9 +417,10 @@ export class LocalPlayer {
     // impulse that bypassed the input clamp used to be enough on its own to get a running
     // player yanked backwards. See `@nagisa/shared/movement`.
     const planar = Math.hypot(this.velocity.x, this.velocity.z);
-    if (planar > MAX_CLIENT_SPEED) {
-      this.velocity.x = (this.velocity.x / planar) * MAX_CLIENT_SPEED;
-      this.velocity.z = (this.velocity.z / planar) * MAX_CLIENT_SPEED;
+    const limit = this.speedCap === null ? MAX_CLIENT_SPEED : Math.min(MAX_CLIENT_SPEED, this.speedCap);
+    if (planar > limit) {
+      this.velocity.x = (this.velocity.x / planar) * limit;
+      this.velocity.z = (this.velocity.z / planar) * limit;
     }
 
     // Integrate horizontally, then resolve against the terrain.

@@ -35,8 +35,8 @@ with particular people, you make an island of your own and send them the link.
 |---|---|
 | **The world** | One hand-designed Japanese island, sea on every side. Six places on a hexagon 74 m to a side — two harbours, a main plaza, an old street, a shrine headland, a lighthouse cape — with a mountain at the centre and a ring road under 500 m. A neighbour is a few seconds away at a run. 134 hand-placed landmarks, all generated from code — the island ships as maths, not as a downloaded mesh. |
 | **The look** | Drawn, not lit. A screen-space contour pass puts a pen line on every silhouette, crease and material boundary; surfaces are flat fills with a hand-authored shadow tone, pen hatching in the shade, and paper grain over the whole frame. See [docs/RENDERING.md](docs/RENDERING.md). |
-| **Things to do** | A ○× quiz you answer with your feet, by standing in a circle on the plaza. Fishing from the pier ends and the beach, nineteen things to catch, and a derby at dawn. The shrine's omikuji, one slip a day. A stamp stand in each of eight places. Janken with whoever is standing near you, dice, fireworks from the shore, four bells that everyone in earshot hears. A treasure hunt in the small hours: dig anywhere and the sand says hot or cold — and everyone sees what yours said. Three small tasks a day, the same three for everyone. The server decides every outcome. A stamp card, a fish book, a streak of days and nine badges are kept between visits — see [docs/GAMES.md](docs/GAMES.md). |
-| **The island's day** | Day and night turn every 90 real minutes, on one clock for everyone; the weather comes off the same clock in quarter-hour spells — fair, grey, now and then rain (the fish bite sooner in it). Every room runs the same programme on it: a treasure hunt in the small hours, the fishing derby at first light, a morning gathering, two quizzes, the harbour market at noon, the lamp lighting at dusk, the lantern walk, a concert on the sand, fireworks after dark. Things open and start by themselves; an admin can put one on at any time. |
+| **Things to do** | A ○× quiz you answer with your feet, by standing in a circle on the plaza. だるまさんがころんだ on the beach: creep up on the big red daruma while it chants with its back turned, and freeze when it turns round — anyone it sees moving goes back to the start. Fishing from the pier ends and the beach, nineteen things to catch, and a derby at dawn. The shrine's omikuji, one slip a day. A stamp stand in each of eight places. Janken with whoever is standing near you, dice, fireworks from the shore, four bells that everyone in earshot hears. A treasure hunt in the small hours: dig anywhere and the sand says hot or cold — and everyone sees what yours said. Three small tasks a day, the same three for everyone. The server decides every outcome. A stamp card, a fish book, a streak of days and ten badges are kept between visits — see [docs/GAMES.md](docs/GAMES.md). |
+| **The island's day** | Day and night turn every 90 real minutes, on one clock for everyone; the weather comes off the same clock in quarter-hour spells — fair, grey, now and then rain (the fish bite sooner in it), with mist gathering round the mountain as it clouds over. Every room runs the same programme on it: a treasure hunt in the small hours, the fishing derby at first light, a morning gathering, two quizzes, the harbour market at noon, だるまさんがころんだ on the beach after it, the lamp lighting at dusk, the lantern walk, a concert on the sand, fireworks after dark. Things open and start by themselves; an admin can put one on at any time. |
 | **Private islands** | Make your own island and get a five-letter code; the link is `?island=CODE`. Whoever made it is its keeper — admin there, and only there — each time they come back from the same browser — and can give it a name ("Design team's break room") that friends see in place of the code. An invite link keeps working after everyone has left, and after a restart when `PERSIST_PATH` is set. |
 | **Talking** | A chat log in the corner, a speech bubble over the speaker's head, whispers (`/w name …`) that reach one person only, and a notice board you can sign. |
 | **Friends** | Ask someone from their card; once they accept, each of you sees whether the other is on, which island they are on, and a button that takes you there — private islands included. A line and a soft two-note chime tell you when a friend arrives (and when someone whispers to you); on the minimap, friends are the blue dots. |
@@ -180,7 +180,7 @@ nagisa/
 │   ├── map/                  # What a map pack is (types) and the registry
 │   ├── maps/                 # The packs: nagisa-island (default), lantern-atoll
 │   ├── games/                # Fish, fortunes, badges, the quiz bank, the island clock,
-│   │                         # weather, treasure spots, today's tasks
+│   │                         # weather, treasure spots, today's tasks, the race's course
 │   └── tokens.ts             # Palette, type scale, motion curves — UI *and* scene
 │
 ├── apps/server/src/
@@ -193,9 +193,9 @@ nagisa/
 │   ├── rooms.ts              # Public shards, private islands, matchmaking, sleep
 │   ├── activity.ts           # Lifecycle, rosters, check-in, the lifecycle sweep
 │   ├── schedule.ts           # Keeps the island's daily programme on every room's board
-│   ├── games/                # Quiz, fishing + derby, janken, fireworks, treasure hunt,
-│   │                         # bells/omikuji/stamps/dice, guestbook, profiles, today's
-│   │                         # tasks (daily) — behind `GameRoom`
+│   ├── games/                # Quiz, だるまさんがころんだ, fishing + derby, janken,
+│   │                         # fireworks, treasure hunt, bells/omikuji/stamps/dice,
+│   │                         # guestbook, profiles, today's tasks (daily) — behind `GameRoom`
 │   ├── friends.ts            # Friend lists, requests and presence across islands
 │   ├── text.ts               # Cleaning what players type (controls, bidi, invisibles)
 │   ├── permissions.ts        # Who may do what
@@ -214,8 +214,8 @@ nagisa/
 │   ├── world/                # Island assembly, terrain worker, sea, sky, scatter, props/
 │   ├── character/            # Procedural rig, local + remote players, name tags, bubbles
 │   ├── fx/                   # The games in the world: bells, fireworks, fishing, the quiz
-│   │                         # arena, lanterns, the lighthouse beam, the concert, emotes,
-│   │                         # rain, fireflies, treasure digs
+│   │                         # arena, the daruma, lanterns, the lighthouse beam, the concert,
+│   │                         # emotes, rain, mist, fireflies, treasure digs
 │   ├── net/
 │   │   ├── connection.ts     # Socket lifecycle, heartbeat, backoff, clock sync
 │   │   ├── world-sync.ts     # Snapshot/delta application, events, outbound throttling
@@ -231,7 +231,7 @@ nagisa/
 │                             #   Chat, EmoteWheel, Joystick, Entry, Loader, Panels;
 │                             #   panels: People, Activities, Settings, Host, Board,
 │                             #   Collection, Island, Notes (dev);
-│                             #   game cards: QuizHud, FishingHud, TreasureHud,
+│                             #   game cards: QuizHud, DarumaHud, FishingHud, TreasureHud,
 │                             #   OmikujiCard, JankenCard, PlayerCard;
 │                             #   WelcomeCard (said once, to a first arrival)
 │

@@ -174,7 +174,7 @@ tier, where a player is, a player's rig, the server clock, and the sound bus), s
 imports the app.
 
 One module per thing the island does — `bells`, `fireworks`, `fishing`, `quiz-arena`,
-`emotes`, `lanterns`, `lighthouse`, `music`, `rain`, `fireflies`, `digs` — over two shared
+`emotes`, `lanterns`, `lighthouse`, `music`, `rain`, `fireflies`, `mist`, `digs`, `daruma` — over two shared
 ones:
 
 - **`materials`** — how an effect is drawn through the ink pipeline without disturbing it.

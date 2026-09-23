@@ -294,8 +294,8 @@ function ringStrip(cx: number, cz: number, inner: number, outer: number, seed: n
   return groundStrip(left, right);
 }
 
-/** A painted stroke from one point to another, tapering slightly at both ends. */
-function barStrip(x0: number, z0: number, x1: number, z1: number, width: number): THREE.BufferGeometry {
+/** A painted stroke from one point to another, tapering slightly at both ends. Also the race's lines on the sand. */
+export function barStrip(x0: number, z0: number, x1: number, z1: number, width: number): THREE.BufferGeometry {
   const steps = 16;
   const length = Math.hypot(x1 - x0, z1 - z0);
   const ux = (x1 - x0) / length;

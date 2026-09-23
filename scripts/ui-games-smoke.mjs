@@ -4,13 +4,14 @@
  * ================================
  *
  * The companion of `ui-smoke.mjs`, for the game cards and panels: the ○× quiz card, the
- * fishing line, the omikuji slip, the janken card, the player card, and the bodies of the
- * notice board, collection and island panels.
+ * だるまさんがころんだ card, the fishing line, the omikuji slip, the janken card, the player
+ * card, and the bodies of the notice board, collection and island panels.
  *
  * Each is mounted **on its own**, not through the overlay, so this test does not depend on
  * how (or whether) `Overlay.svelte` and `Panels.svelte` place them — that is `ui-smoke.mjs`'s
  * business. Then the stores are driven through every state the server can put them in (each
- * quiz phase, a bite and a catch, a slip, each step of a duel, a selected player, a profile,
+ * quiz phase, each phase of a race, a bite and a catch, a slip, each step of a duel, a
+ * selected player, a profile,
  * a guestbook, a private island) and each component is asserted to show its key text, to
  * call the right command when its controls are used, and not to throw.
  *
@@ -43,6 +44,7 @@ const COMPONENTS = [
   'IslandPanel',
   'TreasureHud',
   'HostPanel',
+  'DarumaHud',
 ];
 
 /**
@@ -55,7 +57,7 @@ const usedKeys = new Set();
 for (const name of COMPONENTS) {
   const src = readFileSync(join(root, 'apps/client/src/ui', `${name}.svelte`), 'utf8');
   for (const m of src.matchAll(/\$t\(\s*'([a-zA-Z0-9_.]+)'/g)) usedKeys.add(m[1]);
-  for (const m of src.matchAll(/'((?:quiz|fish|omikuji|janken|player|board|collection|island|ago|game)\.[a-zA-Z0-9_.]+)'/g)) {
+  for (const m of src.matchAll(/'((?:quiz|daruma|fish|omikuji|janken|player|board|collection|island|ago|game)\.[a-zA-Z0-9_.]+)'/g)) {
     usedKeys.add(m[1]);
   }
 }
@@ -238,8 +240,8 @@ for (const name of ${JSON.stringify(COMPONENTS)}) {
 }
 await settle();
 check('the cards stay out of sight while nothing is happening',
-  ['QuizHud', 'FishingHud', 'OmikujiCard', 'JankenCard', 'PlayerCard', 'TreasureHud'].every((n) => text(n).trim() === ''),
-  ['QuizHud', 'FishingHud', 'OmikujiCard', 'JankenCard', 'PlayerCard', 'TreasureHud'].map((n) => n + ':' + text(n).slice(0, 40)).join(' | '));
+  ['QuizHud', 'DarumaHud', 'FishingHud', 'OmikujiCard', 'JankenCard', 'PlayerCard', 'TreasureHud'].every((n) => text(n).trim() === ''),
+  ['QuizHud', 'DarumaHud', 'FishingHud', 'OmikujiCard', 'JankenCard', 'PlayerCard', 'TreasureHud'].map((n) => n + ':' + text(n).slice(0, 40)).join(' | '));
 
 // ---------------------------------------------------------------------------------------
 console.log('\\n○× quiz');
@@ -299,6 +301,78 @@ stores.self.update((s) => ({ ...s, zone: 'plaza', activity: null }));
 stores.quiz.set(null);
 await settle();
 check('and it is gone with the quiz', text('QuizHud').trim() === '');
+
+// ---------------------------------------------------------------------------------------
+console.log('\\nだるまさんがころんだ');
+const course = shared.DARUMA_COURSE;
+const beachName = shared.getZone(course.zone)?.name;
+const racersList = (() => { let v = []; stores.activities.subscribe((x) => (v = x))(); return v; })();
+const race = (phase, extra = {}) => ({ activity: 'd1', phase, startedAt: Date.now(), endsAt: Date.now() + 30_000, racing: [], places: [], ...extra });
+const withRace = (count) => stores.activities.set([...racersList, activity('d1', 'Daruma', 'live', { feature: 'daruma', zone: course.zone, participantCount: count })]);
+const call = () => box('DarumaHud').querySelector('.call')?.textContent.trim() ?? '';
+withRace(0);
+stores.self.update((s) => ({ ...s, zone: 'plaza', activity: null, mode: null }));
+stores.daruma.set(race('lobby'));
+await settle();
+check('nobody away from the course is shown a race they are not in', text('DarumaHud').trim() === '', text('DarumaHud'));
+stores.self.update((s) => ({ ...s, zone: course.zone }));
+await settle();
+check('on the beach, an empty lobby asks for players', text('DarumaHud').includes('Waiting for players') && text('DarumaHud').includes('freeze the moment it turns'), text('DarumaHud'));
+check('and counts the lobby down in whole seconds', /\\b(29|30)s\\b/.test(text('DarumaHud')), text('DarumaHud'));
+withRace(2);
+stores.self.update((s) => ({ ...s, activity: 'd1', mode: 'participant' }));
+await settle();
+check('with players, it calls them to the start line', text('DarumaHud').includes('Starting soon') && text('DarumaHud').includes(beachName), text('DarumaHud'));
+check('and tells a participant they are in', text('DarumaHud').includes('You’re in'), text('DarumaHud'));
+
+const startSpot = shared.darumaStartSpot(0);
+stores.selfPose.x = startSpot.x; stores.selfPose.z = startSpot.z;
+stores.daruma.set(race('walk', { startedAt: Date.now() - 1000, endsAt: Date.now() + 4000, raceEndsAt: Date.now() + 170_000, racing: ['p1', 'p2'] }));
+await settle(150);
+check('the chant is said a syllable at a time', call() === 'Daru', call());
+check('while it chants, the card says go', text('DarumaHud').includes('Move while it chants') && !text('DarumaHud').includes('Freeze!'), text('DarumaHud'));
+check('and how far you have to go', text('DarumaHud').includes((shared.darumaCourseLength() + 1).toFixed(1) + ' m to the line'), text('DarumaHud'));
+check('and how many are still racing', text('DarumaHud').includes('2 still racing'));
+check('and the race clock runs in minutes', /\\b2:(49|50)\\b/.test(text('DarumaHud')), text('DarumaHud'));
+stores.daruma.set(race('walk', { startedAt: Date.now() - 4990, endsAt: Date.now() + 10, raceEndsAt: Date.now() + 160_000, racing: ['p1', 'p2'] }));
+await settle(150);
+check('when the chant runs out the card turns, before the look arrives', text('DarumaHud').includes('Freeze!') && call() === 'Freeze!', text('DarumaHud'));
+stores.daruma.set(race('look', { startedAt: Date.now() - 600, endsAt: Date.now() + 2400, raceEndsAt: Date.now() + 160_000, racing: ['p1', 'p2'], caught: ['p1'] }));
+await settle();
+check('seen moving: back to the start', text('DarumaHud').includes('Freeze!') && text('DarumaHud').includes('Seen moving — back to the start'), text('DarumaHud'));
+check('and how many were sent back', text('DarumaHud').includes('1 sent back'), text('DarumaHud'));
+stores.daruma.set(race('look', { startedAt: Date.now() - 600, endsAt: Date.now() + 2400, raceEndsAt: Date.now() + 160_000, racing: ['p1', 'p2'] }));
+await settle();
+check('standing still, you are still racing', text('DarumaHud').includes('m to the line') && !text('DarumaHud').includes('Seen moving'), text('DarumaHud'));
+stores.daruma.set(race('walk', { endsAt: Date.now() + 3000, raceEndsAt: Date.now() + 150_000, racing: ['p1'], places: [{ id: 'p2', name: 'Keeper' }] }));
+await settle();
+check('whoever is home is on the card', box('DarumaHud').querySelector('.places')?.textContent.includes('Keeper') && text('DarumaHud').includes('1 still racing'), text('DarumaHud'));
+stores.daruma.set(race('walk', { endsAt: Date.now() + 3000, raceEndsAt: Date.now() + 150_000, racing: [], places: [{ id: 'p2', name: 'Keeper' }, { id: 'p1', name: 'Sawada' }] }));
+await settle();
+check('home yourself: your place', text('DarumaHud').includes('Home — place 2!') && text('DarumaHud').includes('Sawada (you)'), text('DarumaHud'));
+stores.daruma.set(race('finished', { endsAt: Date.now() + 8000, raceEndsAt: Date.now() + 150_000, places: [{ id: 'p2', name: 'Keeper' }, { id: 'p1', name: 'Sawada' }] }));
+await settle();
+check('the finish names the places in order', /Race over.*🥇\\s*Keeper.*🥈\\s*Sawada \\(you\\)/.test(text('DarumaHud')), text('DarumaHud'));
+check('and has no clock', !box('DarumaHud').querySelector('[role="timer"]'));
+stores.daruma.set(race('look', { endsAt: Date.now() + 2000, raceEndsAt: Date.now() + 150_000, racing: ['p2'] }));
+await settle();
+check('a racer who dropped out keeps the card, as a spectator', text('DarumaHud').includes('Out of the race — watching now'), text('DarumaHud'));
+stores.self.update((s) => ({ ...s, activity: null, mode: null }));
+stores.daruma.set(race('walk', { activity: 'd2', endsAt: Date.now() + 3000, raceEndsAt: Date.now() + 150_000, racing: ['p2'] }));
+await settle();
+check('someone on the beach who is not racing is watching', text('DarumaHud').includes('Watching') && !text('DarumaHud').includes('Out of the race'), text('DarumaHud'));
+stores.quiz.set({ activity: 'q9', phase: 'lobby', round: 0, totalRounds: 8, questionId: null, endsAt: Date.now() + 20_000, alive: [] });
+await settle();
+check('a quiz at the same time keeps its slot; the race card goes under it', box('DarumaHud').querySelector('section')?.classList.contains('below'));
+stores.quiz.set(null);
+stores.daruma.set(race('finished', { activity: 'd2', endsAt: Date.now() + 8000, raceEndsAt: Date.now() + 150_000, racing: ['p2'] }));
+await settle();
+check('a race nobody finished says so', text('DarumaHud').includes('Nobody made it home'), text('DarumaHud'));
+stores.daruma.set(null);
+stores.activities.set(racersList);
+stores.self.update((s) => ({ ...s, zone: 'plaza' }));
+await settle();
+check('and it is gone with the race', text('DarumaHud').trim() === '');
 
 // ---------------------------------------------------------------------------------------
 console.log('\\nFishing');
@@ -696,7 +770,7 @@ check('on a public island: its name and that you are here', text('IslandPanel').
 
 // ---------------------------------------------------------------------------------------
 console.log('\\nLanguages');
-const RAW_KEY = /\\b(quiz|fish|omikuji|janken|player|board|collection|island|rarity|ago|game|hand)\\.[a-zA-Z]+/;
+const RAW_KEY = /\\b(quiz|daruma|fish|omikuji|janken|player|board|collection|island|rarity|ago|game|hand)\\.[a-zA-Z]+/;
 async function tour(lang) {
   stores.settings.update((s) => ({ ...s, lang }));
   const seen = [];
@@ -711,6 +785,16 @@ async function tour(lang) {
   stores.quiz.set({ ...quizBase, activity: 'qt-' + lang, phase: 'finished', round: 1, endsAt: Date.now() + 8000, alive: [], winners: ['p1', 'p2'] });
   await look('quiz finished');
   stores.quiz.set(null);
+  stores.self.update((s) => ({ ...s, zone: shared.DARUMA_COURSE.zone }));
+  const raceIn = (phase, extra = {}) => ({ activity: 'dt-' + lang, phase, startedAt: Date.now(), endsAt: Date.now() + 30_000, racing: [], places: [], ...extra });
+  stores.daruma.set(raceIn('lobby')); await look('daruma lobby');
+  stores.daruma.set(raceIn('walk', { endsAt: Date.now() + 5000, raceEndsAt: Date.now() + 170_000, racing: ['p1'] })); await look('daruma walk');
+  stores.daruma.set(raceIn('look', { endsAt: Date.now() + 2500, raceEndsAt: Date.now() + 170_000, racing: ['p1', 'p2'], caught: ['p1'] })); await look('daruma look');
+  stores.daruma.set(raceIn('walk', { endsAt: Date.now() + 5000, raceEndsAt: Date.now() + 170_000, places: [{ id: 'p1', name: 'Sawada' }] })); await look('daruma home');
+  stores.daruma.set(raceIn('finished', { endsAt: Date.now() + 8000, raceEndsAt: Date.now() + 170_000, places: [{ id: 'p1', name: 'Sawada' }] })); await look('daruma finished');
+  stores.daruma.set(raceIn('finished', { activity: 'dx-' + lang, endsAt: Date.now() + 8000, raceEndsAt: Date.now() + 170_000 })); await look('daruma nobody');
+  stores.daruma.set(null);
+  stores.self.update((s) => ({ ...s, zone: 'plaza' }));
   stores.fishing.set(line('waiting')); await look('fish waiting');
   stores.fishing.set(line('bite', { biteAt: performance.now(), window: 1200 })); await look('fish bite');
   stores.fishing.set(line('caught', { caught: { fish: 'maguro', size: 180, newSpecies: true, record: true, personalBest: true } })); await look('fish caught');
@@ -737,11 +821,11 @@ async function tour(lang) {
   return seen.map(([, t]) => t).join('\\n');
 }
 const zh = await tour('zh');
-for (const want of ['○×问答', '快提竿！', '金枪鱼', '中吉', '猜拳', '接受', '留言簿', '鱼类图鉴', '复制邀请链接', '公共岛屿', '禁言']) {
+for (const want of ['一二三木头人', '不许动！', '第 1 个到达终点！', '○×问答', '快提竿！', '金枪鱼', '中吉', '猜拳', '接受', '留言簿', '鱼类图鉴', '复制邀请链接', '公共岛屿', '禁言']) {
   check('zh says ' + want, zh.includes(want));
 }
 const ja = await tour('ja');
-for (const want of ['○×クイズ', '釣り上げる！', 'マグロ', '中吉', 'じゃんけん', '受ける', '寄せ書き', '魚図鑑', '招待リンクをコピー', 'みんなの島', '発言を止める']) {
+for (const want of ['だるまさんがころんだ', '止まれ！', '1着でゴール！', '○×クイズ', '釣り上げる！', 'マグロ', '中吉', 'じゃんけん', '受ける', '寄せ書き', '魚図鑑', '招待リンクをコピー', 'みんなの島', '発言を止める']) {
   check('ja says ' + want, ja.includes(want));
 }
 check('en shows the English reading of a fortune, zh and ja do not', !zh.includes('ちゅうきち') && !ja.includes('Middle blessing'));

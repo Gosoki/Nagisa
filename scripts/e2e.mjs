@@ -642,6 +642,30 @@ async function main() {
     check('the lobby counts down on the server clock', !!lobby && lobby.quiz.endsAt > Date.now() - 2000);
   }
 
+  // -- だるまさんがころんだ ------------------------------------------------
+  console.log('\nだるまさんがころんだ');
+  // The same, for a race: one course, so one race at a time, and the programme may have one on.
+  const raceOn = () => {
+    const views = new Map();
+    for (const f of jan.frames) {
+      for (const a of f.t === 'snapshot' ? f.activities : f.t === 'delta' ? (f.activities ?? []) : []) views.set(a.id, a);
+    }
+    return [...views.values()].some((a) => a.feature === 'daruma' && a.state === 'live');
+  };
+  check('the snapshot carries the race, or that there is none', jan.frames.some((f) => f.t === 'snapshot' && 'daruma' in f));
+  const racing = raceOn();
+  const adminBefore = adminFrames.length;
+  adminSocket.send(JSON.stringify({ t: 'host_schedule', template: 'daruma', inMin: 0 }));
+  if (racing) {
+    await sleep(800);
+    const refused = adminFrames.slice(adminBefore).find((f) => f.t === 'error');
+    check('a second race while one is on is refused as already running', refused?.key === 'already_running', refused);
+  } else {
+    const lobby = await jan.wait('delta', (f) => f.daruma?.phase === 'lobby', 4000);
+    check('a race put on now opens its lobby', !!lobby, lobby?.daruma);
+    check('nobody is racing before the lobby closes', !!lobby && lobby.daruma.racing.length === 0 && lobby.daruma.endsAt > Date.now() - 2000);
+  }
+
   // -- Treasure hunt ------------------------------------------------------
   console.log('\nTreasure hunt');
   // As with the quiz, the programme may already have a hunt on (the small hours of the island

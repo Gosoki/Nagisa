@@ -34,6 +34,7 @@ import {
   type ActivityId,
   type AnnouncementView,
   type ClientMessage,
+  type DarumaView,
   type Emote,
   type Hand,
   type PlayerId,
@@ -56,6 +57,7 @@ import {
   announcements,
   checkinList,
   currentToast,
+  daruma,
   fishing,
   followTarget,
   guestbook,
@@ -166,6 +168,9 @@ export class WorldSync {
   /** Something arrived that is for you alone — a whisper, a friend coming on. The app chimes. */
   onForYou: (() => void) | null = null;
 
+  /** The island put us somewhere, facing `yaw`. The app turns the camera to look that way too. */
+  onPlaced: ((yaw: number) => void) | null = null;
+
   private readonly unsubscribers: Array<() => void> = [];
 
   constructor(
@@ -237,6 +242,19 @@ export class WorldSync {
         break;
 
       case 'correction':
+        // The island moved us — a game sent us back to its start. Whatever we were doing where
+        // we stood is over: a walk under way, following someone, a seat. We face the way it
+        // put us facing.
+        if (msg.reason === 'teleport') {
+          if (get(self).seated) {
+            this.local.setSeated(false);
+            self.update((s) => ({ ...s, seated: false }));
+          }
+          followTarget.set(null);
+          this.local.teleport(msg.pos[0], msg.pos[1], msg.pos[2], msg.yaw);
+          this.onPlaced?.(msg.yaw);
+          break;
+        }
         // The server disagreed about where we are. Snap, and say nothing — corrections
         // are almost always a terrain edge case, not cheating, and a warning would only
         // make an invisible problem visible.
@@ -380,6 +398,7 @@ export class WorldSync {
     zonePopulation.set(snap.zonePopulation);
     guestbook.set([...snap.guestbook].sort((a, b) => b.at - a.at));
     quiz.set(snap.quiz);
+    daruma.set(snap.daruma ?? null);
 
     // Adopt our own server-side attachment state, which matters after a resume: you
     // rejoin already attached to the activity you were in, checked in if you had.
@@ -558,6 +577,7 @@ export class WorldSync {
       guestbook.update((list) => list.filter((g) => !gone.has(g.id)));
     }
     if (delta.quiz !== undefined) this.onQuiz(delta.quiz);
+    if (delta.daruma !== undefined) this.onDaruma(delta.daruma);
 
     if (delta.events?.length) {
       for (const event of delta.events) this.onEvent(event);
@@ -802,6 +822,24 @@ export class WorldSync {
     if (next.phase === 'reveal' && before?.phase !== 'reveal' && next.fell?.includes(me)) notify(tr('quiz.eliminated'), 'neutral');
     else if (next.phase === 'reveal' && before?.phase !== 'reveal' && next.alive.includes(me)) notify(tr('quiz.survived'), 'good');
     if (next.phase === 'finished' && before?.phase !== 'finished' && next.winners?.includes(me)) notify(tr('quiz.won'), 'good', 6000);
+  }
+
+  private onDaruma(next: DarumaView | null): void {
+    const before = get(daruma);
+    daruma.set(next);
+    const me = this.selfId();
+    if (!next || !me) return;
+    const same = before?.activity === next.activity;
+    // Said once each: seen moving (the card says it too, but the card may be out of view),
+    // and home.
+    if (next.caught?.includes(me) && !(same && before?.phase === next.phase && before.caught?.includes(me))) {
+      notify(tr('daruma.caughtYou'), 'neutral');
+    }
+    const place = next.places.findIndex((p) => p.id === me);
+    if (place >= 0 && !(same && before?.places.some((p) => p.id === me))) {
+      notify(tr('daruma.home', { n: place + 1 }), 'good', 5000);
+      this.local.character.playEmote(AnimState.Cheer, 1.6);
+    }
   }
 
   /** Forget in-flight game state: a new connection or a new room starts clean. */

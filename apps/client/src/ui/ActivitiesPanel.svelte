@@ -34,9 +34,13 @@
     return a.state === ActivityState.Live && a.board ? a.board.slice(0, 3) : [];
   }
 
-  /** A score in the activity's own unit: the derby measures fish, in centimetres. */
+  /**
+   * A score in the activity's own unit: the derby measures fish, in centimetres, and
+   * だるまさんがころんだ how long each took to get home, in seconds.
+   */
   function score(a: ActivityView, value: number): string {
     const n = Number.isInteger(value) ? String(value) : value.toFixed(1);
+    if (a.feature === 'daruma') return $t('game.seconds', { n });
     return a.feature === 'derby' ? `${n} cm` : n;
   }
 </script>

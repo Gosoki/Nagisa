@@ -26,6 +26,7 @@ import {
   type ActivityView,
   type AnnouncementView,
   type BadgeId,
+  type DarumaView,
   type GuestbookEntry,
   type Hand,
   type PlayerId,
@@ -526,6 +527,9 @@ export const profile: Writable<ProfileView | null> = writable(null);
 
 /** The ○× quiz in progress in this room, if any. */
 export const quiz: Writable<QuizView | null> = writable(null);
+
+/** だるまさんがころんだ in progress in this room, if any. */
+export const daruma: Writable<DarumaView | null> = writable(null);
 
 /** The notice board's signatures, newest first. */
 export const guestbook: Writable<GuestbookEntry[]> = writable([]);

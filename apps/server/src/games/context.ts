@@ -12,11 +12,13 @@ import type {
   AnnouncementView,
   BadgeId,
   DailyKind,
+  DarumaView,
   ErrorCode,
   PlayerId,
   QuizView,
   RoomId,
   ServerMessage,
+  Vec3,
   WorldEvent,
 } from '@nagisa/shared';
 import type { ActivityManager } from '../activity.js';
@@ -51,6 +53,14 @@ export interface GameRoom {
 
   /** The quiz view changed (null = over). */
   setQuiz(view: QuizView | null): void;
+  /** The だるまさんがころんだ view changed (null = over). */
+  setDaruma(view: DarumaView | null): void;
+  /**
+   * Move a player somewhere by the game's decision, and tell their client (a `teleport`
+   * correction). Whatever they were doing where they stood ends as if they had walked off: a
+   * line in the water is reeled in, a seat let go.
+   */
+  relocate(player: Player, pos: Vec3, yaw: number): void;
   /** An announcement from the island itself rather than a person. */
   announceSystem(text: string, scope: AnnouncementView['scope'], priority?: AnnouncementView['priority']): void;
 

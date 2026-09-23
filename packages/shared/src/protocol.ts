@@ -315,7 +315,8 @@ export interface ActivityView {
   feature: ActivityFeature | null;
   /**
    * A small leaderboard, for activities that keep score (the derby's biggest fish, the
-   * quiz's survivors). Top few only; `score` is in the activity's own unit.
+   * treasure hunt's finds, だるまさんがころんだ's places and the seconds each took). Top few
+   * only; `score` is in the activity's own unit.
    */
   board?: Array<{ id: PlayerId; name: string; score: number }>;
   /** For a treasure hunt: how many things are still in the ground. */
@@ -784,6 +785,8 @@ export interface ServerSnapshot {
   guestbook: GuestbookEntry[];
   /** The ○× quiz in progress, if any. */
   quiz: QuizView | null;
+  /** だるまさんがころんだ in progress, if any. */
+  daruma: DarumaView | null;
 }
 
 /**
@@ -819,12 +822,16 @@ export interface ServerDelta {
   guestbookRemoved?: string[];
   /** The quiz changed phase. `null` means it is over and gone. Absent means unchanged. */
   quiz?: QuizView | null;
+  /** だるまさんがころんだ changed: a phase, a catch, a place. `null` = over; absent = unchanged. */
+  daruma?: DarumaView | null;
 }
 
 /**
  * Authoritative correction of a client's own position. Sent when the client's reported
  * transform failed validation (speed budget, walkable bounds, or an activity that pins
- * players to a stage). The client must hard-snap, not blend.
+ * players to a stage), and with `teleport` when the island itself moved the player — a game
+ * sending them back to its start. The client must hard-snap, not blend; a `teleport` also
+ * ends whatever the player was doing where they were (a walk under way, a seat).
  */
 export interface ServerCorrection {
   t: 'correction';
@@ -980,6 +987,33 @@ export interface QuizView {
   replay?: boolean;
   /** Present in `finished`. */
   winners?: PlayerId[];
+}
+
+/**
+ * だるまさんがころんだ, as everyone sees it.
+ *
+ * `lobby` gathers racers at the start line. Then the oni turns its back and chants (`walk`),
+ * and turns round to look (`look`), over and over: a `walk` ends — the oni turns — at
+ * `endsAt`, and the chant is paced across `startedAt`…`endsAt`, so a client can say the last
+ * syllable and show the turn at that moment on the server's clock rather than when the next
+ * view arrives. Whoever the oni sees moving in a `look` is `caught` and sent back to the start.
+ * The race ends when three are home (`DARUMA_PLACES`), when nobody is left racing, or at
+ * `raceEndsAt`; `finished` names the places and then the view goes away.
+ */
+export interface DarumaView {
+  activity: ActivityId;
+  phase: 'lobby' | 'walk' | 'look' | 'finished';
+  /** Server epoch ms at which this phase began, and at which it ends. */
+  startedAt: number;
+  endsAt: number;
+  /** Server epoch ms at which the race is called, however far anyone has got. Absent in the lobby. */
+  raceEndsAt?: number;
+  /** Still racing: set off from the start, not yet over the line, not dropped out. */
+  racing: PlayerId[];
+  /** Over the line, in order — first, second, third — with the names they crossed under. */
+  places: Array<{ id: PlayerId; name: string }>;
+  /** Sent back to the start in this phase: seen moving in a `look`. */
+  caught?: PlayerId[];
 }
 
 /**

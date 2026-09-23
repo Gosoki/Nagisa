@@ -81,6 +81,9 @@ export let INTERACTABLES: readonly Interactable[] = [];
 /** The ○× quiz arena, if the map has one. */
 export let QUIZ_ARENA: MapWorld['quizArena'] | null = null;
 
+/** The だるまさんがころんだ course, if the map has one. See `games/daruma.ts`. */
+export let DARUMA_COURSE: MapWorld['darumaCourse'] | null = null;
+
 /** Firework shores and launch sites, if the map has any. */
 export let FIREWORKS: MapWorld['fireworks'] | null = null;
 
@@ -695,6 +698,7 @@ onMapChange((pack) => {
   LANDMARKS = w.landmarks;
   INTERACTABLES = w.interactables;
   QUIZ_ARENA = w.quizArena ?? null;
+  DARUMA_COURSE = w.darumaCourse ?? null;
   FIREWORKS = w.fireworks ?? null;
   // A map with no programme still has a day: each template once, evenly spread.
   PROGRAMME =

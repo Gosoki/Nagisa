@@ -43,6 +43,7 @@ import { randomUUID } from 'node:crypto';
 import {
   type DailyKind,
   ActivityState,
+  DARUMA_COURSE,
   ErrorCode,
   PROTOCOL,
   Role,
@@ -55,6 +56,7 @@ import {
   type ActivityView,
   type AnnouncementView,
   type BadgeId,
+  type DarumaView,
   type Emote,
   type PackedTransforms,
   type PlayerId,
@@ -65,6 +67,7 @@ import {
   type ServerDelta,
   type ServerMessage,
   type ServerSnapshot,
+  type Vec3,
   type WorldEvent,
   type ZoneId,
 } from '@nagisa/shared';
@@ -79,6 +82,7 @@ import type { GameRoom } from './games/context.js';
 import { Fishing } from './games/fishing.js';
 import { Janken } from './games/janken.js';
 import { QuizRunner } from './games/quiz.js';
+import { DarumaRunner } from './games/daruma.js';
 import { Fireworks } from './games/fireworks.js';
 import { TreasureHunt } from './games/treasure.js';
 import { recordDaily } from './games/daily.js';
@@ -117,7 +121,8 @@ function isQuietDelta(d: ServerDelta): boolean {
     !d.events &&
     !d.guestbook &&
     !d.guestbookRemoved &&
-    d.quiz === undefined
+    d.quiz === undefined &&
+    d.daruma === undefined
   );
 }
 
@@ -187,6 +192,7 @@ export class Room implements GameRoom {
   readonly interactions: Interactions;
   readonly guestbook: Guestbook;
   private quiz: QuizRunner | null = null;
+  private daruma: DarumaRunner | null = null;
 
   private readonly players = new Map<PlayerId, Player>();
   private readonly sessions = new Map<PlayerId, Session>();
@@ -213,6 +219,7 @@ export class Room implements GameRoom {
   private announcements: AnnouncementView[] = [];
   private lastZonePopulation: Record<ZoneId, number> | null = null;
   private quizView: QuizView | null = null;
+  private darumaView: DarumaView | null = null;
 
   // --- per-tick accumulators, cleared after every broadcast --------------------------
   private pendingJoins: PlayerView[] = [];
@@ -226,6 +233,8 @@ export class Room implements GameRoom {
   private pendingEvents: WorldEvent[] = [];
   /** Set when the quiz view changed this tick; `value` may be null (the quiz is over). */
   private pendingQuiz: { value: QuizView | null } | null = null;
+  /** The same, for だるまさんがころんだ. */
+  private pendingDaruma: { value: DarumaView | null } | null = null;
 
   private readonly persistFn: () => void;
   private readonly onPopulation: () => void;
@@ -453,6 +462,7 @@ export class Room implements GameRoom {
     this.interactions.onLeave(playerId);
     this.guestbook.onLeave(playerId);
     this.quiz?.onLeave(playerId);
+    this.daruma?.onLeave(playerId);
     this.releaseSeat(player);
 
     this.players.delete(playerId);
@@ -596,6 +606,19 @@ export class Room implements GameRoom {
     this.pendingQuiz = { value: view };
   }
 
+  setDaruma(view: DarumaView | null): void {
+    this.darumaView = view;
+    this.pendingDaruma = { value: view };
+  }
+
+  relocate(player: Player, pos: Vec3, yaw: number): void {
+    const zone = player.zone;
+    this.sendTo(player.id, player.relocate(pos, yaw, Date.now()));
+    // As if they had walked there: a line left behind is reeled in, a seat left is let go.
+    this.onMoved(player);
+    if (player.zone !== zone) this.markPlayerChanged(player.id, { zone: player.zone });
+  }
+
   persist(): void {
     this.persistFn();
   }
@@ -677,10 +700,24 @@ export class Room implements GameRoom {
         if (activity.state === ActivityState.Live) this.activities.transition(activity, ActivityState.Ended);
       });
     }
+    // One course, so one race at a time — and none on a map without a course.
+    if (to === ActivityState.Live && activity.feature === 'daruma') {
+      if (!this.daruma && DARUMA_COURSE) {
+        this.daruma = new DarumaRunner(this, activity.id, Date.now());
+      } else if (this.daruma?.activity !== activity.id) {
+        queueMicrotask(() => {
+          if (activity.state === ActivityState.Live) this.activities.transition(activity, ActivityState.Ended);
+        });
+      }
+    }
     if (to === ActivityState.Ended || to === ActivityState.Cancelled) {
       if (this.quiz && this.quiz.activity === activity.id) {
         this.quiz.abort();
         this.quiz = null;
+      }
+      if (this.daruma && this.daruma.activity === activity.id) {
+        this.daruma.abort();
+        this.daruma = null;
       }
       if (activity.feature === 'treasure') this.treasure.finish(activity, to === ActivityState.Ended);
       if (activity.feature === 'derby' && to === ActivityState.Ended) this.fishing.finishDerby(activity);
@@ -742,6 +779,7 @@ export class Room implements GameRoom {
       zonePopulation: this.computeZonePopulation(),
       guestbook: this.guestbook.view(),
       quiz: this.quizView,
+      daruma: this.darumaView,
     };
   }
 
@@ -793,6 +831,7 @@ export class Room implements GameRoom {
     if (this.pendingChats.length) delta.chats = this.pendingChats;
     if (this.pendingEvents.length) delta.events = this.pendingEvents;
     if (this.pendingQuiz) delta.quiz = this.pendingQuiz.value;
+    if (this.pendingDaruma) delta.daruma = this.pendingDaruma.value;
 
     const board = this.guestbook.drain();
     if (board.added.length) delta.guestbook = board.added;
@@ -821,6 +860,7 @@ export class Room implements GameRoom {
     this.pendingChats = [];
     this.pendingEvents = [];
     this.pendingQuiz = null;
+    this.pendingDaruma = null;
   }
 
   private broadcast(delta: ServerDelta): void {
@@ -848,6 +888,15 @@ export class Room implements GameRoom {
         const activity = this.activities.get(this.quiz.activity);
         this.quiz = null;
         // The quiz has run its course: the activity is over, whatever the clock says.
+        if (activity && activity.state === ActivityState.Live) this.activities.transition(activity, ActivityState.Ended, now);
+      }
+    }
+    if (this.daruma) {
+      this.daruma.tick(now);
+      if (this.daruma.finished) {
+        const activity = this.activities.get(this.daruma.activity);
+        this.daruma = null;
+        // The same for a race that is over.
         if (activity && activity.state === ActivityState.Live) this.activities.transition(activity, ActivityState.Ended, now);
       }
     }
@@ -995,8 +1044,8 @@ export class Room implements GameRoom {
       if (!activity) continue;
       // A quiz is its runner, and the runner did not survive the restart: a quiz restored as
       // live would sit on the board doing nothing (and block a new one). It is over. So is a
-      // treasure hunt, whose spots were never written down.
-      if ((activity.feature === 'quiz' || activity.feature === 'treasure') && activity.state === ActivityState.Live) {
+      // treasure hunt, whose spots were never written down, and a race, which was its runner too.
+      if ((activity.feature === 'quiz' || activity.feature === 'treasure' || activity.feature === 'daruma') && activity.state === ActivityState.Live) {
         activity.state = ActivityState.Ended;
         activity.closedAt = Date.now();
       }

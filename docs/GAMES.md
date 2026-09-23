@@ -12,8 +12,9 @@ sides hold to. Read with [PROTOCOL.md](PROTOCOL.md) (the transport) and
 |---|---|---|
 | **Private islands** | Make your own shard, get a five-letter code, send the link (`?island=CODE`). Whoever made it keeps it — as its admin — whenever they come back. | Server |
 | **Visitor key** | A random key the browser keeps so stamps, the fish book and badges survive between visits. No account; the server stores a hash. | Client mints, server hashes |
-| **The island's day** | Every room runs the same programme on the island clock (a day is 90 real minutes): the treasure hunt in the small hours, the fishing derby at dawn, the morning assembly, quizzes mid-morning and afternoon, the market at noon, the lamp at dusk, lanterns, the concert, fireworks after dark. | Server scheduler |
+| **The island's day** | Every room runs the same programme on the island clock (a day is 90 real minutes): the treasure hunt in the small hours, the fishing derby at dawn, the morning assembly, quizzes mid-morning and afternoon, the market at noon, だるまさんがころんだ on the beach after it, the lamp at dusk, lanterns, the concert, fireworks after dark. | Server scheduler |
 | **○× quiz** | True/false statements; contestants *run* to the ○ or × circle on the plaza; wrong ones are out; last standing wins. | Server reads positions |
+| **だるまさんがころんだ** | Red light, green light (一二三木头人) on the beach: creep up on the daruma while it chants with its back turned, freeze when it turns — anyone it sees moving goes back to the start. First three home place. | Server reads positions |
 | **Fishing** | Cast at a pier end or the beach, strike when the float goes under, land something from a table of 19 species. A derby scores the biggest fish during the dawn activity. | Server rolls every catch |
 | **Omikuji** | One fortune a day (JST) at the shrine; drawing again returns the same slip. | Server |
 | **Stamp rally** | A stamp stand in each of the eight places. Collect them all for the *Island Walker* badge. | Server checks you are at the stand |
@@ -22,7 +23,7 @@ sides hold to. Read with [PROTOCOL.md](PROTOCOL.md) (the transport) and
 | **Bells** | The four bells ring, and everybody within earshot hears them. | Server (cooldown) |
 | **Guestbook** | Sign the notice board; it survives restarts. | Server |
 | **Whispers, dice** | `/w name …` reaches one person only; `/roll` rolls for everyone to see. | Server |
-| **Badges** | Nine, earned by doing the above; wear one under your name. | Server |
+| **Badges** | Ten, earned by doing the above; wear one under your name. | Server |
 | **Languages** | The interface speaks 中文, 日本語 and English. | Client |
 
 The protocol version is **2**. A v1 client is refused at the handshake with
@@ -91,7 +92,8 @@ are capped (least recently seen evicted first) so the store cannot grow without 
 **Badges** (`games/badges.ts`): *walker* (every stamp), *angler* (10 catches),
 *master-angler* (every species but the boot), *quiz-champ* (win a quiz), *derby-champ* (win
 the derby), *lucky* (draw 大吉), *janken* (10 wins), *treasure* (3 finds, over every hunt),
-*regular* (today's tasks done on 7 days). Earning one broadcasts a `badge` event.
+*regular* (today's tasks done on 7 days), *daruma* (first home in a race of two or more).
+Earning one broadcasts a `badge` event.
 `set_title` wears one you have (or `null`); it appears as `PlayerView.title`.
 
 ---
@@ -142,6 +144,75 @@ The badge needs a field of at least two — a quiz won alone still counts toward
 is not a championship. There is one arena, so one quiz at a time: an admin asking for another
 while one runs is refused (`already_running`), and a scheduled quiz that goes live during an ad-hoc one is
 ended at once rather than shown as live with nothing happening.
+
+### だるまさんがころんだ (`feature: 'daruma'`, template `daruma`, venue: beach)
+
+The course (`MapWorld.darumaCourse`) is a straight lane across the level sand of the beach —
+22 m from the start line to the goal line, 9 m wide — with the oni, a big red daruma, standing
+2.5 m beyond the goal (`darumaOni`). The geometry lives in `packages/shared/src/games/daruma.ts`
+so both sides agree on it. When the activity goes live the server runs a `DarumaRunner`,
+published as `DarumaView` in `snapshot.daruma` / `delta.daruma` (three-valued, like the quiz):
+
+1. **lobby** (30 s) — whoever has joined the activity **as a participant** when it closes
+   races; nobody else — the beach is also where people fish and watch the sunset. Each racer
+   is moved to a start place of their own just behind the start line (`darumaStartSpot`:
+   the middle first, then out to either side, three rows deep), by a `teleport` correction.
+   If nobody has joined, the lobby opens again, for as long as a whole race still fits
+   before the activity's end; after that the game is over, quietly.
+2. **walk** (2–5 s, picked by the server each time) — the oni has its back turned and chants
+   だ・る・ま・さ・ん・が・こ・ろ・ん・だ. `startedAt`…`endsAt` is the chant: the client says
+   it syllable by syllable across that span and shows the turn at `endsAt` on the server's
+   clock, so everyone's screen turns at the same moment whatever their connection.
+3. **look** (2–3 s) — it has turned round. Its `startedAt` is the chant's scheduled end, not
+   the tick that noticed it, so the grace is the same for everybody: after
+   `LOOK_GRACE_MS` (400 ms) the server takes each racer's **last validated position**, and
+   anyone who then strays more than `STILL_TOLERANCE_M` (0.6 m) from it is **caught** — sent
+   back to their start place, where they carry on (`caught` lists them for that phase). Only
+   *where* someone stands counts: turning on the spot, dancing or hopping in place is not
+   moving, and a keep-alive that repeats a position changes nothing.
+4. Walk and look alternate until three are home (`DARUMA_PLACES`), nobody is left racing, or
+   the race's time is up (`raceEndsAt`: 3 min, and never so late that the finished card would
+   be cut off by the activity's end). Crossing the goal line within the lane's width is a
+   place: `places` in the view (with the names they crossed under), and on the activity's
+   `board` with the seconds each took. The first home in a race of two or more gets *daruma*.
+5. **finished** (8 s) names the places, the beach hears the podium, then the view is cleared
+   and the activity ends.
+
+**The careful step.** The island's walk is 9 m/s and its run 18: a lane that fits on a beach
+would be crossed before the first chant was over. So while racing (from the first chant until
+home or out of the race) a player moves at `DARUMA_STEP_SPEED` (1.6 m/s), about four or five
+chants for the lane. The client caps itself (`LocalPlayer.speedCap`); the server holds racers
+to it by measuring each from where they stood when the oni last turned its back — further than
+the step allows in the time since, plus 1.5 m of slack, and they are caught too. An honest
+client never meets that check; it is what stops a modified one sprinting the chant.
+
+**Being moved.** A racer's client keeps reporting from where it was until the `teleport`
+correction reaches it, and one of those stale reports could pass the speed check and undo the
+move. So `Player.relocate` fences the spot: every report more than a metre from it is answered
+with the correction again, until one comes from there. Any other teleport (a room switch)
+takes the fence down. The client treats a `teleport` as the island moving it — a walk under
+way, a follow and a seat all end — and faces the way it was put facing.
+
+**Who is judged, and who drops out.** Only racers. The audience, passers-by and anyone who
+joined after the lobby closed can walk all over the lane. A racer drops out — no longer judged,
+no longer held to the step — by leaving the room (for good, or for another island), by
+leaving the activity or switching to watching, or by wandering well off the lane (3 m past its
+side, or 6 m behind the start). A racer whose connection drops is simply still: they cannot be
+seen moving while away, and carry on when they resume; if their grace runs out they have left.
+Nobody left racing ends the race. A racer sitting or fishing when the lobby closes is stood up
+and reeled in by the move to the start line, as walking away would; dancing is only a pose, and
+dancing in place through a look is not moving.
+
+There is one course, so one race at a time: `host_schedule` refuses a second
+(`already_running`), and a scheduled one going live during another is ended at once. A race
+live across a restart is over, like a quiz. Host ending it early: the runner stops without
+ceremony and the card goes.
+
+The client shows the card (`ui/DarumaHud.svelte`: the chant large, **止まれ！** when it turns,
+how far you have to go, "caught", your place, the podium) to racers, anyone on the beach and
+anyone attending, and draws the course on the sand (`fx/daruma.ts`): an indigo start line, a
+vermilion goal line, and the doll, which faces away while it chants and turns round with a
+wooden *kan!* of hyōshigi — both timed, like the card, on the chant's `endsAt`.
 
 ### Fishing (`effect: 'fish'` interactables; derby: `feature: 'derby'`)
 
@@ -249,7 +320,9 @@ One sky for every island, worked out from the server clock alone, like the time 
 the clock is cut into 15-minute spells and each spell's weather is a hash of its index —
 clear about 60 % of the time, cloudy 25 %, rain 15 % — eased into over 90 s. Nothing about
 it is sent. The client greys and dims the sky and closes the cloud deck as it clouds over,
-draws rain around the camera and plays it under the zone's ambience, puts an umbrella in
+draws rain around the camera and plays it under the zone's ambience, gathers a band of mist
+round the mountain's shoulders (thin when it is grey, thick in the rain, drifting slowly about
+the summit in the air's own colour), puts an umbrella in
 everyone's hand once it rains properly (a lantern in the lantern walk comes first), keeps the
 shrine's fireflies in the grass, shows the weather beside the place name (a moon on a clear
 night), and says so when rain starts. The server's one use of it: in the
@@ -302,7 +375,7 @@ language (`i18n/core.ts`, `error.<key>`):
 `forbidden` · `busy` · `already_stamped` · `not_open` · `room_not_found` · `invalid` ·
 `too_long {max}` · `empty` · `no_hunt` · `islands_busy` (too many islands awake to make or
 wake another) · `schedule_full` (too many extra activities on the board) · `already_running`
-(a quiz or hunt is already live) · `too_fast` (a room switch, island or chat line over the rate
+(a quiz, hunt or race is already live) · `too_fast` (a room switch, island or chat line over the rate
 limit) · `friend_needs_key` · `friend_unavailable {name}` · `already_friends {name}` ·
 `friends_full {max}` — `busy` is kept for a janken opponent who is in another duel
 
@@ -316,6 +389,7 @@ limit) · `friend_needs_key` · `friend_unavailable {name}` · `already_friends 
 | Profiles, badges | `games/profiles.ts` | `ui/CollectionPanel.svelte` | `games/badges.ts` |
 | Schedule | `schedule.ts` | `ui/NextUp.svelte`, `ui/ActivitiesPanel.svelte` | `maps/*.ts` (`programme`), `games/island-time.ts` |
 | Quiz | `games/quiz.ts` | `ui/QuizHud.svelte`, `fx/` (arena) | `games/quiz-bank.ts` |
+| だるまさんがころんだ | `games/daruma.ts`, `player.ts` (`relocate`) | `ui/DarumaHud.svelte`, `fx/daruma.ts`, `character/local-player.ts` (`speedCap`) | `games/daruma.ts`, `maps/*.ts` (`darumaCourse`) |
 | Fishing, derby | `games/fishing.ts` | `ui/FishingHud.svelte`, `fx/` | `games/fish.ts` |
 | Omikuji, stamps, bells | `games/interactions.ts` | `ui/OmikujiCard.svelte`, `fx/` | `games/omikuji.ts` |
 | Janken | `games/janken.ts` | `ui/JankenCard.svelte` | |

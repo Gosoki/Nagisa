@@ -19,6 +19,7 @@ export const BADGE_IDS = [
   'janken',
   'treasure',
   'regular',
+  'daruma',
 ] as const;
 
 export type BadgeId = (typeof BADGE_IDS)[number];
@@ -54,6 +55,7 @@ export const BADGES: readonly BadgeInfo[] = [
   { id: 'janken', icon: '✌️', zh: '猜拳高手', ja: 'じゃんけん名人', en: 'Janken Master', howZh: `猜拳赢 ${JANKEN_MASTER_WINS} 次`, howJa: `じゃんけんで${JANKEN_MASTER_WINS}回勝つ`, howEn: `Win ${JANKEN_MASTER_WINS} rounds of janken` },
   { id: 'treasure', icon: '💎', zh: '寻宝达人', ja: '宝探し名人', en: 'Treasure Hunter', howZh: `在寻宝中挖到 ${TREASURE_FINDS} 件宝物`, howJa: `宝探しで宝を${TREASURE_FINDS}つ掘り当てる`, howEn: `Dig up ${TREASURE_FINDS} treasures in the treasure hunt` },
   { id: 'regular', icon: '🏮', zh: '岛上常客', ja: '島の常連', en: 'Regular', howZh: `完成 ${DAILY_DAYS} 天的每日任务`, howJa: `今日のおつとめを${DAILY_DAYS}日分こなす`, howEn: `Finish the day's tasks on ${DAILY_DAYS} days` },
+  { id: 'daruma', icon: '🏁', zh: '木头人冠军', ja: 'だるまさん名人', en: 'Daruma Champion', howZh: '在一二三木头人中第一个冲过终点', howJa: 'だるまさんがころんだで一番乗りする', howEn: 'Be first over the line in Daruma-san ga Koronda' },
 ];
 
 const BADGE_INDEX = new Map(BADGES.map((b) => [b.id, b]));

@@ -3,7 +3,8 @@
  * ===================================
  *
  * All synthesised, like the ambience: a temple bell, a firework's boom and crackle, a small
- * splash, and the plucked strings of the beach concert. No files.
+ * splash, the clappers of the daruma turning round, and the plucked strings of the beach
+ * concert. No files.
  *
  * Everything goes out through the ambience's master bus (`FxHost.sfx()`), so the mute
  * toggle and the volume apply to it exactly as to the waves — and nothing here ever
@@ -273,6 +274,31 @@ export function splashVoice(ctx: AudioContext, into: AudioNode, big: boolean): v
  * Rendered once per pitch per context and replayed, so a note costs one buffer source.
  */
 const plucks = new WeakMap<AudioContext, Map<number, AudioBuffer>>();
+
+/**
+ * Hyōshigi: two blocks of hard wood struck together, once — the sharp, dry "kan!" that says
+ * the daruma has turned round. A knock of filtered noise for the strike and two short wooden
+ * partials for the ring; gone in a fifth of a second.
+ */
+export function clapperVoice(ctx: AudioContext, into: AudioNode): void {
+  const now = ctx.currentTime + 0.01;
+  noiseBurst(ctx, into, now, 'bandpass', 2300, 5, 0.55, 0.002, 0.06);
+  for (const [frequency, level, decay] of [
+    [1180, 0.22, 0.16],
+    [2650, 0.1, 0.09],
+  ] as const) {
+    const osc = ctx.createOscillator();
+    osc.frequency.value = frequency;
+    const envelope = ctx.createGain();
+    envelope.gain.setValueAtTime(0, now);
+    envelope.gain.linearRampToValueAtTime(level, now + 0.002);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, now + decay);
+    osc.connect(envelope);
+    envelope.connect(into);
+    osc.start(now);
+    osc.stop(now + decay + 0.02);
+  }
+}
 
 /**
  * Two soft plucked notes, a fourth apart, straight into `into` (not placed in the world):

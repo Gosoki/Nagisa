@@ -87,6 +87,16 @@ const MIN_DT_S = 1 / 60;
 const MAX_DT_S = 2;
 
 /**
+ * How close to where the server moved a player their next report must be, metres, before it
+ * is believed again (see {@link Player.relocate}). A client that has heard it was moved
+ * reports from on the spot, give or take the step it has taken since — well under a metre —
+ * and one that has not is reporting from wherever it was before. Kept inside a race's step
+ * slack (`STEP_SLACK_M` in `games/daruma.ts`), so a stale report that happens to fall inside
+ * it can never read as a racer having rushed.
+ */
+const RELOCATE_FENCE_M = 1;
+
+/**
  * The server-side record of one participant. Fields mirror {@link PlayerView} (the
  * wire representation) plus bookkeeping the client never sees: mute state, the last
  * validated transform/tick, and identity used to authorize resume.
@@ -168,6 +178,12 @@ export class Player {
   /** Set true whenever pos/yaw/anim changes since the last tick's packed-transform gather. */
   dirty = true;
 
+  /**
+   * Where the server last moved this player by its own decision, until their client shows it
+   * has heard (see {@link relocate}). Null the rest of the time.
+   */
+  private fence: Vec3 | null = null;
+
   constructor(id: PlayerId, name: string, appearance: Appearance, role: Role, spawn: { pos: Vec3; yaw: number }) {
     this.id = id;
     this.name = name;
@@ -225,6 +241,16 @@ export class Player {
     // check (any comparison against NaN is false, including the ones meant to reject it).
     if (!isFiniteVec3(pos) || !Number.isFinite(yaw)) {
       return this.correctionTo(nowMs, 'bounds');
+    }
+
+    // Moved by the server, and this report is from before the client heard: it describes
+    // somewhere the player no longer is. Say where they are again, and keep saying it until a
+    // report comes from there. See `relocate`.
+    if (this.fence) {
+      if (Math.hypot(pos[0] - this.fence[0], pos[2] - this.fence[2]) > RELOCATE_FENCE_M) {
+        return { t: 'correction', pos: [this.fence[0], this.fence[1], this.fence[2]], yaw: this.yaw, reason: 'teleport' };
+      }
+      this.fence = null;
     }
 
     const dtS = clamp((nowMs - this.lastMoveAt) / 1000, MIN_DT_S, MAX_DT_S);
@@ -299,6 +325,28 @@ export class Player {
     this.yaw = yaw;
     this.zone = zoneAt(pos[0], pos[2]);
     this.dirty = true;
+    // Wherever a game last put them is not where they are now (a room switch lands them at a
+    // harbour: the old fence would hold them to a spot on another island).
+    this.fence = null;
+  }
+
+  /**
+   * Move this player somewhere by the server's own decision — a game sending them back to its
+   * start line — and return the `teleport` correction that tells their client.
+   *
+   * A plain {@link teleport} is not enough for a player who is connected and moving. Their
+   * client keeps reporting from where it was until the correction reaches it, and one of those
+   * reports would pass the speed check whenever the player had stood still long enough to earn
+   * the budget — putting them straight back where the game had just taken them from. So the
+   * spot is fenced: until a report arrives from within {@link RELOCATE_FENCE_M} of it, every
+   * report is answered with the correction again rather than believed.
+   */
+  relocate(pos: Vec3, yaw: number, nowMs = Date.now()): ServerCorrection {
+    this.teleport(pos, yaw);
+    this.fence = pos;
+    // The next report's speed budget is measured from here, not from before the move.
+    this.lastMoveAt = nowMs;
+    return { t: 'correction', pos: [pos[0], pos[1], pos[2]], yaw, reason: 'teleport' };
   }
 }
 

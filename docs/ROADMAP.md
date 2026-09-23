@@ -85,8 +85,9 @@ tests cover.
 - Fireworks from two shores, and a show after dark.
 - Four bells that everyone in earshot hears, spatialised; two viewpoints the camera turns to
   take in.
-- Weather off the island clock — fair, grey, rain — with umbrellas in the rain and fireflies at
-  the shrine on nights without rain.
+- Weather off the island clock — fair, grey, rain — with umbrellas in the rain, mist round
+  the mountain's shoulders when it clouds over, and fireflies at the shrine on nights without
+  rain.
 - A treasure hunt in the small hours: three things buried at random, hot-or-cold digging
   that everyone nearby can read, and a board of finds.
 - Today's tasks: three a day, the same for everyone, with a streak and a badge at seven days.
@@ -395,8 +396,6 @@ and the SFU together; the binding constraint is the network, not the compute.
   and a way to retire a code and issue a new one.
 
 ### Medium term — deepen the world
-- **Mist on the mountain**, on the weather that is already shared like the day cycle. Uses
-  the same server-time mechanism, so it costs nothing in protocol terms.
 - **Interior spaces** — the shrine hall and the teahouse are currently solid. Making two of
   them enterable would add somewhere to be when it rains.
 - **A second island in play.** `lantern-atoll` exists as a map pack, but a server runs one

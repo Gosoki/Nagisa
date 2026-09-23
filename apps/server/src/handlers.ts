@@ -640,11 +640,11 @@ function handleHostSchedule(ctx: ConnState, msg: ClientHostSchedule, deps: Handl
     refuse(ctx, 'schedule_full');
     return;
   }
-  // One quiz runs at a time (there is one arena), and one treasure hunt (one set of spots).
-  // Asking for another while one is running would put up an activity that could never do its
-  // thing, so it is refused; a scheduled one that goes live during this one is called off by
-  // the room instead (see `Room.onTransition`).
-  if (template.feature === 'quiz' || template.feature === 'treasure') {
+  // One quiz runs at a time (there is one arena), one treasure hunt (one set of spots) and
+  // one race (one course). Asking for another while one is running would put up an activity
+  // that could never do its thing, so it is refused; a scheduled one that goes live during
+  // this one is called off by the room instead (see `Room.onTransition`).
+  if (template.feature === 'quiz' || template.feature === 'treasure' || template.feature === 'daruma') {
     const running = ctx.room.activities.list().some((a) => a.feature === template.feature && a.state === ActivityState.Live);
     if (running) {
       refuse(ctx, 'already_running');

@@ -1,6 +1,6 @@
 /**
- * Game strings — fishing, the quiz, omikuji, stamps, janken, fireworks, the board, badges,
- * private islands, and the lines the island says when something happens.
+ * Game strings — fishing, the quiz, だるまさんがころんだ, omikuji, stamps, janken, fireworks,
+ * the board, badges, private islands, and the lines the island says when something happens.
  *
  * Same rules as `core.ts`: every key in all three languages, `en` first when adding.
  *
@@ -111,6 +111,30 @@ export const GAMES: Dictionaries = {
     'treasure.heat.cold': '冰凉，离得很远',
     'treasure.found': '💎 挖到宝物了！',
     'treasure.board': '寻获',
+
+    // DarumaHud. The chant's syllables are separated by `|`: the card says them one by one.
+    'daruma.title': '一二三木头人',
+    'daruma.chant': '一|二|三|木|头|人',
+    'daruma.lobby': '马上开始——参加的人请到{place}的起跑线集合',
+    'daruma.waiting': '还没有人参加——点「参加」就能一起玩',
+    'daruma.how': '达摩背过身念口令时往前走，它一回头就定住。被它看到在动，就回到起点。',
+    'daruma.youreIn': '你已参加——到起跑线后面站好',
+    'daruma.freeze': '不许动！',
+    'daruma.looking': '达摩正看着呢',
+    'daruma.go': '趁它念口令，往前走',
+    'daruma.caught': '被看到了——回到起点',
+    'daruma.toGo': '离终点还有 {m} 米',
+    'daruma.placed': '第 {n} 个到达终点！',
+    'daruma.out': '你已退出比赛，正在观战',
+    'daruma.watching': '观战中',
+    'daruma.sentBack': '{n} 人被送回起点',
+    'daruma.racing': '还有 {n} 人在比赛',
+    'daruma.over': '比赛结束',
+    'daruma.noWinner': '这次没有人到达终点',
+    'daruma.places': '名次',
+    'daruma.me': '{name}（你）',
+    'daruma.caughtYou': '被达摩看到了！回到起点',
+    'daruma.home': '🏁 第 {n} 个到达终点！',
 
     // Today's tasks (CollectionPanel).
     'daily.title': '今日任务',
@@ -364,6 +388,30 @@ export const GAMES: Dictionaries = {
     'treasure.found': '💎 宝を掘り当てた！',
     'treasure.board': '発見',
 
+    // DarumaHud.
+    'daruma.title': 'だるまさんがころんだ',
+    'daruma.chant': 'だ|る|ま|さ|ん|が|こ|ろ|ん|だ',
+    'daruma.lobby': 'まもなく開始 — 参加する人は{place}のスタートラインへ',
+    'daruma.waiting': '参加者を待っています — 「参加」で一緒に遊ぼう',
+    'daruma.how': 'だるまが後ろを向いて唱えているうちに進み、振り向いたらぴたっと止まる。動いたのを見られたらスタートに戻る。',
+    'daruma.youreIn': '参加中 — スタートラインの後ろに並ぼう',
+    'daruma.freeze': '止まれ！',
+    'daruma.looking': 'だるまが見ている',
+    'daruma.go': '唱えているうちに進もう',
+    'daruma.caught': '見つかった — スタートに戻る',
+    'daruma.toGo': 'ゴールまであと {m} m',
+    'daruma.placed': '{n}着でゴール！',
+    'daruma.out': 'レースから抜けました — 観戦中',
+    'daruma.watching': '観戦中',
+    'daruma.sentBack': '{n}人がスタートに戻された',
+    'daruma.racing': 'あと{n}人が挑戦中',
+    'daruma.over': 'おしまい',
+    'daruma.noWinner': '今回はゴールした人がいません',
+    'daruma.places': '順位',
+    'daruma.me': '{name}（あなた）',
+    'daruma.caughtYou': 'だるまに見つかった！スタートに戻る',
+    'daruma.home': '🏁 {n}着でゴール！',
+
     'daily.title': '今日のおつとめ',
     'daily.task.fish': '魚を{n}匹釣る',
     'daily.task.bell': '鐘をひとつ鳴らす',
@@ -607,6 +655,30 @@ export const GAMES: Dictionaries = {
     'treasure.heat.cold': 'Cold — nowhere near',
     'treasure.found': '💎 You dug up a treasure!',
     'treasure.board': 'Finds',
+
+    // DarumaHud.
+    'daruma.title': 'Daruma-san ga Koronda',
+    'daruma.chant': 'Da|ru|ma|-san| ga| ko|ron|da',
+    'daruma.lobby': 'Starting soon — players, to the start line on {place}',
+    'daruma.waiting': 'Waiting for players — join to play',
+    'daruma.how': 'Creep forward while the daruma chants with its back turned, and freeze the moment it turns. Anyone it sees moving goes back to the start.',
+    'daruma.youreIn': 'You’re in — line up behind the start',
+    'daruma.freeze': 'Freeze!',
+    'daruma.looking': 'The daruma is watching',
+    'daruma.go': 'Move while it chants',
+    'daruma.caught': 'Seen moving — back to the start',
+    'daruma.toGo': '{m} m to the line',
+    'daruma.placed': 'Home — place {n}!',
+    'daruma.out': 'Out of the race — watching now',
+    'daruma.watching': 'Watching',
+    'daruma.sentBack': '{n} sent back',
+    'daruma.racing': '{n} still racing',
+    'daruma.over': 'Race over',
+    'daruma.noWinner': 'Nobody made it home this time',
+    'daruma.places': 'Places',
+    'daruma.me': '{name} (you)',
+    'daruma.caughtYou': 'The daruma saw you move — back to the start',
+    'daruma.home': '🏁 Home — place {n}!',
 
     'daily.title': 'Today',
     'daily.task.fish': 'Catch {n} fish',

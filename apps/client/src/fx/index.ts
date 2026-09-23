@@ -5,8 +5,9 @@
  * Everything the games put *in the world*, as opposed to on the interface: a bell's note
  * carrying across the water and rings spreading from its tower, fireworks over the bay, a
  * float bobbing off the pier and a fish leaping out of the splash, the ○× circles painted
- * on the plaza, paper lanterns carried up the shrine path, the concert's music on the
- * beach, the lighthouse beam coming round, an emote glyph rising over a head.
+ * on the plaza, the daruma turning round on the sand, paper lanterns carried up the shrine
+ * path, the concert's music on the beach, the lighthouse beam coming round, an emote glyph
+ * rising over a head.
  *
  * The app owns one {@link GameFx}. It feeds it the world events the server broadcasts and
  * calls `update` once a frame; the effects read the rest (the quiz, activities, your own
@@ -17,8 +18,8 @@
  *
  * ### Layout
  *
- * One module per thing the island does — `bells`, `fireworks`, `fishing`, `quiz-arena`,
- * `emotes`, `lanterns`, `lighthouse`, `music`, `rain`, `fireflies` — over two shared ones: `materials`, which is
+ * One module per thing the island does — `bells`, `fireworks`, `fishing`, `quiz-arena`, `daruma`,
+ * `emotes`, `lanterns`, `lighthouse`, `music`, `rain`, `fireflies`, `mist` — over two shared ones: `materials`, which is
  * how an effect is drawn through the ink pipeline without disturbing it, and `audio`, which
  * is how a sound is placed in it. This file only routes: stores and events in, one update
  * out, and everything given back on `dispose`.
@@ -33,6 +34,7 @@
 import * as THREE from 'three';
 import {
   ActivityState,
+  DARUMA_COURSE,
   QUIZ_ARENA,
   stagePosition,
   type ActivityId,
@@ -44,7 +46,7 @@ import {
 } from '@nagisa/shared';
 import type { QualitySettings } from '../engine/quality.js';
 import type { Character } from '../character/character.js';
-import { activities, fishing, players, quiz, self } from '../state/stores.js';
+import { activities, daruma, fishing, players, quiz, self } from '../state/stores.js';
 import { Bells } from './bells.js';
 import { EmoteFloats } from './emotes.js';
 import { Fireworks } from './fireworks.js';
@@ -53,8 +55,10 @@ import { Lanterns } from './lanterns.js';
 import { LighthouseBeam } from './lighthouse.js';
 import { Concert } from './music.js';
 import { QuizArena } from './quiz-arena.js';
+import { DarumaCourse } from './daruma.js';
 import { Rain } from './rain.js';
 import { Fireflies } from './fireflies.js';
+import { Mist } from './mist.js';
 import { Digs } from './digs.js';
 
 /** What a dig's heat looks like over the digger's head. ♨ is a hot spring: warm. */
@@ -102,9 +106,12 @@ export class GameFx {
   private readonly concert: Concert;
   private readonly rain: Rain;
   private readonly fireflies: Fireflies;
+  private readonly mist: Mist;
   private readonly digs: Digs;
   /** Null on a map with no arena. */
   private readonly arena: QuizArena | null;
+  /** Null on a map with no course. */
+  private readonly course: DarumaCourse | null;
 
   private readonly unsubscribers: Array<() => void> = [];
 
@@ -125,11 +132,14 @@ export class GameFx {
     this.concert = new Concert(host, this.group);
     this.rain = new Rain(host, this.group);
     this.fireflies = new Fireflies(host, this.group);
+    this.mist = new Mist(host, this.group);
     this.digs = new Digs(host, this.group);
     this.arena = QUIZ_ARENA ? new QuizArena(host, this.group) : null;
+    this.course = DARUMA_COURSE ? new DarumaCourse(host, this.group) : null;
 
     this.unsubscribers.push(
       quiz.subscribe((view) => this.arena?.setQuiz(view)),
+      daruma.subscribe((view) => this.course?.setView(view)),
       fishing.subscribe((state) => this.fishing.setLocal(state)),
       activities.subscribe((list) => this.onActivities(list)),
       players.subscribe((list) => {
@@ -179,11 +189,12 @@ export class GameFx {
     }
   }
 
-  /** How hard it is raining, 0–1 (`weatherLevels` in the shared package). */
-  setRain(level: number): void {
-    this.rain.setLevel(level);
-    this.fireflies.setRain(level);
-    this.rainLevel = level;
+  /** How overcast and how hard it is raining, 0–1 each (`weatherLevels` in the shared package). */
+  setWeather(cloud: number, rain: number): void {
+    this.rain.setLevel(rain);
+    this.fireflies.setRain(rain);
+    this.mist.setWeather(cloud, rain);
+    this.rainLevel = rain;
   }
 
   /**
@@ -211,6 +222,7 @@ export class GameFx {
   /** Once a frame, after the characters have moved. `elapsed` is seconds since boot. */
   update(dt: number, elapsed: number): void {
     this.arena?.update(dt);
+    this.course?.update(dt);
     this.bells.update(dt);
     this.fireworks.update(elapsed);
     this.fishing.update(dt, elapsed);
@@ -220,6 +232,7 @@ export class GameFx {
     this.concert.update(dt);
     this.rain.update(elapsed);
     this.fireflies.update(dt, elapsed);
+    this.mist.update(dt, elapsed);
     this.digs.update(dt);
     this.updateUmbrellas(dt);
   }
@@ -228,6 +241,7 @@ export class GameFx {
     for (const unsubscribe of this.unsubscribers) unsubscribe();
     this.unsubscribers.length = 0;
     this.arena?.dispose();
+    this.course?.dispose();
     this.bells.dispose();
     this.fireworks.dispose();
     this.fishing.dispose();
@@ -237,6 +251,7 @@ export class GameFx {
     this.concert.dispose();
     this.rain.dispose();
     this.fireflies.dispose();
+    this.mist.dispose();
     this.digs.dispose();
     this.group.clear();
   }

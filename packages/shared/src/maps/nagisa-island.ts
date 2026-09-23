@@ -1135,6 +1135,21 @@ const ACTIVITY_TEMPLATES: MapPack['world']['activityTemplates'] = [
     feature: 'treasure',
   },
   {
+    id: 'daruma',
+    title: 'Daruma-san ga Koronda',
+    titleZh: '一二三木头人',
+    titleJa: 'だるまさんがころんだ',
+    blurb: 'Creep up on the daruma while it looks away. Freeze when it turns — or back to the start.',
+    blurbZh: '趁达摩背过身时往前走，它一回头就定住——被看到在动就回到起点。',
+    blurbJa: 'だるまが向こうを向いているうちに近づこう。振り向いたら止まれ、動いたらスタートに戻る。',
+    zone: 'beach',
+    durationMin: 8,
+    capacity: 0,
+    checkinEnabled: false,
+    formation: 'gather',
+    feature: 'daruma',
+  },
+  {
     id: 'fireworks',
     title: 'Fireworks',
     titleZh: '花火大会',
@@ -1154,9 +1169,10 @@ const ACTIVITY_TEMPLATES: MapPack['world']['activityTemplates'] = [
 /**
  * The island's day, in real minutes after island midnight (a day is ninety minutes; dawn is
  * at 22.5, noon at 45, dusk at 67.5). Laid out so each thing happens at the hour it belongs
- * to — the catch at first light, the lamp at dusk, fireworks in the dark, and the treasure
- * hunt in the small hours when there is otherwise nothing on — and so no two things share a
- * venue at once.
+ * to — the catch at first light, the lamp at dusk, fireworks in the dark, the treasure hunt
+ * in the small hours when there is otherwise nothing on, and だるまさんがころんだ on the sand
+ * in the early afternoon, between the market opening and the second quiz — and so no two
+ * things share a venue at once.
  */
 const PROGRAMME: NonNullable<MapPack['world']['programme']> = [
   { template: 'treasure-hunt', at: 8 },
@@ -1164,6 +1180,7 @@ const PROGRAMME: NonNullable<MapPack['world']['programme']> = [
   { template: 'morning-assembly', at: 28 },
   { template: 'island-quiz', at: 37 },
   { template: 'harbor-market', at: 45 },
+  { template: 'daruma', at: 48 },
   { template: 'island-quiz', at: 56 },
   { template: 'lamp-lighting', at: 65 },
   { template: 'lantern-walk', at: 70 },
@@ -1214,6 +1231,17 @@ export const NAGISA_ISLAND: MapPack = {
       zone: 'plaza',
       o: { x: 59, z: 42, r: 4.5 },
       x: { x: 69, z: 32, r: 4.5 },
+    },
+
+    // だるまさんがころんだ: a lane across the level sand south of the beach huts and the log
+    // bench, set off from the east and run toward the sunset, with the oni standing at the
+    // west end in front of the breakwater. Twenty-two metres of open, flat sand, nine wide,
+    // clear of every prop and of the fishing spot down at the water's edge.
+    darumaCourse: {
+      zone: 'beach',
+      start: { x: 55, z: 107 },
+      goal: { x: 33, z: 107 },
+      halfWidth: 4.5,
     },
 
     // Fireworks go up from the water off the beach and the south bay, and may be sent up by

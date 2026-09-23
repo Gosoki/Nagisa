@@ -27,6 +27,7 @@ import {
   ACTIVITY_TEMPLATES,
   ActivityState,
   AnimState,
+  DARUMA_STEP_SPEED,
   INTERACTABLES,
   ISLAND_EXTENT,
   PROTOCOL,
@@ -42,6 +43,7 @@ import {
   weatherLevels,
   isIslandNight,
   crowdSlot,
+  darumaStartSpot,
   zoneAt,
   type ActivityId,
   type ActivityView,
@@ -81,6 +83,7 @@ import {
   commands,
   connectionState,
   currentZone,
+  daruma,
   interactPrompt,
   loadProgress,
   notify,
@@ -159,6 +162,9 @@ const FORCED_WEATHER = ((): { weather: Weather; cloud: number; rain: number } | 
   return null;
 })();
 
+/** How far below level the camera looks after the island puts you somewhere, radians. */
+const PLACED_PITCH = 0.04;
+
 /**
  * How far from a person's middle, in CSS pixels, a tap still picks them. About a fingertip:
  * a figure in the crowd is only a few dozen pixels tall, and a tap has to land somewhere.
@@ -222,6 +228,11 @@ export class App {
   private readonly weatherNow: WeatherLevels = { weather: 'clear', cloud: 0, rain: 0 };
   /** Whether the interface was last told you are dancing. */
   private danceShown = false;
+  /**
+   * Whether you are racing in だるまさんがころんだ right now, and so held to its careful step.
+   * Mirrored from the store so the frame loop need not read it.
+   */
+  private stepCapped = false;
 
   /** Zone the player was in last frame, for change detection. */
   private lastZone: ZoneId | null = null;
@@ -288,6 +299,12 @@ export class App {
     // The music stopping, or leaving the beach, ends the dance.
     onDanceFloor.subscribe((floor) => {
       if (!floor && this.danceShown) this.setDancing(false);
+    });
+    // A racer creeps, from the moment the oni first turns its back until they are home or out
+    // of the race; the server holds them to the same pace.
+    daruma.subscribe((view) => {
+      const me = this.sync?.selfPlayerId ?? null;
+      this.stepCapped = !!view && !!me && (view.phase === 'walk' || view.phase === 'look') && view.racing.includes(me);
     });
     remotePose.at = (id) => this.remote.positionOf(id);
 
@@ -425,6 +442,14 @@ export class App {
       const sound = this.ambience.sfx();
       if (sound) chimeVoice(sound.ctx, sound.out);
     };
+    // Put at a start line facing the goal: look that way too, or "forward" — which is the
+    // camera's forward — would walk a racer along the line instead of down the course. And
+    // look along it rather than down at your feet: what you were put there to watch is at the
+    // far end, and looking down would put it under the cards at the top of the screen.
+    this.sync.onPlaced = (yaw) => {
+      this.camera.yaw = yaw + Math.PI;
+      this.camera.pitch = Math.min(this.camera.pitch, PLACED_PITCH);
+    };
     // Keep the hint and the address bar on whatever island we are actually on.
     room.subscribe((view) => this.adoptRoom(view));
     this.connection.connect();
@@ -459,7 +484,11 @@ export class App {
     order: 0,
 
     fixedUpdate: (dt: number): void => {
-      if (this.entered) this.local.fixedUpdate(dt);
+      if (this.entered) {
+        // Set here, not in the subscription: the character is rebuilt once, at entry.
+        this.local.speedCap = this.stepCapped ? DARUMA_STEP_SPEED : null;
+        this.local.fixedUpdate(dt);
+      }
     },
 
     update: (dt: number): void => {
@@ -572,7 +601,8 @@ export class App {
   /**
    * Where joining an activity walks you. Mostly a place in its crowd; but a quiz is played
    * *between* its two rings — standing in one when the first question lands would answer it
-   * — and a derby is fished from the jetties, not from the middle of the harbour.
+   * — a derby is fished from the jetties, not from the middle of the harbour, and a race of
+   * だるまさんがころんだ starts from its start line.
    */
   private activityWalkTarget(activity: ActivityView, mode: 'participant' | 'audience'): { x: number; z: number } | null {
     if (mode === 'participant' && activity.feature === 'quiz' && QUIZ_ARENA) {
@@ -584,6 +614,10 @@ export class App {
         x: (o.x + x.x) / 2 - ((x.z - o.z) / len) * offset,
         z: (o.z + x.z) / 2 + ((x.x - o.x) / len) * offset,
       };
+    }
+    if (mode === 'participant' && activity.feature === 'daruma') {
+      const spot = darumaStartSpot(activity.participantCount);
+      if (spot) return { x: spot.x, z: spot.z };
     }
     if (mode === 'participant' && activity.feature === 'derby') {
       const here = this.local.position;
@@ -640,7 +674,7 @@ export class App {
   private updateWeather(serverTime: number): void {
     const now = FORCED_WEATHER ?? weatherLevels(serverTime, this.weatherNow);
     this.island.setWeather(now.cloud, now.rain);
-    this.fx.setRain(now.rain);
+    this.fx.setWeather(now.cloud, now.rain);
     this.ambience.setRain(now.rain);
     const night = isIslandNight(serverTime);
     if (night !== this.nightShown) {
@@ -1062,6 +1096,7 @@ export class App {
   get debug(): Record<string, unknown> {
     return {
       renderer: this.renderer,
+      camera: this.camera,
       island: this.island,
       local: this.local,
       remote: this.remote,

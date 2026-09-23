@@ -109,7 +109,8 @@ export class Friends {
       if (here.size === 0) this.online.delete(hash);
       this.lastAsk.delete(player.id);
     }
-    this.touch(hash);
+    // Arriving, leaving and moving island are the changes every friend's list shows.
+    this.touch(hash, true);
   }
 
   /** The list as `player` should see it. */
@@ -300,10 +301,15 @@ export class Friends {
     return here ? here.values().next().value : undefined;
   }
 
-  /** `hash`'s own list changed, and so did every list it is on. Send them all, shortly. */
-  private touch(hash: string): void {
+  /**
+   * `hash`'s own list changed: send it again, shortly. `andFriends` when `hash` itself came,
+   * went or moved, which changes every list it is on too. An ask or an answer changes only
+   * the lists of those it is between — sending every friend's list for one would let a
+   * stream of junk answers fan out fifty-fold.
+   */
+  private touch(hash: string, andFriends = false): void {
     this.dirty.add(hash);
-    for (const f of this.record(hash)?.friends ?? []) this.dirty.add(f.hash);
+    if (andFriends) for (const f of this.record(hash)?.friends ?? []) this.dirty.add(f.hash);
     if (this.flushQueued) return;
     this.flushQueued = true;
     queueMicrotask(() => this.flush());

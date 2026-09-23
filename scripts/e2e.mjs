@@ -663,13 +663,14 @@ async function main() {
     const hunt = huntLive?.activities.find((a) => a.feature === 'treasure');
     check('a hunt put on now goes live with things buried', hunt?.left === shared.TREASURE_COUNT, hunt);
   }
-  ken.send({ t: 'dig' });
-  const told = await ken.wait('dig', () => true, 3000);
+  // Alice has been here since the start: past the wait a new arrival has before digging.
+  alice.send({ t: 'dig' });
+  const told = await alice.wait('dig', () => true, 3000);
   check('a dig is answered with how close', !!told && ['found', 'hot', 'warm', 'cool', 'cold'].includes(told.result), told);
-  const seen = await jan.wait('delta', (f) => f.events?.some((e) => (e.k === 'dig' || e.k === 'treasure') && e.by === ken.welcome.self), 3000);
+  const seen = await jan.wait('delta', (f) => f.events?.some((e) => (e.k === 'dig' || e.k === 'treasure') && e.by === aliceWelcome.self), 3000);
   check('and everyone sees the spade go in', !!seen);
-  ken.send({ t: 'dig' });
-  check('one dig at a time', !!(await ken.wait('error', (f) => f.key === 'cooldown', 3000)));
+  alice.send({ t: 'dig' });
+  check('one dig at a time', !!(await alice.wait('error', (f) => f.key === 'cooldown', 3000)));
 
   // -- Today's tasks ------------------------------------------------------
   console.log('\nToday\'s tasks');

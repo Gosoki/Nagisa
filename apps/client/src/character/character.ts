@@ -647,6 +647,9 @@ export class Character {
 
   /** Switch animation. Blending is handled in {@link update}; this is cheap to call. */
   setAnim(state: AnimState): void {
+    // A state this build does not know — a newer client's, arriving over the wire — is
+    // drawn standing rather than breaking every frame that reads its profile.
+    if (!(state in PROFILES)) state = AnimState.Idle;
     if (this.state === state) return;
     this.state = state;
     this.target = PROFILES[state];
@@ -659,6 +662,7 @@ export class Character {
    * while walking.
    */
   playEmote(state: AnimState, duration = 2.0): void {
+    if (!(state in PROFILES)) return;
     this.emoteState = state;
     this.emoteRemaining = duration;
     this.refreshRod();

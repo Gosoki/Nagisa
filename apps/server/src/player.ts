@@ -122,6 +122,12 @@ export class Player {
    */
   mutedIn: string | null = null;
 
+  /**
+   * When this player record was made: a new connection that the server could not resume.
+   * Resuming and moving island keep the record, and with it this time.
+   */
+  arrivedAt = Date.now();
+
   /** Checked in to the attached activity. Cleared whenever the attachment changes. */
   checkedIn = false;
 

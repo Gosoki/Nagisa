@@ -971,7 +971,14 @@ export class Room implements GameRoom {
   /** Restore what `exportState` produced. Call before `start()`. */
   restoreState(state: PersistedRoom): void {
     for (const pa of state.activities) {
-      const activity = restoreActivity(pa);
+      // One damaged record (a file edited by hand, a field of the wrong shape) costs that
+      // record, never the room: a throw here would leave an island that can never be opened.
+      let activity: Activity | null = null;
+      try {
+        activity = restoreActivity(pa);
+      } catch (err) {
+        this.log.warn('activity_restore_skipped', { room: this.id, err });
+      }
       if (!activity) continue;
       // A quiz is its runner, and the runner did not survive the restart: a quiz restored as
       // live would sit on the board doing nothing (and block a new one). It is over. So is a
@@ -982,7 +989,11 @@ export class Room implements GameRoom {
       }
       this.activities.add(activity);
     }
-    for (const ann of state.announcements) this.restoreAnnouncement(ann);
+    for (const ann of state.announcements) {
+      // Every tick sorts and expires these; one without a time or a text would throw there.
+      if (!ann || typeof ann !== 'object' || typeof ann.text !== 'string' || !Number.isFinite(ann.at) || !Number.isFinite(ann.ttlMs)) continue;
+      this.restoreAnnouncement(ann);
+    }
     this.guestbook.restore(state.guestbook);
   }
 }

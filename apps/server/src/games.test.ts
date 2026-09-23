@@ -51,7 +51,7 @@ import { GUESTBOOK_COOLDOWN_MS, GUESTBOOK_LIMIT } from './games/guestbook.js';
 import { PLAYER_COOLDOWN_MS, ROOM_BURST } from './games/fireworks.js';
 import { ProfileStore, hashVisitorKey, newProfile } from './games/profiles.js';
 import { materialiseProgramme } from './schedule.js';
-import { bury } from './games/treasure.js';
+import { ARRIVAL_DIG_DELAY_MS, bury } from './games/treasure.js';
 import { dailyView, recordDaily } from './games/daily.js';
 import { migrate } from './persistence.js';
 
@@ -430,6 +430,8 @@ test('treasure: buried apart on open ground, the sand says how close, finds scor
   const room = makeRoom(seeded(7));
   const a = join(room);
   const b = join(room);
+  // Both have been on the island a while (the times below are the test's own clock).
+  a.player.arrivedAt = b.player.arrivedAt = -Infinity;
 
   room.treasure.dig(a.player, 0);
   assert.equal(lastOf(a.socket, 'error')?.key, 'no_hunt', 'nothing to dig for yet');
@@ -489,6 +491,28 @@ test('treasure: buried apart on open ground, the sand says how close, finds scor
 
   room.treasure.dig(a.player, (t += DIG_COOLDOWN_MS));
   assert.equal(lastOf(a.socket, 'error')?.key, 'no_hunt', 'nothing left once it is over');
+});
+
+test('treasure: someone who has just arrived waits a moment, and a new connection is the same spade', () => {
+  const room = makeRoom(seeded(5));
+  const a = join(room);
+  room.activities.createFromTemplate('treasure-hunt', Date.now() - 1000);
+  room.activities.sweep(Date.now());
+  const now = a.player.arrivedAt;
+
+  room.treasure.dig(a.player, now + 1000);
+  assert.equal(lastOf(a.socket, 'error')?.key, 'cooldown', 'not straight off the boat');
+  room.treasure.dig(a.player, now + ARRIVAL_DIG_DELAY_MS);
+  assert.ok(lastOf(a.socket, 'dig'), 'then digging');
+
+  // The same visitor on a second connection: a new player, the same key, the same cooldown.
+  a.player.visitorHash = 'visitor-a';
+  room.treasure.dig(a.player, now + ARRIVAL_DIG_DELAY_MS + DIG_COOLDOWN_MS);
+  const again = join(room);
+  again.player.visitorHash = 'visitor-a';
+  again.player.arrivedAt = -Infinity;
+  room.treasure.dig(again.player, now + ARRIVAL_DIG_DELAY_MS + DIG_COOLDOWN_MS + 10);
+  assert.equal(lastOf(again.socket, 'error')?.key, 'cooldown');
 });
 
 test('treasure: one hunt at a time, and a restart ends one that was running', async () => {

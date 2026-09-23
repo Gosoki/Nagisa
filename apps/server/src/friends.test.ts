@@ -236,3 +236,18 @@ test('a friend who no longer has you on their list is not shown where they are',
   assert.equal(view.room, undefined, 'no island, and no invite code');
   assert.equal(view.player, undefined);
 });
+
+test('junk answers refresh only the sender’s own list, not every friend’s', async () => {
+  const deps = makeDeps();
+  const aki = arrive(deps, 'Aki', KEY_A);
+  const ben = arrive(deps, 'Ben', KEY_B);
+  send(aki, { t: 'friend', action: 'request', target: ben.conn.player.id }, deps);
+  await settle();
+  send(ben, { t: 'friend', action: 'accept', target: list(ben).requests[0].id }, deps);
+  await settle();
+
+  const benHeard = ben.socket.sent.length;
+  for (let i = 0; i < 10; i++) send(aki, { t: 'friend', action: 'decline', target: `junk-${i}` }, deps);
+  await settle();
+  assert.equal(ben.socket.sent.length, benHeard, 'a friend hears nothing of it');
+});

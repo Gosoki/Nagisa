@@ -600,6 +600,8 @@ const daily = (progress, done, streak) => ({
   dailyStreak: streak,
   dailyDays: streak,
 });
+// The card is for 25 September in Japan; hold the clock there so it is today's.
+stores.setServerClock(() => Date.parse('2026-09-25T03:00:00Z'));
 stores.profile.set(daily([1, 2, 0], false, 0));
 await settle();
 for (const want of ['Today', 'Ring a bell', '1/1', 'Walk into 4 different places', '2/4', 'Say 3 things in chat', '0/3', 'the same tasks today']) {
@@ -609,6 +611,14 @@ check('a full task is ticked', box('CollectionPanel').querySelectorAll('.task.fu
 stores.profile.set(daily([1, 4, 3], true, 3));
 await settle();
 check('a day done counts the streak', text('CollectionPanel').includes('3 days in a row'));
+// The next morning, before anything is done: the server has not sent a new card, but the
+// book shows the new day's tasks, none of them done.
+stores.setServerClock(() => Date.parse('2026-09-26T03:00:00Z'));
+stores.profile.set(daily([1, 4, 3], true, 3));
+await settle();
+const tomorrow = shared.dailyTasks('2026-09-26');
+check('past midnight the book shows the new day, nothing done', box('CollectionPanel').querySelectorAll('.task.full').length === 0 && box('CollectionPanel').querySelectorAll('.task').length === tomorrow.length, text('CollectionPanel').slice(0, 200));
+stores.setServerClock(() => Date.now());
 
 // ---------------------------------------------------------------------------------------
 console.log('\\nIsland');

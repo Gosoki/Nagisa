@@ -20,8 +20,8 @@
    *
    * The tabs are a proper tablist: arrow keys move between them.
    */
-  import { BADGES, COLLECTIBLE_FISH, STAMP_ZONES, getZone, type FishRarity } from '@nagisa/shared';
-  import { cmd, profile } from '../state/stores.js';
+  import { BADGES, COLLECTIBLE_FISH, STAMP_ZONES, dailyTasks, getZone, jstDay, type FishRarity } from '@nagisa/shared';
+  import { cmd, profile, serverNow } from '../state/stores.js';
   import { ALL_FISH, badgeHow, badgeName, fishName, lang, t, zoneName } from '../i18n/index.js';
 
   type Tab = 'stamps' | 'fish' | 'badges';
@@ -57,6 +57,17 @@
 
   const badgesEarned = $derived(BADGES.filter((b) => p?.badges.includes(b.id)).length);
 
+  /**
+   * Today's tasks. The card the server last sent may be yesterday's — it sends one when
+   * something changes, and midnight in Japan is not a change — so past midnight the list is
+   * today's, from the shared calendar, with nothing done yet.
+   */
+  const today = $derived.by(() => {
+    const day = jstDay(serverNow());
+    if (!p?.daily || p.daily.day === day) return p?.daily ?? null;
+    return { day, tasks: dailyTasks(day).map((t) => ({ ...t, progress: 0 })), done: false };
+  });
+
   /** A stamp lands a few degrees off true; the same few degrees every time for the same place. */
   function tilt(index: number): string {
     return `${((index * 47) % 17) - 8}deg`;
@@ -88,13 +99,13 @@
   <p class="empty">{$t('collection.none')}</p>
 {:else}
   <!-- Today's tasks sit above the tabs: they change every day, the rest of the book does not. -->
-  {#if p.daily}
+  {#if today}
     <section class="today" aria-labelledby="today-title">
       <h3 class="today-title" id="today-title">
-        {$t('daily.title')}{#if p.daily.done}<span class="today-done" aria-hidden="true"> ✓</span>{/if}
+        {$t('daily.title')}{#if today.done}<span class="today-done" aria-hidden="true"> ✓</span>{/if}
       </h3>
       <ul class="tasks">
-        {#each p.daily.tasks as task (task.kind)}
+        {#each today.tasks as task (task.kind)}
           {@const full = task.progress >= task.goal}
           <li class="task" class:full>
             <span class="tick" aria-hidden="true">{full ? '✓' : '·'}</span>

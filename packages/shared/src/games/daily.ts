@@ -11,6 +11,8 @@
  * this is the list, the goals and the calendar.
  */
 
+import { ACTIVITY_TEMPLATES, FIREWORKS, ZONES, interactablesWith } from '../world.js';
+
 export const DAILY_KINDS = ['fish', 'bell', 'omikuji', 'janken', 'firework', 'checkin', 'chat', 'emote', 'zones'] as const;
 export type DailyKind = (typeof DAILY_KINDS)[number];
 
@@ -52,10 +54,33 @@ function sequence(key: string): () => number {
   };
 }
 
+/**
+ * Whether the island being played has what a task needs: a map without a bell cannot ask for
+ * one to be rung. Asked of the active map, which both ends load, so the list still agrees.
+ */
+function possible(kind: DailyKind): boolean {
+  switch (kind) {
+    case 'fish':
+      return interactablesWith('fish').length > 0;
+    case 'bell':
+      return interactablesWith('ring_bell').length > 0;
+    case 'omikuji':
+      return interactablesWith('omikuji').length > 0;
+    case 'firework':
+      return (FIREWORKS?.zones.length ?? 0) > 0;
+    case 'checkin':
+      return ACTIVITY_TEMPLATES.some((t) => t.checkinEnabled);
+    case 'zones':
+      return ZONES.length > GOALS.zones;
+    default:
+      return true;
+  }
+}
+
 /** The tasks for a Japanese calendar day (`jstDay`), in the order they are shown. */
 export function dailyTasks(day: string): DailyTask[] {
   const random = sequence(`nagisa-daily:${day}`);
-  const kinds = [...DAILY_KINDS];
+  const kinds = DAILY_KINDS.filter(possible);
   for (let i = kinds.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1));
     [kinds[i], kinds[j]] = [kinds[j], kinds[i]];

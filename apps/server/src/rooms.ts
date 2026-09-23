@@ -319,11 +319,9 @@ export class RoomManager {
 
     fromRoom.removePlayer(player.id, 'room_switch', { closeSession: false });
     player.away = false;
-    // A keeper's mute is theirs to give on their island only; the server's admins mute everywhere.
-    if (player.mutedIn !== null && player.mutedIn !== room.id) {
-      player.muted = false;
-      player.mutedIn = null;
-    }
+    // A keeper's mute is theirs to give on their island only — off elsewhere, and on again
+    // when the muted player comes back. The server's admins mute everywhere (`mutedIn` null).
+    if (player.mutedIn !== null) player.muted = player.mutedIn === room.id;
     player.activity = null;
     player.mode = null;
     player.hostOf = null;

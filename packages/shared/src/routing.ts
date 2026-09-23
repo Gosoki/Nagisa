@@ -125,26 +125,6 @@ function accessNodes(x: number, z: number, nodes: Node[]): number[] {
 }
 
 /**
- * A test for "could a character walk from (fromX, fromZ) to here?", for asking it of many
- * places: the start's side of the network is worked out once, and each place then only has
- * to find its way onto it — the same access rule `routeTo` uses at a finish, without the
- * search. Agrees with `routeTo(from, here).length > 0`.
- */
-export function reachableFrom(fromX: number, fromZ: number): (x: number, z: number) => boolean {
-  const nodes = ensureGraph();
-  const stack = accessNodes(fromX, fromZ, nodes);
-  const side = new Set(stack);
-  while (stack.length) {
-    for (const next of nodes[stack.pop()!]!.links) {
-      if (side.has(next)) continue;
-      side.add(next);
-      stack.push(next);
-    }
-  }
-  return (x, z) => walkableLine(fromX, fromZ, x, z) || accessNodes(x, z, nodes).some((i) => side.has(i));
-}
-
-/**
  * A walkable route from one point to another, as waypoints to steer through in order.
  *
  * The last entry is always the destination. An empty array means there is no route at all —

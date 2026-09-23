@@ -196,6 +196,9 @@ test('a keeper’s mute stays on their island; a server admin’s goes everywher
   send(guest, { t: 'room_switch', room: shore.id }, deps);
   assert.equal(guest.room, shore);
   assert.equal(guest.player.muted, false, 'the keeper’s word does not reach the public shore');
+  send(guest, { t: 'room_switch', room: island.code! }, deps);
+  assert.equal(guest.player.muted, true, 'and still holds on the keeper’s island when they come back');
+  send(guest, { t: 'room_switch', room: shore.id }, deps);
 
   // The server's own admins mute on every island.
   const admin = connect(deps, {}, true).conn;
@@ -367,3 +370,21 @@ test('a game that throws in a tick costs nobody their join, and the tick sequenc
   room.stop();
 });
 
+
+test('a damaged saved room loses the damaged records, not the room', () => {
+  const good = bareRoom();
+  const quiz = good.activities.createFromTemplate('island-quiz', Date.now() + 60_000);
+  const saved = good.exportState();
+  good.stop();
+  const damaged = {
+    ...saved,
+    activities: [...saved.activities, { ...saved.activities[0], id: 'broken', checkins: {} as never }],
+    announcements: [null as never, { id: 'a1', text: 'hi', fromName: 'X', scope: { kind: 'island' }, at: Date.now(), ttlMs: 60_000, priority: 'normal' } as never],
+  };
+  const room = bareRoom();
+  room.restoreState(damaged);
+  assert.ok(room.activities.get(quiz.id), 'the good activity is back');
+  assert.equal(room.activities.get('broken'), undefined);
+  room.forceTick();
+  room.stop();
+});

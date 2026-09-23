@@ -26,9 +26,9 @@ import {
   TREASURE_HUNTER_FINDS,
   digHeat,
   heightAt,
+  canEnterFrom,
   isWalkable,
   onMapChange,
-  reachableFrom,
   spawnPoint,
   type ActivityId,
   type PlayerId,
@@ -37,6 +37,13 @@ import type { Activity } from '../activity.js';
 import type { Player } from '../player.js';
 import { awardBadge } from './profiles.js';
 import type { GameRoom } from './context.js';
+
+/**
+ * How long someone who has just arrived waits before their first dig, ms. Arriving may put
+ * you anywhere you last stood (`hello.at`), so without it a script could reconnect its way
+ * round the island digging once per landing.
+ */
+export const ARRIVAL_DIG_DELAY_MS = 5_000;
 
 /** Buried things are at least this far apart, metres, so one lucky dig does not find two. */
 const MIN_APART_M = 30;
@@ -53,7 +60,8 @@ export class TreasureHunt {
   private activity: ActivityId | null = null;
   private spots: Spot[] = [];
   private readonly finds = new Map<PlayerId, { name: string; count: number }>();
-  private readonly lastDig = new Map<PlayerId, number>();
+  /** Last dig by visitor key (or by player, without one): a new connection is the same spade. */
+  private readonly lastDig = new Map<string, number>();
 
   constructor(private readonly room: GameRoom) {}
 
@@ -79,12 +87,18 @@ export class TreasureHunt {
       this.room.refuse(player.id, 'no_hunt');
       return;
     }
-    const last = this.lastDig.get(player.id) ?? -Infinity;
+    const settled = player.arrivedAt + ARRIVAL_DIG_DELAY_MS - now;
+    if (settled > 0) {
+      this.room.refuse(player.id, 'cooldown', { seconds: Math.ceil(settled / 1000) });
+      return;
+    }
+    const spade = player.visitorHash ?? player.id;
+    const last = this.lastDig.get(spade) ?? -Infinity;
     if (now - last < DIG_COOLDOWN_MS) {
       this.room.refuse(player.id, 'cooldown', { seconds: Math.ceil((DIG_COOLDOWN_MS - (now - last)) / 1000) });
       return;
     }
-    this.lastDig.set(player.id, now);
+    this.lastDig.set(spade, now);
 
     const [px, , pz] = player.pos;
     let nearest = -1;
@@ -130,6 +144,7 @@ export class TreasureHunt {
     if (this.activity !== activity.id) return;
     this.activity = null;
     this.spots = [];
+    this.lastDig.clear();
     const podium = [...this.finds.values()].sort((a, b) => b.count - a.count).slice(0, 3);
     this.finds.clear();
     if (!ended || podium.length === 0) return;
@@ -154,58 +169,91 @@ export class TreasureHunt {
   }
 }
 
-/** How many places the pool offers. Enough that no two hunts need look alike. */
-const POOL_SIZE = 64;
+/**
+ * The grid the island is searched on for places to bury things, metres: the step the routing
+ * samples a straight line at, finer than a character is wide, so the search cannot step over
+ * a wall a player would have to walk round.
+ */
+const GROUND_STEP = 1;
 
-let pool: Spot[] | null = null;
+let ground: Spot[] | null = null;
 // Another island is other places.
 onMapChange(() => {
-  pool = null;
+  ground = null;
 });
 
 /**
- * Places a thing may be buried: open ground above the waterline, clear of where people
- * arrive, and reachable from the harbour. The island does not change while the server runs,
- * so this is worked out once — reachability is the slow part, milliseconds a place, and a
- * hunt goes live in every room on the same tick (they share one clock), so it must not be
- * paid for there. `index.ts` warms it at boot; the first hunt would otherwise.
+ * Every place a thing may be buried: open ground above the waterline, clear of where people
+ * arrive, and reachable on foot from where they do — found by walking the island on a
+ * one-metre grid from the arrival points, stepping only where the movement rules
+ * (`canEnterFrom`) would let a player step. Thousands of places, so no hunt tells you
+ * where the next one is, and worked out once: the island does not change while the server
+ * runs, and a hunt goes live in every room on the same tick, so the search (a couple of
+ * seconds) must not be paid for there. `index.ts` does it at boot.
  */
-export function treasureSpots(): readonly Spot[] {
-  if (pool) return pool;
+export function treasureGround(): readonly Spot[] {
+  if (ground) return ground;
   const spawns = Array.from({ length: 8 }, (_, i) => spawnPoint(i).pos);
-  const [hx, , hz] = spawns[0];
-  const reachable = reachableFrom(hx, hz);
-  // Its own fixed sequence, so every process offers the same places and tests are stable.
-  let seed = 0x7ea5;
-  const next = (): number => {
-    seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
-    return seed / 4294967296;
-  };
+  const n = Math.ceil((2 * ISLAND_EXTENT) / GROUND_STEP) + 1;
+  const at = (i: number): number => -ISLAND_EXTENT + i * GROUND_STEP;
+  const seen = new Uint8Array(n * n);
+  const queue: number[] = [];
+  for (const [sx, , sz] of spawns) {
+    const ci = Math.round((sx + ISLAND_EXTENT) / GROUND_STEP);
+    const cj = Math.round((sz + ISLAND_EXTENT) / GROUND_STEP);
+    for (let di = -1; di <= 1; di++) {
+      for (let dj = -1; dj <= 1; dj++) {
+        const i = ci + di;
+        const j = cj + dj;
+        if (i < 0 || j < 0 || i >= n || j >= n || seen[i * n + j]) continue;
+        if (!isWalkable(at(i), at(j)) || !canEnterFrom(sx, sz, at(i), at(j))) continue;
+        seen[i * n + j] = 1;
+        queue.push(i * n + j);
+      }
+    }
+  }
+  for (let head = 0; head < queue.length; head++) {
+    const i = Math.floor(queue[head] / n);
+    const j = queue[head] % n;
+    for (const [ni, nj] of [
+      [i + 1, j],
+      [i - 1, j],
+      [i, j + 1],
+      [i, j - 1],
+    ]) {
+      if (ni < 0 || nj < 0 || ni >= n || nj >= n || seen[ni * n + nj]) continue;
+      if (!canEnterFrom(at(i), at(j), at(ni), at(nj))) continue;
+      seen[ni * n + nj] = 1;
+      queue.push(ni * n + nj);
+    }
+  }
   const found: Spot[] = [];
-  for (let tries = 0; found.length < POOL_SIZE && tries < 4000; tries++) {
-    const x = (next() * 2 - 1) * ISLAND_EXTENT;
-    const z = (next() * 2 - 1) * ISLAND_EXTENT;
+  for (const cell of queue) {
+    const x = at(Math.floor(cell / n));
+    const z = at(cell % n);
     if (!isWalkable(x, z) || heightAt(x, z) < 0) continue;
     if (spawns.some(([sx, , sz]) => Math.hypot(sx - x, sz - z) < SPAWN_CLEARANCE_M)) continue;
-    // Walkable is not the same as reachable: a ledge nobody can climb onto is walkable too.
-    if (!reachable(x, z)) continue;
     found.push({ x, z });
   }
-  pool = found;
-  return pool;
+  ground = found;
+  return ground;
 }
 
 /**
- * Pick `count` places to bury things from {@link treasureSpots}, apart from each other.
- * Exported for the tests.
+ * Pick `count` places to bury things from {@link treasureGround}, apart from each other and
+ * somewhere inside their grid square rather than on its corner. Exported for the tests.
  */
 export function bury(count: number, random: () => number): Array<{ x: number; z: number }> {
-  const candidates = treasureSpots();
+  const candidates = treasureGround();
   const spots: Spot[] = [];
   for (let tries = 0; spots.length < count && tries < 400; tries++) {
-    const s = candidates[Math.floor(random() * candidates.length)];
-    if (!s || spots.some((t) => Math.hypot(t.x - s.x, t.z - s.z) < MIN_APART_M)) continue;
-    spots.push({ ...s });
+    const cell = candidates[Math.floor(random() * candidates.length)];
+    if (!cell) continue;
+    const x = cell.x + (random() - 0.5) * GROUND_STEP;
+    const z = cell.z + (random() - 0.5) * GROUND_STEP;
+    const s = isWalkable(x, z) ? { x, z } : { ...cell };
+    if (spots.some((t) => Math.hypot(t.x - s.x, t.z - s.z) < MIN_APART_M)) continue;
+    spots.push(s);
   }
   return spots;
 }

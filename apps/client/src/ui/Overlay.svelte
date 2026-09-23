@@ -43,6 +43,7 @@
   import Minimap from './Minimap.svelte';
   import QuizHud from './QuizHud.svelte';
   import TreasureHud from './TreasureHud.svelte';
+  import WelcomeCard from './WelcomeCard.svelte';
   import FishingHud from './FishingHud.svelte';
   import OmikujiCard from './OmikujiCard.svelte';
   import JankenCard from './JankenCard.svelte';
@@ -120,6 +121,7 @@
     <Announcements />
     <Panels />
     <EmoteWheel />
+    <WelcomeCard />
   {/if}
 </div>
 

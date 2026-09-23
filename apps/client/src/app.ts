@@ -70,7 +70,8 @@ import { readPose } from './net/last-pose.js';
 import { adminToken, inviteCodeFromUrl, reflectIslandInUrl, visitorKey } from './net/visitor.js';
 import { Ambience } from './audio/ambience.js';
 import { GameFx } from './fx/index.js';
-import { badgeIcon, badgeName, interactLabel, tr, zoneName } from './i18n/index.js';
+import { markPhoto } from './engine/photo.js';
+import { badgeIcon, badgeName, interactLabel, roomName, tr, zoneName } from './i18n/index.js';
 import {
   activities,
   appPhase,
@@ -131,6 +132,9 @@ const FOLLOW_REPATH_SQ = 1.6 * 1.6;
  * stop distance and following never settles.
  */
 const FOLLOW_AIM_SHORT = FOLLOW_STOP_DISTANCE - 1.3;
+
+/** The sky, as it is written on a photograph's label. */
+const WEATHER_MARK: Record<Weather, string> = { clear: '☀', cloudy: '☁', rain: '☂' };
 
 /** A follow walk that ended short of them is tried again at most this often, ms. */
 const FOLLOW_RETRY_MS = 1000;
@@ -935,13 +939,19 @@ export class App {
       endVista: () => vista.set(null),
 
       takePhoto: () => {
-        void this.renderer.capture().then((blob) => {
-          if (!blob) {
+        const stamp = new Date();
+        const pad = (n: number): string => String(n).padStart(2, '0');
+        const here = get(room);
+        const place = here ? (here.kind === 'private' ? tr('island.private', { code: here.code ?? '' }) : roomName(here)) : '';
+        const mark = ['渚', place, `${stamp.getFullYear()}.${pad(stamp.getMonth() + 1)}.${pad(stamp.getDate())}`, WEATHER_MARK[get(weather)]]
+          .filter(Boolean)
+          .join(' · ');
+        void this.renderer.capture().then(async (captured) => {
+          if (!captured) {
             notify(tr('photo.failed'), 'warn');
             return;
           }
-          const stamp = new Date();
-          const pad = (n: number): string => String(n).padStart(2, '0');
+          const blob = await markPhoto(captured, mark);
           const name = `nagisa-${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}${pad(stamp.getSeconds())}.png`;
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');

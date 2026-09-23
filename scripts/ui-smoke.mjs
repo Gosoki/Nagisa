@@ -188,6 +188,23 @@ check('hud shows the current zone', text().includes('Main Plaza'), text().slice(
 check('population is shown', /\\b3\\b/.test(text()));
 check('next-up strip shows the activity', text().includes('Lantern Walk'));
 
+console.log('\\nFirst steps');
+check('a first visit is greeted with how to play', text().includes('Welcome to Nagisa') && text().includes('press E'), text().slice(0, 300));
+byText(/^Go ashore$/)?.click();
+await sleep(60);
+check('and it goes when dismissed', !text().includes('Welcome to Nagisa'));
+check('remembered, so it is not shown again', dom.window.localStorage.getItem('nagisa.welcomed') === '1');
+stores.openPanel.set('settings');
+await sleep(60);
+byText(/^How to play$/)?.click();
+await sleep(60);
+check('the settings panel can bring it back', text().includes('Welcome to Nagisa'));
+dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+await sleep(60);
+check('Escape puts it away', !text().includes('Welcome to Nagisa'));
+stores.openPanel.set(null);
+await sleep(40);
+
 console.log('\\nZone card');
 stores.zoneAnnounce.set(true);
 await sleep(80);

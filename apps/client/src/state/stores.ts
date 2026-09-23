@@ -570,6 +570,9 @@ export const friendsHere: Readable<Set<PlayerId>> = derived(
   },
 );
 
+/** Whether the first-steps card is up (see WelcomeCard.svelte). */
+export const welcomeOpen: Writable<boolean> = writable(false);
+
 /** The island's weather right now (see `weather.ts` in the shared package). Written by the app. */
 export const weather: Writable<Weather> = writable('clear');
 

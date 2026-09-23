@@ -21,7 +21,7 @@
    * they can find it without reading anything else. It writes `settings.lang` directly; the
    * whole interface reads the translator through a store, so it changes at once.
    */
-  import { settings, rooms, room, cmd, population, type Settings } from '../state/stores.js';
+  import { settings, rooms, room, cmd, population, welcomeOpen, type Settings } from '../state/stores.js';
   import { LANGS, LANG_NAMES, lang, roomName, t, type Lang } from '../i18n/index.js';
 
   type QualityTier = Settings['quality'];
@@ -31,6 +31,10 @@
     settings.update((s) => ({ ...s, lang }));
   }
 </script>
+
+<div class="section row">
+  <button type="button" class="again" onclick={() => welcomeOpen.set(true)}>{$t('settings.welcome')}</button>
+</div>
 
 <div class="section">
   <span class="label">{$t('lang.label')}</span>
@@ -182,6 +186,17 @@
     background: var(--ui-surface-sunk);
     border-radius: var(--r-sm);
     padding: 2px;
+  }
+
+  .again {
+    border: 1px solid var(--ui-line);
+    border-radius: 999px;
+    background: transparent;
+    padding: 2px 10px;
+    font: inherit;
+    font-size: var(--fs-xs);
+    color: var(--ui-ink-muted);
+    cursor: pointer;
   }
 
   .segment {

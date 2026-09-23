@@ -57,6 +57,12 @@ class RemotePlayer {
   /** True while the server says this player's session is disconnected but recoverable. */
   away = false;
 
+  /** Squared distance to the camera this frame, for ranking who is animated. */
+  cameraDistSq = 0;
+
+  /** Where between two samples the figure is this frame. Reused: this runs every frame, for everyone. */
+  private readonly between = { x: 0, y: 0, z: 0, yaw: 0, anim: AnimState.Idle };
+
   /** Where the seat under this player was last looked up. See {@link interpolate}. */
   private seatedAt = { x: NaN, z: NaN };
 
@@ -122,15 +128,14 @@ class RemotePlayer {
       const b = s[i];
       const span = b.time - a.time || 1;
       const t = (renderTime - a.time) / span;
-      target = {
-        x: a.x + (b.x - a.x) * t,
-        y: a.y + (b.y - a.y) * t,
-        z: a.z + (b.z - a.z) * t,
-        // Yaw needs shortest-arc interpolation or characters spin through 350° when
-        // they cross the ±π seam.
-        yaw: lerpAngle(a.yaw, b.yaw, t),
-        anim: b.anim,
-      };
+      target = this.between;
+      target.x = a.x + (b.x - a.x) * t;
+      target.y = a.y + (b.y - a.y) * t;
+      target.z = a.z + (b.z - a.z) * t;
+      // Yaw needs shortest-arc interpolation or characters spin through 350° when
+      // they cross the ±π seam.
+      target.yaw = lerpAngle(a.yaw, b.yaw, t);
+      target.anim = b.anim;
     }
 
     // Distance covered this frame recovers the real ground speed.
@@ -183,8 +188,13 @@ function lerpAngle(a: number, b: number, t: number): number {
  * Owns their scene objects, their interpolation and their LOD. The netcode calls the
  * mutation methods; the frame loop calls {@link update}.
  */
+/** Nearest the camera first. */
+const byCameraDistance = (a: RemotePlayer, b: RemotePlayer): number => a.cameraDistSq - b.cameraDistSq;
+
 export class RemotePlayers {
   readonly group = new THREE.Group();
+  /** Scratch for `update`: this frame's players, to rank. Reused rather than rebuilt every frame. */
+  private readonly ranked: RemotePlayer[] = [];
   private readonly players = new Map<PlayerId, RemotePlayer>();
 
   constructor(private readonly maxDetailed: number) {
@@ -283,22 +293,24 @@ export class RemotePlayers {
 
     // Interpolation is cheap and must happen for everyone, or distant players teleport
     // when they come back into detail range.
-    const ranked: Array<{ p: RemotePlayer; d: number }> = [];
+    const ranked = this.ranked;
+    ranked.length = 0;
     for (const p of this.players.values()) {
       p.interpolate(renderTime, dt);
       p.character.updateLod(cameraPosition);
-      ranked.push({ p, d: p.position.distanceToSquared(cameraPosition) });
+      p.cameraDistSq = p.position.distanceToSquared(cameraPosition);
+      ranked.push(p);
     }
 
     if (ranked.length <= this.maxDetailed) {
-      for (const { p } of ranked) p.character.update(dt);
+      for (const p of ranked) p.character.update(dt);
       return;
     }
 
     // Partial selection: we only need the nearest N, so a full sort is wasteful, but at
     // our population ceiling (~120) a sort is a few microseconds and far more readable.
-    ranked.sort((a, b) => a.d - b.d);
-    for (let i = 0; i < this.maxDetailed; i++) ranked[i].p.character.update(dt);
+    ranked.sort(byCameraDistance);
+    for (let i = 0; i < this.maxDetailed; i++) ranked[i].character.update(dt);
   }
 
   dispose(): void {

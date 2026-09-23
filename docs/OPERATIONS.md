@@ -322,6 +322,27 @@ What does **not** need to change: the protocol, the tick loop, the client. Rooms
 already isolated from each other by design, which is what makes this a contained change
 rather than a rewrite.
 
+### Measured
+
+`npm run test:load` (`tools/load-smoke.mjs`) runs the built server on its own port and walks
+a crowd of scripted visitors over it — routed walks at walking pace, a chat line every half
+minute or so, an emote every twenty seconds — from several threads, so the harness keeps up
+and the numbers are the server's. `LOAD_BOTS` and `LOAD_SECONDS` set the size and length.
+
+On a laptop (Apple silicon, one Node process), 300 visitors spread by the matchmaker over
+three shards of 108 / 108 / 84:
+
+| | |
+|---|---|
+| Tick time | p50 0.3 ms, p99 0.8 ms — of a 100 ms budget |
+| Downlink per visitor | ~8.6 KB/s on the wire (permessage-deflate), ~29 KB/s decoded, in a full shard |
+| Deltas received | 9.8 per second each — the tick rate |
+| Corrections of honest walkers | 0.02 % |
+| Server process | ~55 % of one core, ~310 MB resident |
+
+Downlink grows with how many people are moving *in your shard*, not on the server, which is
+what the shard cap is for: a full shard costs a phone about as much as a voice call.
+
 ---
 
 ## 7. Deploying a protocol change

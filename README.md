@@ -137,6 +137,7 @@ npm test             # server unit tests + world generation + interface mount ch
 npm run test:e2e     # real clients against a real server over real sockets, every game included
 npm run test:app     # the whole stack in a browser: two players, entry → world
 npm run test:island  # in a browser: make a private island, follow the invite, whisper
+npm run test:load    # 150 scripted visitors walking, chatting and waving; tick time and bandwidth
 npm run test:all     # test + test:e2e + test:app + test:island + test:roam
 
 npm run shots        # render the review viewpoints to PNG (headless, real pipeline)

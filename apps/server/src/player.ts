@@ -12,7 +12,9 @@ import type { ProfileRecord } from './persistence.js';
 import { newProfile } from './games/profiles.js';
 import {
   AnimState,
+  MAX_CLIENT_SPEED,
   MAX_SERVER_SPEED,
+  PROTOCOL,
   MAX_SERVER_VERTICAL_SPEED,
   canEnterFrom,
   heightAt,
@@ -53,12 +55,15 @@ const MAX_VERTICAL_SPEED = MAX_SERVER_VERTICAL_SPEED;
  * real interval by 5×, and a legitimately running player is corrected — producing exactly
  * the rubber-banding this design goes to some length to avoid.
  *
- * A fixed 1.5 m absorbs that: it is more than a running character covers in one report
- * (6.2 m/s ÷ 10 Hz ≈ 0.62 m) but negligible against a real teleport, which is tens of
- * metres. A cheat could exploit it to gain at most 1.5 m per report — and there is
+ * So the slack must stay comfortably more than a running character covers in one report,
+ * a frame late: 2.5 reports' worth, which at 18 m/s and 10 Hz is 4.5 m. It is derived from
+ * the run speed rather than written down because a fixed 1.5 m, set when the run was
+ * 6.2 m/s, silently fell below a single report's distance when the island got faster —
+ * and every runner on a phone started snapping back. Against a real teleport, tens of
+ * metres, it is still small; a cheat could gain a few metres per report, and there is
  * nothing on this island to win by doing so.
  */
-const JITTER_SLACK_M = 1.5;
+const JITTER_SLACK_M = 2.5 * (MAX_CLIENT_SPEED / PROTOCOL.MOVE_SEND_HZ);
 
 /**
  * How far above `heightAt(x, z)` a player may report standing, metres. Covers jump

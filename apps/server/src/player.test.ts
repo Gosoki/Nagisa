@@ -97,6 +97,37 @@ test('a move that exceeds the horizontal speed budget is rejected with a speed c
   assert.deepEqual(player.pos, START, 'player position must be unchanged after rejection');
 });
 
+/** A straight stretch of walkable ground at least `length` long: start and unit direction. */
+function findStraightRun(length: number): [number, number, number, number] {
+  for (let i = 0; i < 16; i++) {
+    const [x0, , z0] = spawnPoint(i).pos;
+    for (let k = 0; k < 16; k++) {
+      const dx = Math.cos((k / 16) * Math.PI * 2);
+      const dz = Math.sin((k / 16) * Math.PI * 2);
+      let clear = true;
+      for (let d = 0; d <= length && clear; d += 0.25) clear = isWalkable(x0 + dx * d, z0 + dz * d);
+      if (clear) return [x0, z0, dx, dz];
+    }
+  }
+  throw new Error('no straight walkable stretch near the quay');
+}
+
+test('a runner whose reports the network bunches up is not snapped back', () => {
+  // A radio stall holds a few reports back and then delivers them together: each covers a
+  // hundred-odd milliseconds of running, but they arrive milliseconds apart. The jitter slack
+  // is what lets them through, so it has to exceed what one report at full run can cover.
+  const step = MOVE_SPEED.run * 0.11; // One report's running, a frame late.
+  const [x0, z0, dx, dz] = findStraightRun(step * 4 + 1);
+  const player = makePlayer([x0, heightAt(x0, z0), z0]);
+  const t0 = Date.now() + 500;
+  for (let i = 1; i <= 4; i++) {
+    const x = x0 + dx * step * i;
+    const z = z0 + dz * step * i;
+    const result = player.applyMove({ pos: [x, heightAt(x, z), z], yaw: 0, anim: AnimState.Run, seq: i }, t0 + i * 10);
+    assert.equal(result, null, `report ${i} of the burst should be accepted`);
+  }
+});
+
 test('a move onto unwalkable terrain within the speed budget is rejected with a bounds correction', () => {
   // A pair 13 m apart (well within the ~14 m/2 s budget), the first walkable and the second
   // not, and the second *above* the first — a bank the player is trying to climb. This

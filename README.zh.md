@@ -122,6 +122,7 @@ npm run test:e2e     # 真实服务器 + 真实 WebSocket 的端到端（含全�
 npm run test:app     # 真浏览器整栈：两名玩家进岛
 npm run test:island  # 真浏览器：建私人岛 → 邀请链接 → 好友进岛 → 悄悄话
 npm run test:roam    # 真浏览器：在岛上四处走动
+npm run test:load    # 压测：150 个脚本访客走动、聊天、做表情，看 tick 耗时与带宽
 npm run test:all     # 以上全部
 ```
 

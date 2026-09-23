@@ -31,6 +31,7 @@
     "map": "node scripts/world-map.mjs",
     "test:roam": "node tools/roam-smoke.mjs",
     "test:reconnect": "node tools/reconnect-smoke.mjs",
+    "test:load": "node tools/load-smoke.mjs",
     "test:island": "node tools/island-smoke.mjs",
     "audit:terrain": "node scripts/terrain-audit.mjs",
     "audit:placement": "node scripts/placement-audit.mjs",

@@ -262,7 +262,8 @@ The server validates each report (`Player.applyMove`):
 - rejects `NaN` / `Infinity`;
 - clamps horizontal distance against `MAX_SERVER_SPEED` (the client's run speed plus
   2.5 m/s of headroom) times the elapsed time, and vertical distance against 16 m/s, each
-  with 1.5 m of slack for jitter;
+  with slack for arrival jitter — two and a half reports' worth of running (4.5 m), so a
+  burst of reports held back by a radio stall is not snapped back;
 - rejects a step that `canEnterFrom` refuses — steep ground may be entered from above, never
   climbed onto (`packages/shared/src/movement.ts`, `terrain.ts`);
 - allows a band from 1.5 m below to 6 m above `heightAt`, so jumping is not treated as

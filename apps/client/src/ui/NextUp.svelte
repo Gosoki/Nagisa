@@ -14,9 +14,13 @@
    * The relative time ("in 12 min") is recomputed every 10s, which is frequent enough to
    * feel alive without a per-second ticking clock — a countdown that visibly ticks down
    * digit-by-digit is exactly the kind of "demands attention" motion rule 6 rules out.
+   *
+   * On a phone the strip drops one row, under the top-right buttons: at 360 px a centred
+   * strip and the button row cannot both have the top edge.
    */
-  import { getZone, ActivityState } from '@nagisa/shared';
+  import { ActivityState } from '@nagisa/shared';
   import { nextUp, self, cmd } from '../state/stores.js';
+  import { activityTitle, lang, t, zoneName } from '../i18n/index.js';
 
   let now = $state(Date.now());
 
@@ -30,18 +34,18 @@
   const label = $derived.by(() => {
     const a = $nextUp;
     if (!a) return '';
-    if (a.state === ActivityState.Live) return 'Live now';
+    if (a.state === ActivityState.Live) return $t('time.live');
     const diffMs = a.startsAt - now;
-    if (diffMs <= 0) return 'Starting';
+    if (diffMs <= 0) return $t('time.starting');
     const mins = Math.round(diffMs / 60_000);
-    if (mins < 1) return 'Starting';
-    if (mins < 60) return `in ${mins} min`;
+    if (mins < 1) return $t('time.starting');
+    if (mins < 60) return $t('time.inMin', { n: mins });
     const hrs = Math.floor(mins / 60);
     const rem = mins % 60;
-    return rem > 0 ? `in ${hrs}h ${rem}m` : `in ${hrs}h`;
+    return rem > 0 ? $t('time.inHoursMin', { h: hrs, m: rem }) : $t('time.inHours', { h: hrs });
   });
 
-  const venueName = $derived($nextUp ? (getZone($nextUp.zone)?.name ?? $nextUp.zone) : '');
+  const venueName = $derived($nextUp ? zoneName($nextUp.zone, $lang) : '');
 
   const joinable = $derived(
     $nextUp !== null && ($nextUp.state === ActivityState.Open || $nextUp.state === ActivityState.Live),
@@ -52,20 +56,20 @@
 {#if $nextUp}
   <div class="strip">
     <div class="text">
-      <p class="title">{$nextUp.title}</p>
+      <p class="title">{activityTitle($nextUp, $lang)}</p>
       <p class="meta">{venueName} · {label}</p>
     </div>
 
     {#if joinable}
       <div class="actions">
         {#if attached}
-          <button type="button" class="action" onclick={() => cmd().leaveActivity()}>Leave</button>
+          <button type="button" class="action" onclick={() => cmd().leaveActivity()}>{$t('activities.leave')}</button>
         {:else}
           <button type="button" class="action primary" onclick={() => cmd().joinActivity($nextUp!.id, 'participant')}>
-            Join
+            {$t('activities.join')}
           </button>
           <button type="button" class="action" onclick={() => cmd().joinActivity($nextUp!.id, 'audience')}>
-            Watch
+            {$t('activities.watch')}
           </button>
         {/if}
       </div>
@@ -152,6 +156,12 @@
   .action:focus-visible {
     outline: 2px solid var(--ui-accent);
     outline-offset: 2px;
+  }
+
+  @media (max-width: 640px) {
+    .strip {
+      top: calc(max(var(--sp-md), env(safe-area-inset-top)) + 40px);
+    }
   }
 
   @media (max-width: 420px) {

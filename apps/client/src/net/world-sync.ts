@@ -74,7 +74,7 @@ import {
   zonePopulation,
 } from '../state/stores.js';
 import type { Speech } from '../character/speech.js';
-import { badgeName, fishName, fortuneText, tr } from '../i18n/index.js';
+import { badgeName, fishName, fortuneText, tr, zoneName } from '../i18n/index.js';
 
 /** Minimum movement before a transform is worth sending, metres. */
 const POSITION_DEADBAND = 0.02;
@@ -87,6 +87,9 @@ const YAW_DEADBAND = 0.01;
  * they stopped moving still learns where they are without waiting for a snapshot.
  */
 const KEEPALIVE_INTERVAL_MS = 2000;
+
+/** How often expired announcements are cleared off the local board. */
+const ANNOUNCEMENT_PRUNE_MS = 5000;
 
 /** How long a toast stays up if the announcement did not specify. */
 const DEFAULT_TOAST_MS = 6000;
@@ -162,6 +165,16 @@ export class WorldSync {
   ) {
     this.unsubscribers.push(connection.on('message', this.onMessage));
     this.unsubscribers.push(connection.on('latency', (rtt) => latency.set(rtt)));
+    // The server forgets an announcement when its time is up; the board here should too,
+    // rather than keep everything it was ever told until the next snapshot.
+    const prune = setInterval(() => {
+      const now = serverNow();
+      announcements.update((list) => {
+        const kept = list.filter((a) => now - a.at < a.ttlMs);
+        return kept.length === list.length ? list : kept;
+      });
+    }, ANNOUNCEMENT_PRUNE_MS);
+    this.unsubscribers.push(() => clearInterval(prune));
   }
 
   // -------------------------------------------------------------------------
@@ -535,9 +548,16 @@ export class WorldSync {
           this.bubbles.say(event.by, slip.kanji);
         }
         break;
-      case 'stamp':
+      case 'stamp': {
+        if (event.by === this.selfId()) {
+          // The profile push that carries the new stamp arrives before this event (it is sent
+          // straight away, the event rides the next tick), so the count is already current.
+          const card = get(profile);
+          notify(tr('stamp.got', { place: zoneName(event.zone), n: card?.stamps.length ?? 1, total: card?.stampTotal ?? 1 }), 'good');
+        }
         if (event.complete) pushSystemChat(tr('event.stampComplete', { name: this.nameOf(event.by) }));
         break;
+      }
       case 'dice':
         pushSystemChat(tr('event.dice', { name: this.nameOf(event.by), value: event.value, sides: event.sides }));
         this.bubbles.say(event.by, `🎲 ${event.value}`);
@@ -555,7 +575,9 @@ export class WorldSync {
       }
       case 'badge': {
         const badge = getBadge(event.badge);
-        if (badge) pushSystemChat(tr('event.badge', { icon: badge.icon, name: this.nameOf(event.by), badge: badgeName(event.badge) }));
+        if (!badge) break;
+        pushSystemChat(tr('event.badge', { icon: badge.icon, name: this.nameOf(event.by), badge: badgeName(event.badge) }));
+        if (event.by === this.selfId()) notify(`${badge.icon} ${badgeName(event.badge)}`, 'good', 4000);
         break;
       }
       default:
@@ -621,6 +643,7 @@ export class WorldSync {
         winner: base?.winner ?? null,
         final: false,
         reason: null as NonNullable<ServerJanken['reason']> | null,
+        byMe: false,
       };
       switch (msg.kind) {
         case 'invited':
@@ -639,7 +662,9 @@ export class WorldSync {
             final: msg.final === true,
           };
         case 'cancelled':
-          return { ...next, phase: 'cancelled' as const, reason: msg.reason ?? null };
+          // Only the challenged side can decline, so if we were answering an invitation the
+          // one who declined was us — which the card says differently from being declined.
+          return { ...next, phase: 'cancelled' as const, reason: msg.reason ?? null, byMe: cur?.duel === msg.duel && cur.phase === 'invited' };
         default:
           return cur;
       }
@@ -673,6 +698,7 @@ export class WorldSync {
     this.jankenTimer = null;
     fishing.set({ phase: 'idle', spot: null, biteAt: 0, window: 0, caught: null, reason: null });
     janken.set(null);
+    omikujiSlip.set(null);
     this.local.setFishing(false);
   }
 

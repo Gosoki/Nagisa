@@ -16,10 +16,30 @@
    * Overlay.svelte keeps this mounted for a short grace window after `$appPhase` leaves
    * 'loading' specifically so this CSS opacity transition has time to finish before the
    * DOM node is removed.
+   *
+   * The progress labels arrive from the engine as English sentences. The known ones are
+   * shown in the player's language through the table below; anything else is shown as it
+   * came, so a new label is never lost, only untranslated.
    */
   import { loadProgress } from '../state/stores.js';
+  import { t } from '../i18n/index.js';
 
   let { active }: { active: boolean } = $props();
+
+  const LABEL_KEYS: Readonly<Record<string, string>> = {
+    'Approaching the island': 'loader.approaching',
+    'Shaping the coastline': 'loader.coastline',
+    'Raising the buildings': 'loader.buildings',
+    'Setting out the seats': 'loader.seats',
+    'Hanging the lanterns': 'loader.lanterns',
+    'Settling the ground': 'loader.ground',
+    Ready: 'loader.ready',
+    'The island could not be reached': 'loader.unreachable',
+  };
+
+  const label = $derived(
+    Object.hasOwn(LABEL_KEYS, $loadProgress.label) ? $t(LABEL_KEYS[$loadProgress.label]) : $loadProgress.label,
+  );
 </script>
 
 <div class="loader" class:hidden={!active} role="status" aria-live="polite">
@@ -29,7 +49,7 @@
     <path class="wave wave-3" d="M4 44 Q 20 34, 36 44 T 68 44 T 100 44 T 116 44" />
   </svg>
 
-  <p class="label">{$loadProgress.label}</p>
+  <p class="label">{label}</p>
 
   <div class="rule">
     <div class="rule-fill" style:width="{Math.round(Math.min(1, Math.max(0, $loadProgress.value)) * 100)}%"></div>

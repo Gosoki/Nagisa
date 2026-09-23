@@ -119,10 +119,11 @@ export class Guestbook {
 
   /** What changed since the last call, for the delta. */
   drain(): { added: GuestbookEntry[]; removed: string[] } {
-    // A line added and pushed off in the same tick never needs to reach anybody.
+    // A line added and taken away in the same tick is not sent as added — but its removal
+    // is, because a snapshot taken in between (someone arriving mid-tick) already carried it.
     const removed = new Set(this.removed);
     const added = this.added.filter((a) => !removed.has(a.id));
-    const out = { added, removed: this.removed.filter((r) => !this.added.some((a) => a.id === r)) };
+    const out = { added, removed: [...this.removed] };
     this.added = [];
     this.removed = [];
     return out;

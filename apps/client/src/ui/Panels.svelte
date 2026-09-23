@@ -6,32 +6,47 @@
    * [panel], and null most of the time" — so this component doesn't need to coordinate
    * multiple panels at once, only pick which body to show inside one shell. The shell
    * (positioning, sizing, shadow, close affordances) lives here; each panel's own content
-   * lives in its own file (PeoplePanel / ActivitiesPanel / SettingsPanel / HostPanel) so
-   * none of them has to duplicate the max-width/scroll/close behaviour.
+   * lives in its own file (PeoplePanel / ActivitiesPanel / SettingsPanel / HostPanel, and
+   * the games' BoardPanel / CollectionPanel / IslandPanel) so none of them has to duplicate
+   * the max-width/scroll/close behaviour.
+   *
+   * The three game panels get a slightly wider shell: a stamp card, a fish book and an
+   * invite link want a few more columns than a list of names. The shell is capped to the
+   * viewport height and scrolls as a whole, so a long collection book still ends on screen
+   * on a phone held sideways.
    *
    * Two ways to close, both keyboard- and pointer-friendly: Escape, and a pointerdown
    * anywhere outside the panel. The outside-click listener is attached to `window` only
    * while a panel is open, rather than as a permanent full-screen backdrop div — an
    * always-present invisible catcher would be exactly the "stray full-screen div" bug the
-   * root Overlay is built to avoid.
+   * root Overlay is built to avoid. A pointerdown on a control marked `data-panel-toggle`
+   * (the HUD's panel buttons) is left to that control, so pressing the button of the open
+   * panel closes it instead of closing and immediately re-opening it.
    */
-  import { openPanel } from '../state/stores.js';
+  import { openPanel, type PanelId } from '../state/stores.js';
+  import { t } from '../i18n/index.js';
   import PeoplePanel from './PeoplePanel.svelte';
   import ActivitiesPanel from './ActivitiesPanel.svelte';
   import SettingsPanel from './SettingsPanel.svelte';
   import HostPanel from './HostPanel.svelte';
   import NotesPanel from './NotesPanel.svelte';
+  import BoardPanel from './BoardPanel.svelte';
+  import CollectionPanel from './CollectionPanel.svelte';
+  import IslandPanel from './IslandPanel.svelte';
 
-  const TITLES = {
-    people: 'People',
-    activities: 'Activities',
-    settings: 'Settings',
-    host: 'Host',
-    notes: 'Placement notes',
-    board: 'Notice board',
-    collection: 'Collection',
-    island: 'Island',
-  } as const;
+  const TITLE_KEYS: Record<Exclude<PanelId, null>, string> = {
+    people: 'panel.people',
+    activities: 'panel.activities',
+    settings: 'panel.settings',
+    host: 'panel.host',
+    notes: 'panel.notes',
+    board: 'panel.board',
+    collection: 'panel.collection',
+    island: 'panel.island',
+  };
+
+  /** Panels whose contents are laid out in more than one column. */
+  const WIDE: ReadonlySet<PanelId> = new Set<PanelId>(['board', 'collection', 'island']);
 
   let panelEl: HTMLElement | undefined = $state();
 
@@ -46,7 +61,9 @@
       if (e.key === 'Escape') close();
     }
     function onPointerdown(e: PointerEvent): void {
-      if (panelEl && e.target instanceof Node && !panelEl.contains(e.target)) close();
+      if (!(e.target instanceof Node) || !panelEl || panelEl.contains(e.target)) return;
+      if (e.target instanceof Element && e.target.closest('[data-panel-toggle]')) return;
+      close();
     }
 
     window.addEventListener('keydown', onKeydown);
@@ -59,10 +76,16 @@
 </script>
 
 {#if $openPanel}
-  <div class="panel" role="dialog" aria-label={TITLES[$openPanel]} bind:this={panelEl}>
+  <div
+    class="panel"
+    class:wide={WIDE.has($openPanel)}
+    role="dialog"
+    aria-label={$t(TITLE_KEYS[$openPanel])}
+    bind:this={panelEl}
+  >
     <div class="header">
-      <span class="title">{TITLES[$openPanel]}</span>
-      <button type="button" class="close" aria-label="Close panel" onclick={close}>×</button>
+      <span class="title">{$t(TITLE_KEYS[$openPanel])}</span>
+      <button type="button" class="close" aria-label={$t('panel.close')} onclick={close}>×</button>
     </div>
 
     {#if $openPanel === 'people'}
@@ -75,23 +98,42 @@
       <HostPanel />
     {:else if $openPanel === 'notes'}
       <NotesPanel />
+    {:else if $openPanel === 'board'}
+      <BoardPanel />
+    {:else if $openPanel === 'collection'}
+      <CollectionPanel />
+    {:else if $openPanel === 'island'}
+      <IslandPanel />
     {/if}
   </div>
 {/if}
 
 <style>
   .panel {
+    --panel-top: calc(max(var(--sp-md), env(safe-area-inset-top)) + 40px);
     position: fixed;
-    top: calc(max(var(--sp-md), env(safe-area-inset-top)) + 40px);
+    top: var(--panel-top);
     right: max(var(--sp-md), env(safe-area-inset-right));
     z-index: var(--z-panel);
     pointer-events: auto;
-    width: min(300px, calc(100vw - 2 * var(--sp-md)));
+    /* Content-box: the viewport less both margins and both paddings. */
+    width: min(300px, calc(100vw - 4 * var(--sp-md)));
+    /* The viewport below the panel's top, less its own vertical padding (content-box). */
+    --panel-room: calc(var(--panel-top) + max(var(--sp-md), env(safe-area-inset-bottom)) + var(--sp-sm) + var(--sp-md));
+    max-height: calc(100vh - var(--panel-room));
+    max-height: calc(100dvh - var(--panel-room));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
     background: var(--ui-surface);
     box-shadow: var(--ui-shadow);
     border-radius: var(--r-panel);
     padding: var(--sp-sm) var(--sp-md) var(--sp-md);
     animation: settle var(--mo-calm) both;
+  }
+
+  .panel.wide {
+    width: min(372px, calc(100vw - 4 * var(--sp-md)));
   }
 
   @keyframes settle {

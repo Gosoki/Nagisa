@@ -111,6 +111,11 @@ export class Player {
 
   /** True while muted by a host/admin: chat and emotes are silently dropped. */
   muted = false;
+  /**
+   * The room whose keeper muted them, or null for a mute by one of the server's admins. A
+   * keeper's authority ends at their shore, so their mute is lifted when the player leaves.
+   */
+  mutedIn: string | null = null;
 
   /** Checked in to the attached activity. Cleared whenever the attachment changes. */
   checkedIn = false;

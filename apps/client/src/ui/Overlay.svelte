@@ -21,9 +21,15 @@
    * Layering uses the named z-index tokens (`--z-*`) exclusively, per component, rather
    * than relying on DOM order — that keeps stacking correct (toast above panel above hud)
    * even though 'loading'/'entry'/'world' never actually overlap in practice.
+   *
+   * It also keeps the document's `lang` in step with the interface language. Screen readers
+   * pick their voice from it, and browsers pick CJK glyphs by it: the shared type stack names
+   * Japanese faces first, which is right for Japanese and wrong for Simplified Chinese — so
+   * the Chinese interface swaps in a stack that leads with Chinese faces.
    */
   import { tokensToCss } from '@nagisa/shared';
   import { appPhase, stickState } from '../state/stores.js';
+  import { lang } from '../i18n/index.js';
   import Loader from './Loader.svelte';
   import Entry from './Entry.svelte';
   import Hud from './Hud.svelte';
@@ -35,6 +41,11 @@
   import Joystick from './Joystick.svelte';
   import Chat from './Chat.svelte';
   import Minimap from './Minimap.svelte';
+  import QuizHud from './QuizHud.svelte';
+  import FishingHud from './FishingHud.svelte';
+  import OmikujiCard from './OmikujiCard.svelte';
+  import JankenCard from './JankenCard.svelte';
+  import PlayerCard from './PlayerCard.svelte';
 
   /**
    * Virtual-stick drag state for touch movement.
@@ -77,9 +88,13 @@
     document.head.appendChild(style);
     return () => style.remove();
   });
+
+  $effect(() => {
+    document.documentElement.lang = $lang === 'zh' ? 'zh-CN' : $lang;
+  });
 </script>
 
-<div class="overlay">
+<div class="overlay" class:zh={$lang === 'zh'}>
   {#if showLoader}
     <Loader active={$appPhase === 'loading'} />
   {/if}
@@ -87,12 +102,19 @@
   {#if $appPhase === 'entry'}
     <Entry />
   {:else if $appPhase === 'world'}
+    <!-- Before the HUD: on a phone the map sits bottom-left, under the interaction prompts,
+         and at one z-level it is DOM order that decides which of them is covered. -->
+    <Minimap />
     <Hud />
     <Joystick stick={$stick} />
-    <Minimap />
     <Chat />
     <ZoneCard />
     <NextUp />
+    <QuizHud />
+    <FishingHud />
+    <OmikujiCard />
+    <JankenCard />
+    <PlayerCard />
     <Announcements />
     <Panels />
     <EmoteWheel />
@@ -107,5 +129,10 @@
     pointer-events: none;
     font-family: var(--font-sans);
     color: var(--ui-ink);
+  }
+
+  .overlay.zh {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+      'Microsoft YaHei', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif;
   }
 </style>

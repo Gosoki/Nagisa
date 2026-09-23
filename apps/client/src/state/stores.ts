@@ -564,6 +564,8 @@ export interface JankenState {
   winner: PlayerId | null;
   final: boolean;
   reason: 'declined' | 'timeout' | 'left' | 'busy' | 'far' | null;
+  /** On `cancelled`: we were the one who ended it (declined the invitation). */
+  byMe: boolean;
 }
 
 export const janken: Writable<JankenState | null> = writable(null);

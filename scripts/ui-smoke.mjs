@@ -135,6 +135,11 @@ const check = (name, ok, detail) => {
 const target = dom.window.document.getElementById('app');
 const text = () => dom.window.document.body.textContent || '';
 const buttons = () => [...dom.window.document.querySelectorAll('button')];
+const byText = (re) => buttons().find(b => re.test(b.textContent.trim()));
+
+// Every assertion below that names a word names the English one. The language otherwise
+// follows the browser, so pin it before anything renders.
+stores.settings.update(s => ({ ...s, lang: 'en' }));
 
 console.log('\\nMount');
 let overlay;
@@ -166,7 +171,7 @@ check('entry screen has a go-ashore action', buttons().some(b => /ashore|enter|g
 console.log('\\nWorld phase');
 stores.appPhase.set('world');
 stores.self.update(s => ({ ...s, id: 'p1', name: 'Sawada', zone: 'plaza' }));
-stores.currentZone.set({ id: 'plaza', name: 'Main Plaza', nameJa: '\\u5e83\\u5834', caption: 'The middle of the island.' });
+stores.currentZone.set({ id: 'plaza', name: 'Main Plaza', nameJa: '\\u5e83\\u5834', caption: 'The middle of things, on the eastern shelf. Something is usually about to start.' });
 stores.players.set([
   { id: 'p2', name: 'Keeper', appearance: {outfit:1,skin:1,accessory:0}, role: 2, pos:[0,8,0], yaw:0, anim:0, zone:'plaza', activity:null, mode:null },
   { id: 'p3', name: 'Rin', appearance: {outfit:2,skin:2,accessory:1}, role: 0, pos:[4,8,2], yaw:0, anim:0, zone:'harbor', activity:null, mode:null },
@@ -186,7 +191,7 @@ check('next-up strip shows the activity', text().includes('Lantern Walk'));
 console.log('\\nZone card');
 stores.zoneAnnounce.set(true);
 await sleep(80);
-check('zone card shows the caption', text().includes('The middle of the island'));
+check('zone card shows the caption', text().includes('The middle of things'));
 
 console.log('\\nAnnouncements');
 stores.currentToast.set({ id:'an1', text:'The lamp is lit.', fromName:'Keeper', scope:{kind:'island'}, at: Date.now(), ttlMs: 8000, priority:'normal' });
@@ -233,7 +238,105 @@ stores.self.update(s => ({ ...s, role: 3 }));
 stores.openPanel.set('host');
 await sleep(80);
 check('host panel renders for a privileged player', text().length > 0);
+check('an admin hosting nothing still gets the schedule row', text().includes('Put on the programme') && text().includes('Nothing of yours'), text().slice(-300));
 stores.openPanel.set(null);
+await sleep(40);
+// A host with something of their own: the slip makes its announcement draft as it appears,
+// which once meant writing state during render — an exception, and an empty console.
+stores.activities.update(list => [...list, { ...list[0], id: 'a2', title: 'Morning Assembly', hostId: 'p1', hostName: 'Sawada' }]);
+stores.openPanel.set('host');
+await sleep(80);
+check('host panel shows a slip for your own activity', !!dom.window.document.querySelector('input[placeholder="Announce something…"]') && text().includes('Morning Assembly'), text().slice(-300));
+stores.openPanel.set(null);
+stores.activities.update(list => list.filter(a => a.id !== 'a2'));
+
+console.log('\\nGame panels');
+for (const [panel, title] of [['board', 'Notice board'], ['collection', 'Collection'], ['island', 'Island']]) {
+  stores.openPanel.set(panel);
+  await sleep(80);
+  const dialog = dom.window.document.querySelector('[role="dialog"]');
+  check(panel + ' panel opens', dialog && dialog.getAttribute('aria-label') === title, dialog && dialog.outerHTML.slice(0, 160));
+}
+stores.openPanel.set(null);
+await sleep(40);
+
+const more = buttons().find(b => b.getAttribute('aria-label') === 'More');
+more?.click();
+await sleep(60);
+check('the more button folds out collection, island and photo',
+  !!byText(/^Collection/) && !!byText(/^Island/) && !!byText(/^Take a photo/), buttons().map(b => b.textContent.trim()).join('|'));
+byText(/^Collection/)?.click();
+await sleep(60);
+check('choosing collection opens its panel', dom.window.document.querySelector('[role="dialog"]')?.getAttribute('aria-label') === 'Collection');
+stores.openPanel.set(null);
+
+console.log('\\nLanguage');
+stores.openPanel.set('settings');
+stores.interactPrompt.set({ id: 'plaza-bench', label: 'Sit', effect: 'none', kind: 'sit' });
+await sleep(80);
+check('the prompt reads in English first', !!byText(/^Sit\\b/), buttons().map(b => b.textContent.trim()).join('|'));
+stores.settings.update(s => ({ ...s, lang: 'zh' }));
+await sleep(80);
+check('switching to Chinese relabels the open panel', text().includes('\\u8bbe\\u7f6e') && text().includes('\\u753b\\u8d28'), text().slice(-200));
+check('the interaction prompt follows the language', !!byText(/^\\u5750\\u4e0b/), buttons().map(b => b.textContent.trim()).join('|'));
+check('the document language follows', dom.window.document.documentElement.lang === 'zh-CN', dom.window.document.documentElement.lang);
+stores.settings.update(s => ({ ...s, lang: 'en' }));
+await sleep(80);
+check('and back to English', text().includes('Settings') && !!byText(/^Sit/), text().slice(-200));
+stores.interactPrompt.set(null);
+stores.openPanel.set(null);
+
+console.log('\\nFireworks');
+check('no firework button away from the shore', !byText(/firework/i));
+stores.self.update(s => ({ ...s, zone: 'beach' }));
+await sleep(80);
+check('a firework button on a firework shore', !!byText(/firework/i), buttons().map(b => b.textContent.trim()).join('|'));
+stores.self.update(s => ({ ...s, zone: 'plaza' }));
+await sleep(80);
+check('and gone again on leaving it', !byText(/firework/i));
+
+console.log('\\nWhispers and commands');
+const sent = [];
+stores.commands.update(c => ({
+  ...c,
+  say: (t) => sent.push(['say', t]),
+  roll: (n) => sent.push(['roll', n]),
+  whisper: (id, t) => sent.push(['whisper', id, t]),
+}));
+stores.pushChat({ playerId: 'p3', name: 'Rin', text: 'psst', self: false, whisper: { peerId: 'p3', peerName: 'Rin', outgoing: false } });
+await sleep(80);
+const whisperLine = dom.window.document.querySelector('.line.whisper');
+check('a whisper renders as its own kind of line', !!whisperLine && whisperLine.textContent.includes('Rin \\u2192') && whisperLine.textContent.includes('psst'),
+  whisperLine && whisperLine.outerHTML.slice(0, 200));
+
+async function type(line) {
+  let input = dom.window.document.querySelector('.composer input');
+  if (!input) {
+    dom.window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter' }));
+    await sleep(40);
+    input = dom.window.document.querySelector('.composer input');
+  }
+  input.value = line;
+  input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  await sleep(10);
+  input.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await sleep(40);
+  return input.value;
+}
+await type('hello there');
+check('plain text is said', sent.some(c => c[0] === 'say' && c[1] === 'hello there'), JSON.stringify(sent));
+await type('/roll 20');
+check('/roll 20 rolls a d20', sent.some(c => c[0] === 'roll' && c[1] === 20), JSON.stringify(sent));
+await type('/w rin psst back');
+check('/w finds a name in any case', sent.some(c => c[0] === 'whisper' && c[1] === 'p3' && c[2] === 'psst back'), JSON.stringify(sent));
+const kept = await type('/w nobody hi');
+check('/w to nobody explains, and keeps the draft', text().includes('Nobody here is called') && kept === '/w nobody hi', kept);
+await type('/r thanks');
+check('/r answers the last whisper', sent.some(c => c[0] === 'whisper' && c[1] === 'p3' && c[2] === 'thanks'), JSON.stringify(sent));
+await type('/help');
+check('/help lists the commands', text().includes('/roll [sides]'), text().slice(-300));
+dom.window.document.querySelector('.composer input')?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+await sleep(40);
 
 console.log('\\nEmote wheel');
 stores.emoteOpen.set(true);

@@ -64,7 +64,7 @@ import { readPose } from './net/last-pose.js';
 import { adminToken, inviteCodeFromUrl, reflectIslandInUrl, visitorKey } from './net/visitor.js';
 import { Ambience } from './audio/ambience.js';
 import { GameFx } from './fx/index.js';
-import { interactLabel, tr, zoneName } from './i18n/index.js';
+import { badgeIcon, badgeName, interactLabel, tr, zoneName } from './i18n/index.js';
 import {
   activities,
   appPhase,
@@ -495,6 +495,8 @@ export class App {
         // The host of whatever is running gets the accent, so you can find them.
         highlight: view.role >= Role.Host,
         bubble: this.speech.textFor(view.id, now),
+        // The badge they chose to wear, small under the name, in the reader's language.
+        title: view.title ? `${badgeIcon(view.title)} ${badgeName(view.title)}` : null,
       });
     }
 

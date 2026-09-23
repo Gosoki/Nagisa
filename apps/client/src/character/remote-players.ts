@@ -63,6 +63,10 @@ class RemotePlayer {
     this.character.root.position.copy(this.position);
     this.character.root.rotation.y = view.yaw;
     this.character.root.name = `player:${view.id}`;
+    // Someone already in their grace window when we arrive is drawn faded from the start,
+    // not only once the next patch about them happens to mention it.
+    this.away = view.away === true;
+    this.character.setFaded(this.away);
     // Seed the buffer so the first interpolation has something to work with rather than
     // sliding in from the origin.
     this.samples.push({
@@ -225,14 +229,9 @@ export class RemotePlayers {
     if (patch.away !== undefined) {
       player.away = patch.away;
       // Disconnected-but-recoverable players fade rather than vanish: if they are back
-      // in ten seconds, they should still be standing where you last saw them.
-      player.character.root.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          const mat = obj.material as THREE.Material;
-          mat.transparent = patch.away === true;
-          mat.opacity = patch.away ? 0.45 : 1;
-        }
-      });
+      // in ten seconds, they should still be standing where you last saw them. Faded per
+      // figure — the materials are shared with everyone dressed the same; see `setFaded`.
+      player.character.setFaded(patch.away);
     }
   }
 

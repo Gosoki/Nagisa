@@ -14,6 +14,7 @@
    */
   import { EMOTES, type Emote } from '@nagisa/shared';
   import { emoteOpen, cmd } from '../state/stores.js';
+  import { t } from '../i18n/index.js';
 
   const GLYPH: Record<Emote, string> = {
     wave: '👋',
@@ -62,7 +63,7 @@
 </script>
 
 {#if $emoteOpen}
-  <div class="wheel" role="menu" aria-label="Emotes">
+  <div class="wheel" role="menu" aria-label={$t('hud.emotes')}>
     {#each EMOTES as emote, i (emote)}
       {@const pos = positionFor(i, EMOTES.length)}
       <!-- Position (translate) and pop-in (scale) are split across two elements so the
@@ -72,7 +73,8 @@
           type="button"
           class="emote"
           role="menuitem"
-          aria-label={emote}
+          aria-label={$t(`emote.${emote}`)}
+          title={$t(`emote.${emote}`)}
           style:animation-delay="{i * 16}ms"
           onclick={() => pick(emote)}
         >

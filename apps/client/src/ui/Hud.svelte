@@ -3,20 +3,42 @@
    * Hud — the persistent in-world layer, shown while `$appPhase === 'world'`.
    *
    * This is the "always on" surface, so it is held to the tightest budget in the whole
-   * overlay: the headcount and up to four small icon buttons top-right, and one emote
-   * button plus an occasional contextual prompt bottom-centre. Nothing here is a panel —
-   * the icon buttons only *open* panels, which live in Panels.svelte and are absent from
-   * the screen until requested.
+   * overlay: the headcount and four small icon buttons top-right, and one emote button plus
+   * an occasional contextual prompt bottom-centre. Nothing here is a panel — the icon
+   * buttons only *open* panels, which live in Panels.svelte and are absent from the screen
+   * until requested.
+   *
+   * ### The fourth button
+   *
+   * People, activities and settings are what a visit is mostly made of, so they stay in the
+   * row. The collection book, the island panel and the camera are reached through one
+   * "more" button that folds out a short labelled list. Six icons in a row is a toolbar,
+   * and on a 360 px phone it is a wall; the labels in the fold-out also say what each thing
+   * is, which three more unexplained glyphs would not. It is a disclosure (a button with
+   * `aria-expanded` and a list of ordinary buttons), not an ARIA menu, because it needs
+   * none of a menu's arrow-key contract and pretending otherwise would be worse than not.
    *
    * The top-*left* corner is the minimap's, and the name of the place you are standing in
    * goes underneath it (see Minimap.svelte) rather than here. Two facts about your
    * location belong next to each other; the headcount is a fact about the room, so it
    * moved across to sit with the button that lists the people in it.
    *
-   * The host button is the one piece of chrome that appears/disappears based on state
-   * (`$isHost`), rather than always being present and disabled — an inert 4th icon would
-   * imply "there is a host feature here you don't have", which is a worse default than
-   * simply not showing it.
+   * The host button is the one piece of chrome that appears/disappears based on role
+   * (`$isHost`), rather than always being present and disabled — an inert icon would imply
+   * "there is a host feature here you don't have", which is a worse default than simply not
+   * showing it.
+   *
+   * ### Bottom centre
+   *
+   * The interaction prompt names what is in reach, in the current language: it is
+   * re-derived from the interactable's effect rather than read from the label stored when
+   * it was found, so switching language with a prompt up changes it at once. While a line
+   * is in the water the fishing HUD shows its own strike and reel controls, so the prompt
+   * (and the firework button) step aside rather than offer a second, competing button.
+   *
+   * The firework button exists only while you stand on a shore fireworks go up from. It
+   * rests for as long as the server's own per-person interval after each launch, so a
+   * second press does not earn a refusal notice.
    */
   import {
     currentZone,
@@ -28,9 +50,77 @@
     connectionTroubled,
     devMode,
     settings,
+    self,
+    fishing,
+    onFireworkShore,
     togglePanel,
     cmd,
   } from '../state/stores.js';
+  import { interactLabel, lang, t, zoneName } from '../i18n/index.js';
+
+  /** The server allows one firework per person every six seconds. */
+  const FIREWORK_REST_MS = 6000;
+
+  let moreOpen = $state(false);
+  let moreEl: HTMLElement | undefined = $state();
+  let moreButton: HTMLButtonElement | undefined = $state();
+  let fireworkResting = $state(false);
+
+  const lineOut = $derived($fishing.phase === 'waiting' || $fishing.phase === 'bite');
+
+  const promptLabel = $derived.by(() => {
+    const prompt = $interactPrompt;
+    if (!prompt) return '';
+    if (prompt.kind === 'sit' && $self.seated) return $t('prompt.stand');
+    return interactLabel(prompt.effect, prompt.kind, $lang);
+  });
+
+  const zoneSecondary = $derived(
+    $currentZone && $lang !== 'ja' && $currentZone.nameJa !== zoneName($currentZone.id, $lang)
+      ? $currentZone.nameJa
+      : '',
+  );
+
+  function toggleMore(): void {
+    moreOpen = !moreOpen;
+    // One thing open at a time: the fold-out and a panel never share the corner.
+    if (moreOpen) openPanel.set(null);
+  }
+
+  function openFromMore(id: 'collection' | 'island'): void {
+    moreOpen = false;
+    togglePanel(id);
+  }
+
+  function photo(): void {
+    moreOpen = false;
+    cmd().takePhoto();
+  }
+
+  function sendFirework(): void {
+    if (fireworkResting) return;
+    cmd().firework();
+    fireworkResting = true;
+    setTimeout(() => (fireworkResting = false), FIREWORK_REST_MS);
+  }
+
+  $effect(() => {
+    if (!moreOpen) return;
+    function onKeydown(e: KeyboardEvent): void {
+      if (e.key !== 'Escape') return;
+      moreOpen = false;
+      moreButton?.focus();
+    }
+    function onPointerdown(e: PointerEvent): void {
+      if (moreEl && e.target instanceof Node && !moreEl.contains(e.target)) moreOpen = false;
+    }
+    window.addEventListener('keydown', onKeydown);
+    window.addEventListener('pointerdown', onPointerdown);
+    return () => {
+      window.removeEventListener('keydown', onKeydown);
+      window.removeEventListener('pointerdown', onPointerdown);
+    };
+  });
 </script>
 
 <!--
@@ -41,20 +131,20 @@
 {#if $currentZone && $settings.minimap === false}
   <div class="top-left">
     <div class="zone">
-      <span class="zone-name">{$currentZone.name}</span>
-      <span class="zone-ja">{$currentZone.nameJa}</span>
+      <span class="zone-name">{zoneName($currentZone.id, $lang)}</span>
+      {#if zoneSecondary}<span class="zone-ja" lang="ja">{zoneSecondary}</span>{/if}
     </div>
   </div>
 {/if}
 
 {#if $connectionTroubled}
-  <p class="reconnecting" role="status">Reconnecting…</p>
+  <p class="reconnecting" role="status">{$t('net.reconnecting')}</p>
 {/if}
 
 
-<div class="top-right">
+<div class="top-right" class:raised={moreOpen}>
   <!-- How many people are here, beside the button that says who they are. -->
-  <div class="population" aria-label="{$population} on the island">
+  <div class="population" aria-label={$t('hud.population', { n: $population })}>
     <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
       <circle cx="12" cy="8" r="3.4" fill="currentColor" />
       <path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
@@ -66,8 +156,9 @@
     type="button"
     class="icon-btn"
     class:active={$openPanel === 'people'}
-    aria-label="People"
+    aria-label={$t('panel.people')}
     aria-pressed={$openPanel === 'people'}
+    data-panel-toggle
     onclick={() => togglePanel('people')}
   >
     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
@@ -82,8 +173,9 @@
     type="button"
     class="icon-btn"
     class:active={$openPanel === 'activities'}
-    aria-label="Activities"
+    aria-label={$t('panel.activities')}
     aria-pressed={$openPanel === 'activities'}
+    data-panel-toggle
     onclick={() => togglePanel('activities')}
   >
     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
@@ -97,8 +189,9 @@
     type="button"
     class="icon-btn"
     class:active={$openPanel === 'settings'}
-    aria-label="Settings"
+    aria-label={$t('panel.settings')}
     aria-pressed={$openPanel === 'settings'}
+    data-panel-toggle
     onclick={() => togglePanel('settings')}
   >
     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
@@ -106,14 +199,71 @@
     </svg>
   </button>
 
+  <!-- Collection, island, camera: one button, a short labelled fold-out. -->
+  <div class="more" bind:this={moreEl}>
+    <button
+      type="button"
+      class="icon-btn"
+      class:active={moreOpen || $openPanel === 'collection' || $openPanel === 'island'}
+      aria-label={$t('hud.more')}
+      aria-expanded={moreOpen}
+      aria-controls="hud-more"
+      bind:this={moreButton}
+      onclick={toggleMore}
+    >
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+        <circle cx="6" cy="12" r="1.5" fill="currentColor" />
+        <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+        <circle cx="18" cy="12" r="1.5" fill="currentColor" />
+      </svg>
+    </button>
+
+    {#if moreOpen}
+      <div class="fold" id="hud-more">
+        <button type="button" class="item" data-panel-toggle onclick={() => openFromMore('collection')}>
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path d="M4.5 6c2.6-1.1 5.1-1 7.5.6 2.4-1.6 4.9-1.7 7.5-.6v12.5c-2.6-1.1-5.1-1-7.5.6-2.4-1.6-4.9-1.7-7.5-.6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+            <path d="M12 6.6V19" stroke="currentColor" stroke-width="1.5" />
+          </svg>
+          <span class="item-text">
+            <span class="item-label">{$t('panel.collection')}</span>
+            <span class="item-hint">{$t('hud.collectionHint')}</span>
+          </span>
+        </button>
+        <button type="button" class="item" data-panel-toggle onclick={() => openFromMore('island')}>
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path d="M6 15.5c1.6-4 3.6-6 6-6s4.4 2 6 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            <path d="M3.5 18.5c1.4-1 2.8-1 4.2 0s2.8 1 4.3 0 2.8-1 4.3 0 2.8 1 4.2 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+          <span class="item-text">
+            <span class="item-label">{$t('panel.island')}</span>
+            <span class="item-hint">{$t('hud.islandHint')}</span>
+          </span>
+        </button>
+        <button type="button" class="item" onclick={photo}>
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <rect x="3.5" y="7" width="17" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5" />
+            <path d="M8.5 7l1.4-2.2h4.2L15.5 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+            <circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" stroke-width="1.5" />
+          </svg>
+          <span class="item-text">
+            <span class="item-label">{$t('hud.photo')}</span>
+            <span class="item-hint">{$t('hud.photoHint')}</span>
+          </span>
+        </button>
+      </div>
+    {/if}
+  </div>
+
   <!-- Developer placement notes. Absent unless ?dev=1 — see `devMode` in stores.ts. -->
   {#if devMode}
     <button
       type="button"
       class="icon-btn"
       class:active={$openPanel === 'notes'}
-      aria-label="Placement notes"
+      aria-label={$t('panel.notes')}
       aria-pressed={$openPanel === 'notes'}
+      data-panel-toggle
       onclick={() => togglePanel('notes')}
     >
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
@@ -128,8 +278,9 @@
       type="button"
       class="icon-btn"
       class:active={$openPanel === 'host'}
-      aria-label="Host controls"
+      aria-label={$t('hud.host')}
       aria-pressed={$openPanel === 'host'}
+      data-panel-toggle
       onclick={() => togglePanel('host')}
     >
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
@@ -141,18 +292,36 @@
 </div>
 
 <div class="bottom-center">
-  {#if $interactPrompt}
-    <button type="button" class="prompt" onclick={() => cmd().interact()}>
-      <span>{$interactPrompt.label}</span>
-      <kbd class="key-hint">E</kbd>
-    </button>
+  {#if ($interactPrompt || $onFireworkShore) && !lineOut}
+    <div class="prompts">
+      {#if $interactPrompt}
+        <button type="button" class="prompt" onclick={() => cmd().interact()}>
+          <span>{promptLabel}</span>
+          <kbd class="key-hint">E</kbd>
+        </button>
+      {/if}
+      {#if $onFireworkShore}
+        <button type="button" class="prompt firework" disabled={fireworkResting} onclick={sendFirework}>
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+            <path
+              d="M12 3.5v4M12 16.5v4M3.5 12h4M16.5 12h4M6 6l2.8 2.8M15.2 15.2L18 18M6 18l2.8-2.8M15.2 8.8L18 6"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+          </svg>
+          <span>{$t('hud.firework')}</span>
+        </button>
+      {/if}
+    </div>
   {/if}
 
   <button
     type="button"
     class="emote-btn"
     class:active={$emoteOpen}
-    aria-label="Emotes"
+    aria-label={$t('hud.emotes')}
     aria-pressed={$emoteOpen}
     onclick={() => emoteOpen.update((v) => !v)}
   >
@@ -237,6 +406,11 @@
     pointer-events: auto;
   }
 
+  /* The fold-out must sit over the next-up strip, which shares the HUD layer. */
+  .top-right.raised {
+    z-index: var(--z-panel);
+  }
+
   .icon-btn {
     width: 32px;
     height: 32px;
@@ -262,17 +436,101 @@
     outline-offset: 2px;
   }
 
+  .more {
+    position: relative;
+  }
+
+  .fold {
+    position: absolute;
+    top: calc(100% + var(--sp-sm));
+    right: 0;
+    width: max-content;
+    max-width: calc(100vw - 2 * var(--sp-md));
+    display: flex;
+    flex-direction: column;
+    padding: var(--sp-xs);
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow);
+    border-radius: var(--r-lg);
+    animation: settle var(--mo-calm) both;
+  }
+
+  @keyframes settle {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .item {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-sm);
+    border: none;
+    background: transparent;
+    border-radius: var(--r-md);
+    padding: 6px var(--sp-sm);
+    color: var(--ui-ink-muted);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .item:hover {
+    background: var(--ui-surface-sunk);
+    color: var(--ui-ink);
+  }
+
+  .item:focus-visible {
+    outline: 2px solid var(--ui-accent);
+    outline-offset: -2px;
+  }
+
+  .item svg {
+    flex: none;
+  }
+
+  .item-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .item-label {
+    font-size: var(--fs-sm);
+    color: var(--ui-ink);
+  }
+
+  .item-hint {
+    font-size: var(--fs-xs);
+    color: var(--ui-ink-faint);
+  }
+
   .bottom-center {
     position: fixed;
     bottom: max(var(--sp-lg), env(safe-area-inset-bottom));
     left: 50%;
     transform: translateX(-50%);
+    /* Sized to its contents, not to the half-viewport `left: 50%` leaves it, or two prompts
+       side by side wrap into a column on a phone. */
+    width: max-content;
+    max-width: calc(100vw - 2 * var(--sp-md));
     z-index: var(--z-hud);
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: var(--sp-sm);
     pointer-events: none;
+  }
+
+  .prompts {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--sp-xs);
   }
 
   .prompt {
@@ -287,8 +545,27 @@
     color: var(--ui-ink);
     font-size: var(--fs-sm);
     padding: 6px var(--sp-md);
+    white-space: nowrap;
     cursor: pointer;
     animation: rise var(--mo-calm) both;
+  }
+
+  .prompt:focus-visible {
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 2px;
+  }
+
+  .firework svg {
+    color: var(--ui-accent);
+  }
+
+  .firework:disabled {
+    color: var(--ui-ink-faint);
+    cursor: default;
+  }
+
+  .firework:disabled svg {
+    color: inherit;
   }
 
   .key-hint {

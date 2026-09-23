@@ -19,40 +19,68 @@
    * because the person you want to stop reading is often the person you are walking *away*
    * from, and aiming at them is the last thing you should have to do. See `stores.mutedIds`
    * for why it is unilateral, local, and does not hide them.
+   *
+   * A name is also a button: it opens that person's card (PlayerCard.svelte), which is where
+   * whispering, janken and the rest live — the list stays a list. The badge someone wears is
+   * shown as its small icon beside their name, the same mark their name tag carries.
    */
-  import { getZone } from '@nagisa/shared';
-  import { commands, followTarget, mutedSet, players, self, toggleMute } from '../state/stores.js';
+  import { commands, followTarget, myTitle, mutedSet, players, selectedPlayer, self, toggleMute } from '../state/stores.js';
+  import { badgeIcon, badgeName, lang, t, zoneName } from '../i18n/index.js';
 </script>
+
+{#snippet badge(id: string | null | undefined)}
+  {#if id && badgeIcon(id)}
+    <span
+      class="badge"
+      role="img"
+      aria-label={$t('people.wearing', { badge: badgeName(id, $lang) })}
+      title={badgeName(id, $lang)}
+    >{badgeIcon(id)}</span>
+  {/if}
+{/snippet}
 
 <ul class="list">
   <li class="row you">
-    <span class="name">{$self.name || 'You'}</span>
-    <span class="zone">{getZone($self.zone)?.name ?? $self.zone}</span>
+    <span class="who">
+      <span class="name">{$self.name || $t('people.you')}</span>
+      {@render badge($myTitle)}
+    </span>
+    <span class="zone">{zoneName($self.zone, $lang)}</span>
   </li>
   {#each $players as p (p.id)}
     <li class="row" class:followed={$followTarget?.id === p.id} class:muted={$mutedSet.has(p.id)}>
-      <span class="name">{p.name}</span>
-      <span class="zone">{p.zone ? (getZone(p.zone)?.name ?? p.zone) : ''}</span>
+      <span class="who">
+        <button
+          type="button"
+          class="name"
+          aria-haspopup="dialog"
+          title={$t('people.openCard', { name: p.name })}
+          onclick={() => selectedPlayer.set(p.id)}
+        >{p.name}</button>
+        {@render badge(p.title)}
+      </span>
+      <span class="zone">{p.zone ? zoneName(p.zone, $lang) : ''}</span>
       <button
+        type="button"
         class="act mute"
         class:on={$mutedSet.has(p.id)}
         aria-pressed={$mutedSet.has(p.id)}
-        title={$mutedSet.has(p.id) ? `Unmute ${p.name}` : `Mute ${p.name}`}
-        on:click={() => toggleMute(p.id, p.name)}
+        title={$mutedSet.has(p.id) ? $t('people.unmuteName', { name: p.name }) : $t('people.muteName', { name: p.name })}
+        onclick={() => toggleMute(p.id, p.name)}
       >
-        {$mutedSet.has(p.id) ? 'Unmute' : 'Mute'}
+        {$mutedSet.has(p.id) ? $t('people.unmute') : $t('people.mute')}
       </button>
       {#if $followTarget?.id === p.id}
-        <button class="act follow on" on:click={() => $commands.follow(null)}>Stop</button>
+        <button type="button" class="act follow on" onclick={() => $commands.follow(null)}>{$t('people.stop')}</button>
       {:else}
-        <button class="act follow" on:click={() => $commands.follow(p.id)}>Follow</button>
+        <button type="button" class="act follow" onclick={() => $commands.follow(p.id)}>{$t('people.follow')}</button>
       {/if}
     </li>
   {/each}
 </ul>
 
 {#if $players.length === 0}
-  <p class="empty">Just you, for now.</p>
+  <p class="empty">{$t('people.alone')}</p>
 {/if}
 
 <style>
@@ -83,12 +111,48 @@
     font-weight: 600;
   }
 
+  .who {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+
   .name {
     font-size: var(--fs-sm);
     color: var(--ui-ink);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  button.name {
+    all: unset;
+    font-size: var(--fs-sm);
+    color: inherit;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    border-radius: var(--r-sm);
+  }
+
+  button.name:hover {
+    text-decoration: underline;
+    text-decoration-color: var(--ui-line);
+    text-underline-offset: 3px;
+  }
+
+  button.name:focus-visible {
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 1px;
+  }
+
+  .badge {
+    flex: none;
+    font-size: var(--fs-xs);
+    line-height: 1;
   }
 
   .zone {

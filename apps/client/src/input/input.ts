@@ -43,6 +43,17 @@ export interface StickState {
 /** Radius of the virtual stick in CSS pixels — the distance for full deflection. */
 const STICK_RADIUS = 56;
 
+/** A press shorter than this, that moves less than {@link TAP_SLOP_PX}, is a tap. */
+const TAP_MAX_MS = 220;
+const TAP_SLOP_PX = 6;
+
+/** Elements that act on Space/Enter themselves. */
+const ACTIVATABLE =
+  'button, a[href], summary, [role="button"], [role="tab"], [role="radio"], [role="menuitem"], [role="option"], [role="switch"], [role="checkbox"]';
+
+/** Widgets whose arrow keys move between their own items. */
+const COMPOSITE = '[role="tab"], [role="tablist"], [role="radio"], [role="radiogroup"], [role="menuitem"], [role="menu"], [role="option"], [role="listbox"], [role="slider"]';
+
 export class Input {
   /** Movement intent in local space: +y forward, +x right. */
   readonly move: MoveVector = { x: 0, y: 0 };
@@ -77,6 +88,17 @@ export class Input {
 
   /** Callback so the UI can render the stick without polling every frame. */
   onStickChange: ((state: StickState | null) => void) | null = null;
+
+  /**
+   * A tap on the world: a press and release in (nearly) one place, quickly. The app uses it
+   * to pick a person out of the crowd. Screen coordinates, CSS pixels.
+   */
+  onTap: ((clientX: number, clientY: number) => void) | null = null;
+
+  /** Where and when the current press began, to tell a tap from a hold or a drag. */
+  private press: { id: number; x: number; y: number; at: number } | null = null;
+  /** Starts the run when a left press has been held long enough to be a hold, not a click. */
+  private runTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly detachers: Array<() => void> = [];
 
@@ -131,6 +153,11 @@ export class Input {
     this.keys.clear();
     this.run = false;
     this.mouseRunPointer = null;
+    this.press = null;
+    if (this.runTimer !== null) {
+      clearTimeout(this.runTimer);
+      this.runTimer = null;
+    }
     this.updateMoveFromKeys();
   }
 
@@ -167,8 +194,25 @@ export class Input {
     return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
   }
 
+  /**
+   * Which of a focused control's keys are its own, not the world's.
+   *
+   * A button keeps focus after it is clicked, and the next W should still walk — so a
+   * focused control does not swallow everything the way a text field does. It keeps only the
+   * keys it answers to: Space and Enter activate any button (jumping instead would make the
+   * interface unusable from a keyboard), and the arrow keys move within a composite widget —
+   * the collection book's tabs, the language picker.
+   */
+  private ownsKey(target: EventTarget | null, code: string): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    const activation = code === 'Space' || code === 'Enter' || code === 'NumpadEnter';
+    if (activation && target.closest(ACTIVATABLE)) return true;
+    const arrow = code === 'ArrowUp' || code === 'ArrowDown' || code === 'ArrowLeft' || code === 'ArrowRight';
+    return arrow && target.closest(COMPOSITE) !== null;
+  }
+
   private onKeyDown = (e: KeyboardEvent): void => {
-    if (this.isTypingTarget(e.target)) return;
+    if (this.isTypingTarget(e.target) || this.ownsKey(e.target, e.code)) return;
     this.keys.add(e.code);
     if (e.code === 'Space') {
       // Space scrolls the page by default, which on a fixed-height canvas app does
@@ -232,13 +276,21 @@ export class Input {
     // you can steer the camera while sprinting rather than having to choose. Only the left
     // button runs; the right one orbits and nothing else, which is what a right-drag is for
     // everywhere else.
+    this.press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: e.timeStamp };
+
     if (e.pointerType === 'mouse') {
       this.lookPointer = e.pointerId;
       this.lastLookX = e.clientX;
       this.lastLookY = e.clientY;
       if (e.button === 0) {
+        // The run begins once the press is a hold. A click — on a person, say — should not
+        // also send the character lurching a step forward.
         this.mouseRunPointer = e.pointerId;
-        this.run = true;
+        if (this.runTimer !== null) clearTimeout(this.runTimer);
+        this.runTimer = setTimeout(() => {
+          this.runTimer = null;
+          if (this.mouseRunPointer === e.pointerId) this.run = true;
+        }, TAP_MAX_MS);
       }
       return;
     }
@@ -293,8 +345,18 @@ export class Input {
   };
 
   private onPointerUp = (e: PointerEvent): void => {
+    const press = this.press;
+    if (press && press.id === e.pointerId) {
+      this.press = null;
+      const still = Math.hypot(e.clientX - press.x, e.clientY - press.y) <= TAP_SLOP_PX;
+      if (still && e.timeStamp - press.at <= TAP_MAX_MS) this.onTap?.(e.clientX, e.clientY);
+    }
     if (e.pointerId === this.lookPointer) this.lookPointer = null;
     if (e.pointerId === this.mouseRunPointer) {
+      if (this.runTimer !== null) {
+        clearTimeout(this.runTimer);
+        this.runTimer = null;
+      }
       this.mouseRunPointer = null;
       // Shift may still be down underneath; ask rather than assume.
       this.run = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
@@ -341,5 +403,7 @@ export class Input {
   dispose(): void {
     for (const off of this.detachers) off();
     this.detachers.length = 0;
+    if (this.runTimer !== null) clearTimeout(this.runTimer);
+    this.runTimer = null;
   }
 }

@@ -94,6 +94,16 @@ export class ProfileStore {
     return rec;
   }
 
+  /**
+   * A record is in use: mark it seen, and put it back if the store had evicted it while its
+   * player was still here — otherwise everything they did from then on would be kept in an
+   * object nothing saves.
+   */
+  touch(hash: string, rec: ProfileRecord, now = Date.now()): void {
+    rec.lastSeen = now;
+    if (this.records.get(hash) !== rec) this.records.set(hash, rec);
+  }
+
   get size(): number {
     return this.records.size;
   }

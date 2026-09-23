@@ -24,13 +24,45 @@
    *
    * Baking is keyed to the active map pack, so a different map draws a different island
    * with no further work. See `docs/MAPS.md`.
+   *
+   * ### The stamp rally's only signpost
+   *
+   * Every stamp stand you have not stamped yet is a small vermilion ring — the colour of a
+   * shrine seal — and every fishing spot a small sea-blue dot. They are the faintest marks
+   * on the map, drawn under the people, and a ring goes away once its stamp is on your card.
+   * Nothing else on the island tells you the rally exists; this is enough to make someone
+   * wonder what the ring by the harbour is, which is the right amount of telling.
    */
   import { onMount } from 'svelte';
-  import { ISLAND_EXTENT, PATHS, SCENE_COLORS, SUMMIT, ZONES, activeMapId, heightAt, isLand } from '@nagisa/shared';
-  import { currentZone, followTarget, planImage, players, selfPose, settings } from '../state/stores.js';
+  import {
+    INTERACTABLES,
+    ISLAND_EXTENT,
+    PATHS,
+    SCENE_COLORS,
+    SUMMIT,
+    ZONES,
+    activeMapId,
+    getZone,
+    heightAt,
+    isLand,
+    type Interactable,
+  } from '@nagisa/shared';
+  import { currentZone, followTarget, planImage, players, profile, selfPose, settings } from '../state/stores.js';
+  import { lang, t, zoneName } from '../i18n/index.js';
 
-  /** On-screen size, CSS pixels. */
-  const SIZE = 168;
+  /** On-screen size, CSS pixels: the desktop size, and the phone size. */
+  const SIZE_WIDE = 168;
+  const SIZE_NARROW = 112;
+
+  /**
+   * On a phone the map sits bottom-left (see the stylesheet), level with the emote button in
+   * the middle. At the desktop size its right edge on a 360 px screen reaches past the middle
+   * and the two overlap, so it shrinks there — still enough to find the shrine, not so much
+   * that it becomes the screen.
+   */
+  const narrowQuery = typeof matchMedia === 'function' ? matchMedia('(max-width: 640px)') : null;
+  let narrow = narrowQuery?.matches ?? false;
+  $: SIZE = narrow ? SIZE_NARROW : SIZE_WIDE;
 
   /**
    * Samples per axis for the baked terrain. 192², plus two neighbours per land pixel for
@@ -56,6 +88,25 @@
   let raf = 0;
 
   $: enabled = $settings.minimap !== false;
+
+  $: zoneSecondary =
+    $currentZone && $lang !== 'ja' && $currentZone.nameJa !== zoneName($currentZone.id, $lang) ? $currentZone.nameJa : '';
+
+  /** Ground position of an interactable. `interactablePosition` would also sample the height. */
+  function spotXZ(it: Interactable): [number, number] | null {
+    const zone = getZone(it.zone);
+    return zone ? [zone.x + it.dx, zone.z + it.dz] : null;
+  }
+
+  function toggleExpanded(): void {
+    expanded = !expanded;
+  }
+
+  function onMapKey(e: KeyboardEvent): void {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    toggleExpanded();
+  }
 
   /** World (x, z) → canvas pixel, for whichever canvas size is current. */
   function project(x: number, z: number, size: number): [number, number] {
@@ -192,7 +243,28 @@
       ctx.fill();
       if (expanded) {
         ctx.fillStyle = 'rgba(38, 34, 30, 0.8)';
-        ctx.fillText(zone.name, px, pz - 5);
+        ctx.fillText(zoneName(zone.id, $lang), px, pz - 5);
+      }
+    }
+
+    // Stamp stands still to find, and fishing spots. Under the people, and smaller than them.
+    const stamped = $profile?.stamps ?? [];
+    for (const it of INTERACTABLES) {
+      if (it.effect !== 'stamp' && it.effect !== 'fish') continue;
+      if (it.effect === 'stamp' && stamped.includes(it.zone)) continue;
+      const at = spotXZ(it);
+      if (!at) continue;
+      const [px, pz] = project(at[0], at[1], size);
+      ctx.beginPath();
+      if (it.effect === 'stamp') {
+        ctx.arc(px, pz, 2.4, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(196, 80, 58, 0.85)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      } else {
+        ctx.arc(px, pz, 1.7, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(78, 124, 140, 0.85)';
+        ctx.fill();
       }
     }
 
@@ -251,6 +323,12 @@
   }
 
   onMount(() => {
+    const onNarrow = (e: MediaQueryListEvent): void => {
+      narrow = e.matches;
+    };
+    narrowQuery?.addEventListener('change', onNarrow);
+    const stopNarrow = (): void => narrowQuery?.removeEventListener('change', onNarrow);
+
     /**
      * Prefer the photograph, fall back to the drawing.
      *
@@ -281,20 +359,21 @@
     return () => {
       cancelAnimationFrame(raf);
       unsubscribe();
+      stopNarrow();
     };
   });
 </script>
 
 {#if enabled}
   <div class="minimap" class:expanded>
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
     <canvas
       bind:this={liveCanvas}
       style="width:{expanded ? SIZE * 2.2 : SIZE}px;height:{expanded ? SIZE * 2.2 : SIZE}px"
-      on:click={() => (expanded = !expanded)}
+      on:click={toggleExpanded}
+      on:keydown={onMapKey}
       role="button"
       tabindex="0"
-      aria-label={expanded ? 'Collapse map' : 'Expand map'}
+      aria-label={expanded ? $t('minimap.collapse') : $t('minimap.expand')}
     ></canvas>
     <!--
       Where you are, directly under where you are on the map.
@@ -305,13 +384,13 @@
     -->
     {#if $currentZone}
       <div class="zone">
-        <span class="zone-name">{$currentZone.name}</span>
-        <span class="zone-ja">{$currentZone.nameJa}</span>
+        <span class="zone-name">{zoneName($currentZone.id, $lang)}</span>
+        {#if zoneSecondary}<span class="zone-ja" lang="ja">{zoneSecondary}</span>{/if}
       </div>
     {/if}
     {#if $followTarget}
-      <button class="following" on:click={() => followTarget.set(null)}>
-        Following {$followTarget.name} · stop
+      <button type="button" class="following" on:click={() => followTarget.set(null)}>
+        {$t('minimap.following', { name: $followTarget.name })}
       </button>
     {/if}
   </div>

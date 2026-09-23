@@ -154,6 +154,11 @@ export interface RoomOptions {
    * metric: a private island's id carries its invite code, and a metric label is public.
    */
   onPopulation?: () => void;
+  /**
+   * Told when a keyed player's profile changed, so every player sharing that visitor key —
+   * in any room — is sent it. Without one, only the player themself is.
+   */
+  onProfile?: (player: Player) => void;
 }
 
 export class Room implements GameRoom {
@@ -214,6 +219,7 @@ export class Room implements GameRoom {
 
   private readonly persistFn: () => void;
   private readonly onPopulation: () => void;
+  private readonly onProfile: (player: Player) => void;
   private readonly randomFn: () => number;
   private readonly scheduleEnabled: boolean;
 
@@ -232,6 +238,7 @@ export class Room implements GameRoom {
     this.owner = opts.owner ?? null;
     this.persistFn = opts.persist ?? (() => {});
     this.onPopulation = opts.onPopulation ?? (() => {});
+    this.onProfile = opts.onProfile ?? ((player) => this.sendProfile(player));
     this.randomFn = opts.random ?? Math.random;
     this.scheduleEnabled = opts.schedule ?? true;
 
@@ -315,6 +322,9 @@ export class Room implements GameRoom {
 
   /** Add a brand-new (or re-homed) player and their live session to the room. */
   join(session: Session, player: Player): void {
+    // Left and came back within one tick (a quick A→B→A): the leave must not go out, or every
+    // client applies join-then-leave and deletes someone who is standing right here.
+    this.pendingLeaves = this.pendingLeaves.filter((id) => id !== player.id);
     player.role = this.roleFor(player);
     this.players.set(player.id, player);
     this.sessions.set(player.id, session);
@@ -338,6 +348,12 @@ export class Room implements GameRoom {
   resume(session: Session, player: Player): void {
     this.sessions.set(player.id, session);
     this.cancelGraceTimer(player.id);
+    // Move sequence numbers are per connection, and this is a new one: its first report is
+    // seq 1. Keeping the old connection's high-water mark would silently drop every move the
+    // new page sends until it had counted past it — a player frozen for as long as they had
+    // been playing.
+    player.lastMoveSeq = -1;
+    player.lastMoveAt = Date.now();
     if (player.away) {
       player.away = false;
       this.markPlayerChanged(player.id, { away: false });
@@ -353,7 +369,10 @@ export class Room implements GameRoom {
    * off, their seat is freed. If no session reattaches within the grace window,
    * `removePlayer` runs.
    */
-  disconnect(playerId: PlayerId): void {
+  disconnect(playerId: PlayerId, session?: Session): void {
+    // A socket that was already replaced (a resume took over before the old one closed) is
+    // not the player's connection any more; its late close changes nothing.
+    if (session && this.sessions.get(playerId) !== session) return;
     this.sessions.delete(playerId);
     const player = this.players.get(playerId);
     if (!player) return;
@@ -511,13 +530,23 @@ export class Room implements GameRoom {
   }
 
   pushProfile(player: Player): void {
+    if (player.visitorHash) {
+      // Other tabs presenting the same visitor key share this record; they hear about it too.
+      this.onProfile(player);
+      return;
+    }
+    this.sendProfile(player);
+  }
+
+  /** Send one player their profile, and let the room see the badge they now wear. */
+  sendProfile(player: Player): void {
     this.sendTo(player.id, { t: 'profile', profile: profileView(player.profile, player.profilePersistent) });
+    this.markPlayerChanged(player.id, { title: player.title });
   }
 
   celebrate(player: Player, badges: readonly BadgeId[]): void {
     for (const badge of badges) this.emitEvent({ k: 'badge', by: player.id, badge });
-    // The first badge is worn automatically (see `awardBadge`); everyone else should see it.
-    this.markPlayerChanged(player.id, { title: player.title });
+    // The first badge is worn automatically (see `awardBadge`); `pushProfile` shows it.
     this.pushProfile(player);
   }
 
@@ -890,7 +919,14 @@ export class Room implements GameRoom {
   restoreState(state: PersistedRoom): void {
     for (const pa of state.activities) {
       const activity = restoreActivity(pa);
-      if (activity) this.activities.add(activity);
+      if (!activity) continue;
+      // A quiz is its runner, and the runner did not survive the restart: a quiz restored as
+      // live would sit on the board doing nothing (and block a new one). It is over.
+      if (activity.feature === 'quiz' && activity.state === ActivityState.Live) {
+        activity.state = ActivityState.Ended;
+        activity.closedAt = Date.now();
+      }
+      this.activities.add(activity);
     }
     for (const ann of state.announcements) this.restoreAnnouncement(ann);
     this.guestbook.restore(state.guestbook);

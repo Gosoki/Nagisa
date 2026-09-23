@@ -18,6 +18,9 @@
 import type { AuditEntry } from './persistence.js';
 import type { Logger } from './logger.js';
 
+/** Entries kept in memory. The oldest go first; the persisted copy is capped the same way. */
+export const AUDIT_MEMORY_LIMIT = 2000;
+
 export class AuditLog {
   private entries: AuditEntry[] = [];
 
@@ -38,6 +41,9 @@ export class AuditLog {
   }): AuditEntry {
     const full: AuditEntry = { ...entry, at: Date.now() };
     this.entries.push(full);
+    // Bounded in memory as well as on disk: an island keeper is an admin, and admins can be
+    // anybody who made an island.
+    if (this.entries.length > AUDIT_MEMORY_LIMIT) this.entries.splice(0, this.entries.length - AUDIT_MEMORY_LIMIT);
     this.log.info('audit_action', { ...full });
     return full;
   }

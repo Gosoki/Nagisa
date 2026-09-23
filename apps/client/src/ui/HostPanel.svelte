@@ -14,18 +14,47 @@
    * not a form. Scope options are limited by role: everyone with Host on an activity can
    * announce to it or to its zone; only `$isAdmin` gets the island-wide option, matching
    * what the server itself will accept (see ClientHostAnnounce in protocol.ts).
+   *
+   * Admins also get one small "put on the programme" row under the slips: a template, a
+   * start delay, a button. Templates are what keep this from being a form — the server
+   * knows each one's venue, length and shape — and a handful of fixed delays covers "a quiz
+   * in five minutes" without a time picker. It is shown whether or not the admin is hosting
+   * anything, since scheduling is how they would come to be.
    */
-  import { ActivityState, canTransition, PROTOCOL, type ActivityView, type AnnouncementView } from '@nagisa/shared';
-  import { hostedActivities, isAdmin, isHost, cmd } from '../state/stores.js';
+  import {
+    ACTIVITY_TEMPLATES,
+    ActivityState,
+    canTransition,
+    PROTOCOL,
+    type ActivityView,
+    type AnnouncementView,
+  } from '@nagisa/shared';
+  import { hostedActivities, isAdmin, isHost, cmd, notify } from '../state/stores.js';
+  import { activityTitle, lang, t, templateTitle, tr } from '../i18n/index.js';
 
   type Scope = 'activity' | 'zone' | 'island';
 
+  /** Start delays on offer, minutes. */
+  const DELAYS = [0, 2, 5, 10, 30] as const;
+
+  let template = $state(ACTIVITY_TEMPLATES[0]?.id ?? '');
+  let delay = $state<number>(5);
+
+  function schedule(): void {
+    if (!template) return;
+    cmd().schedule(template, delay);
+    notify(tr('host.scheduled', { title: templateTitle(template) }), 'neutral');
+  }
+
   const composer = $state<Record<string, { text: string; scope: Scope }>>({});
 
-  function draftFor(id: string) {
-    if (!composer[id]) composer[id] = { text: '', scope: 'activity' };
-    return composer[id];
-  }
+  // One draft per hosted activity, made before the slips render: creating it from the
+  // template instead is a state write during render, which Svelte refuses outright.
+  $effect.pre(() => {
+    for (const a of $hostedActivities) {
+      if (!composer[a.id]) composer[a.id] = { text: '', scope: 'activity' };
+    }
+  });
 
   function send(activity: ActivityView): void {
     const draft = composer[activity.id];
@@ -44,12 +73,12 @@
 
 {#if $isHost}
   {#if $hostedActivities.length === 0}
-    <p class="empty">Nothing of yours is running right now.</p>
+    <p class="empty">{$t('host.none')}</p>
   {:else}
     {#each $hostedActivities as a (a.id)}
-      {@const draft = draftFor(a.id)}
+      {@const draft = composer[a.id]}
       <div class="slip">
-        <p class="title">{a.title}</p>
+        <p class="title">{activityTitle(a, $lang)}</p>
 
         <div class="lifecycle">
           <button
@@ -58,7 +87,7 @@
             disabled={!canTransition(a.state, ActivityState.Open)}
             onclick={() => cmd().setActivityState(a.id, ActivityState.Open)}
           >
-            Open
+            {$t('host.open')}
           </button>
           <button
             type="button"
@@ -66,7 +95,7 @@
             disabled={!canTransition(a.state, ActivityState.Live)}
             onclick={() => cmd().setActivityState(a.id, ActivityState.Live)}
           >
-            Start
+            {$t('host.start')}
           </button>
           <button
             type="button"
@@ -74,31 +103,53 @@
             disabled={!canTransition(a.state, ActivityState.Ended)}
             onclick={() => cmd().setActivityState(a.id, ActivityState.Ended)}
           >
-            End
+            {$t('host.end')}
           </button>
         </div>
 
-        <div class="composer">
-          <input
-            type="text"
-            placeholder="Announce something…"
-            maxlength={PROTOCOL.MAX_ANNOUNCEMENT_LENGTH}
-            bind:value={draft.text}
-            onkeydown={(e) => e.key === 'Enter' && send(a)}
-          />
-          <div class="composer-row">
-            <select bind:value={draft.scope} aria-label="Announcement scope">
-              <option value="activity">This activity</option>
-              <option value="zone">This zone</option>
-              {#if $isAdmin}
-                <option value="island">Island</option>
-              {/if}
-            </select>
-            <button type="button" class="send" onclick={() => send(a)}>Send</button>
+        {#if draft}
+          <div class="composer">
+            <input
+              type="text"
+              placeholder={$t('host.announcePlaceholder')}
+              aria-label={$t('host.announcePlaceholder')}
+              maxlength={PROTOCOL.MAX_ANNOUNCEMENT_LENGTH}
+              bind:value={draft.text}
+              onkeydown={(e) => e.key === 'Enter' && send(a)}
+            />
+            <div class="composer-row">
+              <select bind:value={draft.scope} aria-label={$t('host.scope')}>
+                <option value="activity">{$t('host.scopeActivity')}</option>
+                <option value="zone">{$t('host.scopeZone')}</option>
+                {#if $isAdmin}
+                  <option value="island">{$t('host.scopeIsland')}</option>
+                {/if}
+              </select>
+              <button type="button" class="send" onclick={() => send(a)}>{$t('host.send')}</button>
+            </div>
           </div>
-        </div>
+        {/if}
       </div>
     {/each}
+  {/if}
+
+  {#if $isAdmin && ACTIVITY_TEMPLATES.length > 0}
+    <div class="schedule">
+      <span class="label">{$t('host.schedule')}</span>
+      <div class="composer-row">
+        <select class="what" bind:value={template} aria-label={$t('host.template')}>
+          {#each ACTIVITY_TEMPLATES as tpl (tpl.id)}
+            <option value={tpl.id}>{templateTitle(tpl.id, $lang)}</option>
+          {/each}
+        </select>
+        <select class="when" bind:value={delay} aria-label={$t('host.when')}>
+          {#each DELAYS as min (min)}
+            <option value={min}>{min === 0 ? $t('host.now') : $t('host.inMin', { n: min })}</option>
+          {/each}
+        </select>
+        <button type="button" class="send" onclick={schedule}>{$t('host.scheduleButton')}</button>
+      </div>
+    </div>
   {/if}
 {/if}
 
@@ -209,5 +260,35 @@
   .send:focus-visible {
     outline: 2px solid var(--ui-ink);
     outline-offset: 1px;
+  }
+
+  /* Under a slip, the slip's own rule separates them; under the "nothing" line, this does. */
+  .schedule {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: var(--sp-sm);
+  }
+
+  .empty + .schedule {
+    margin-top: var(--sp-sm);
+    border-top: 1px solid var(--ui-line);
+  }
+
+  .label {
+    font-size: var(--fs-xs);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ui-ink-muted);
+  }
+
+  .what {
+    flex: 2 1 0;
+    min-width: 0;
+  }
+
+  .when {
+    flex: 1 1 0;
+    min-width: 0;
   }
 </style>

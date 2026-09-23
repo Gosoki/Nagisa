@@ -66,6 +66,8 @@ export interface RoomManagerOptions {
   random?: () => number;
   /** Start rooms' tick loops (off in tests that drive ticks by hand). */
   autostart?: boolean;
+  /** A keyed player's profile changed — keep its record fresh in the store. */
+  onProfileTouched?: (player: Player) => void;
 }
 
 /** Why a requested room could not be had. */
@@ -109,6 +111,7 @@ export class RoomManager {
       persist: this.opts.persist,
       random: this.opts.random,
       onPopulation: () => this.publishPopulation(),
+      onProfile: (player) => this.profileChanged(player),
     });
     return this.wake(room);
   }
@@ -156,6 +159,7 @@ export class RoomManager {
       persist: this.opts.persist,
       random: this.opts.random,
       onPopulation: () => this.publishPopulation(),
+      onProfile: (player) => this.profileChanged(player),
     });
     this.log.info('island_opened', { code });
     return this.wake(room);
@@ -188,6 +192,20 @@ export class RoomManager {
       else islands += room.population;
     }
     metrics.roomPopulation.set(islands, { room: 'private' });
+  }
+
+  /**
+   * A keyed player's profile changed: everyone presenting the same visitor key — another
+   * tab, perhaps on another island — shares the record, so each is sent it and shown wearing
+   * the same badge. `opts.onProfileTouched` keeps the record in the store.
+   */
+  private profileChanged(player: Player): void {
+    this.opts.onProfileTouched?.(player);
+    for (const room of this.rooms.values()) {
+      for (const p of room.allPlayers()) {
+        if (p === player || (player.visitorHash !== null && p.visitorHash === player.visitorHash)) room.sendProfile(p);
+      }
+    }
   }
 
   private liveIslandCount(): number {
@@ -287,6 +305,11 @@ export class RoomManager {
 
     fromRoom.removePlayer(player.id, 'room_switch', { closeSession: false });
     player.away = false;
+    // A keeper's mute is theirs to give on their island only; the server's admins mute everywhere.
+    if (player.mutedIn !== null && player.mutedIn !== room.id) {
+      player.muted = false;
+      player.mutedIn = null;
+    }
     player.activity = null;
     player.mode = null;
     player.hostOf = null;
@@ -369,6 +392,12 @@ export class RoomManager {
   }
 
   exportIslands(): PersistedIsland[] {
+    // An awake island is never the one forgotten, however long since anyone arrived on it.
+    const now = Date.now();
+    for (const room of this.rooms.values()) {
+      const entry = room.code ? this.islands.get(room.code) : undefined;
+      if (entry) entry.lastActiveAt = now;
+    }
     const all = [...this.islands.values()].sort((a, b) => b.lastActiveAt - a.lastActiveAt);
     for (const gone of all.slice(ISLAND_LIMIT)) this.islands.delete(gone.code);
     return all.slice(0, ISLAND_LIMIT);

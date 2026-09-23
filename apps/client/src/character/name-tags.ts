@@ -20,10 +20,24 @@
  * Sprites cost one draw call each and are occluded correctly by the world, which is what
  * you want: a name behind a building should not float in front of it.
  *
- * Textures are cached by name, so a hundred players called "Visitor" share one texture.
+ * ### Why not `THREE.Sprite`
+ *
+ * They were, and none of them was ever drawn. The world is rendered into a two-target
+ * geometry buffer (see `docs/RENDERING.md`), and a built-in material's shader declares only
+ * the first output; WebGL refuses a draw that leaves an active draw buffer without one
+ * ("Active draw buffers with missing fragment shader outputs") and skips it. So every plate
+ * and every speech bubble failed silently, every frame. They are camera-facing quads with a
+ * shader that writes both targets the way the effects layer does (`fx/materials.ts`): the
+ * plate is laid over the drawing, and the contour pass never sees it. A second, invisible
+ * draw under each one clears the outline mask where the plate is, so the pen lines of the
+ * roofs behind a name are not drawn through it.
+ *
+ * Textures are cached by content (name, accent, title), so a hundred players called
+ * "Visitor" share one texture.
  */
 
 import * as THREE from 'three';
+import { FX_OUTPUTS, fxMaterial } from '../fx/materials.js';
 
 /** Maximum simultaneous tags. Beyond this, a crowd becomes a wall of text. */
 const MAX_TAGS = 18;
@@ -50,6 +64,9 @@ const BUBBLE_HEIGHT = 2.52;
 /** Height above the character's feet, metres. Just above the head. */
 const TAG_HEIGHT = 2.05;
 
+/** World height of a one-line plate, metres. A plate with a title line grows *upward*. */
+const PLATE_HEIGHT = 0.42;
+
 /** Device-pixel scale for the label canvas. 2× keeps text crisp without wasting memory. */
 const TEXTURE_SCALE = 2;
 
@@ -65,15 +82,63 @@ interface TagTarget {
   highlight?: boolean;
   /** What this player is currently saying, if anything. See `speech.ts`. */
   bubble?: string | null;
+  /**
+   * The badge they wear, already in words — its icon and name, e.g. "🎣 Angler" — drawn
+   * small under the name. The caller localises it; the plate only draws it.
+   */
+  title?: string | null;
 }
 
-/** One pooled sprite. */
+/**
+ * A label quad, always facing the camera. Sized by the mesh's own x/y scale, in metres,
+ * exactly as a `THREE.Sprite` is — see the header for why it is not one.
+ */
+const LABEL_VERTEX = /* glsl */ `
+out vec2 vUv;
+void main() {
+  vUv = uv;
+  vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+  mv.xy += position.xy * vec2(length(modelMatrix[0].xyz), length(modelMatrix[1].xyz));
+  gl_Position = projectionMatrix * mv;
+}
+`;
+
+const LABEL_FRAGMENT = /* glsl */ `
+uniform sampler2D uMap;
+uniform float uOpacity;
+in vec2 vUv;
+${FX_OUTPUTS}
+void main() {
+  vec4 texel = texture(uMap, vUv);
+  float a = texel.a * uOpacity;
+  if (a < 0.004) discard;
+  gColor = vec4(texel.rgb, a);
+  gInfo = vec4(0.0);
+}
+`;
+
+/** The same quad again, drawing nothing but clearing the outline mask under the label. */
+const LABEL_UNLINE_FRAGMENT = /* glsl */ `
+uniform sampler2D uMap;
+uniform float uOpacity;
+in vec2 vUv;
+${FX_OUTPUTS}
+void main() {
+  float a = texture(uMap, vUv).a * uOpacity;
+  if (a < 0.004) discard;
+  gColor = vec4(0.0);
+  gInfo = vec4(0.0, 0.0, 0.0, a);
+}
+`;
+
+/** One pooled label. */
 interface Tag {
-  sprite: THREE.Sprite;
-  material: THREE.SpriteMaterial;
+  sprite: THREE.Mesh;
+  material: THREE.ShaderMaterial;
   /** Name currently rendered on this sprite's texture, so we only re-render on change. */
   renderedName: string | null;
   renderedHighlight: boolean;
+  renderedTitle: string | null;
 }
 
 export class NameTags {
@@ -81,6 +146,8 @@ export class NameTags {
 
   private readonly pool: Tag[] = [];
   private readonly bubblePool: Tag[] = [];
+  /** The one quad every label is drawn on. */
+  private readonly quad = new THREE.PlaneGeometry(1, 1);
   /**
    * Rendered plates and bubbles, by content.
    *
@@ -135,25 +202,39 @@ export class NameTags {
   }
 
   /**
-   * Render a texture for a name.
+   * Render a texture for a name, and the title under it if they wear one.
    *
    * Drawn as light text on a soft dark plate rather than the reverse: the island's sky
    * and sand are both pale, and dark-on-light labels vanish against them.
+   *
+   * The title is a second, smaller and fainter line on the same plate rather than a plate
+   * of its own: it belongs to the name, and a second sprite would be a second thing to rank,
+   * fade and keep in step. Keyed into the cache with the name, so wearing a different badge
+   * renders a new plate — and the old one ages out of the LRU like any other.
    */
-  private textureFor(name: string, highlight: boolean): THREE.CanvasTexture {
-    const key = `${highlight ? 'h:' : 'n:'}${name}`;
+  private textureFor(name: string, highlight: boolean, title: string | null): THREE.CanvasTexture {
+    const key = `${highlight ? 'h:' : 'n:'}${name}${title ? `\u0000${title}` : ''}`;
     const cached = this.textures.get(key);
     if (cached) return cached;
 
     const fontSize = 34;
+    const titleSize = 22;
+    const titleGap = 4;
     const padX = 18;
     const padY = 10;
+    const font = `500 ${fontSize}px -apple-system, "Segoe UI", "Hiragino Sans", sans-serif`;
+    const titleFont = `500 ${titleSize}px -apple-system, "Segoe UI", "Hiragino Sans", "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
 
     const measure = document.createElement('canvas').getContext('2d');
     if (!measure) throw new Error('2D canvas context unavailable');
-    measure.font = `500 ${fontSize}px -apple-system, "Segoe UI", "Hiragino Sans", sans-serif`;
-    const width = Math.ceil(measure.measureText(name).width) + padX * 2;
-    const height = fontSize + padY * 2;
+    measure.font = font;
+    let textWidth = measure.measureText(name).width;
+    if (title) {
+      measure.font = titleFont;
+      textWidth = Math.max(textWidth, measure.measureText(title).width);
+    }
+    const width = Math.ceil(textWidth) + padX * 2;
+    const height = fontSize + padY * 2 + (title ? titleSize + titleGap : 0);
 
     const canvas = document.createElement('canvas');
     canvas.width = width * TEXTURE_SCALE;
@@ -161,9 +242,10 @@ export class NameTags {
     const ctx = canvas.getContext('2d')!;
     ctx.scale(TEXTURE_SCALE, TEXTURE_SCALE);
 
-    // Plate: warm near-black at low opacity, fully rounded.
+    // Plate: warm near-black at low opacity, fully rounded — capsule for one line, and the
+    // same radius on the taller two-line plate so the two read as the same object.
     ctx.fillStyle = highlight ? 'rgba(196, 80, 58, 0.88)' : 'rgba(38, 34, 30, 0.62)';
-    const r = height / 2;
+    const r = (fontSize + padY * 2) / 2;
     ctx.beginPath();
     ctx.moveTo(r, 0);
     ctx.lineTo(width - r, 0);
@@ -177,17 +259,23 @@ export class NameTags {
     ctx.fill();
 
     ctx.fillStyle = '#F6F2EA';
-    ctx.font = `500 ${fontSize}px -apple-system, "Segoe UI", "Hiragino Sans", sans-serif`;
+    ctx.font = font;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(name, width / 2, height / 2 + 1);
+    ctx.fillText(name, width / 2, padY + fontSize / 2 + 1);
+    if (title) {
+      ctx.fillStyle = 'rgba(246, 242, 234, 0.72)';
+      ctx.font = titleFont;
+      ctx.fillText(title, width / 2, padY + fontSize + titleGap + titleSize / 2);
+    }
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.minFilter = THREE.LinearFilter;
     texture.generateMipmaps = false;
-    // Store the plate's aspect ratio so `update` can size the sprite without re-measuring.
+    // Store the plate's shape so `update` can size the sprite without re-measuring.
     texture.userData.aspect = width / height;
+    texture.userData.lines = height / (fontSize + padY * 2);
     return this.remember(key, texture, key.slice(0, 2), NameTags.NAME_CACHE);
   }
 
@@ -282,20 +370,28 @@ export class NameTags {
     let tag = pool[index];
     if (tag) return tag;
 
-    const material = new THREE.SpriteMaterial({
-      transparent: true,
-      depthTest: true,
-      // Depth writes off: overlapping tags should blend, not z-fight.
-      depthWrite: false,
-      // Tone mapping would dull the plate; tags are interface, not lit surface.
-      toneMapped: false,
+    // Depth-tested so a building hides a name behind it; no depth writes, so overlapping
+    // tags blend rather than z-fight.
+    const material = fxMaterial({
+      vertexShader: LABEL_VERTEX,
+      fragmentShader: LABEL_FRAGMENT,
+      blend: 'over',
+      uniforms: { uMap: { value: null }, uOpacity: { value: 0 } },
     });
-    const sprite = new THREE.Sprite(material);
+    const sprite = new THREE.Mesh(this.quad, material);
     sprite.visible = false;
     sprite.renderOrder = 5;
+    // Same uniforms, so it always covers exactly what the label does; a child, so it shares
+    // the label's transform and visibility.
+    const unline = new THREE.Mesh(
+      this.quad,
+      fxMaterial({ vertexShader: LABEL_VERTEX, fragmentShader: LABEL_UNLINE_FRAGMENT, blend: 'unline', uniforms: material.uniforms }),
+    );
+    unline.renderOrder = 4;
+    sprite.add(unline);
     this.group.add(sprite);
 
-    tag = { sprite, material, renderedName: null, renderedHighlight: false };
+    tag = { sprite, material, renderedName: null, renderedHighlight: false, renderedTitle: null };
     pool[index] = tag;
     return tag;
   }
@@ -317,10 +413,11 @@ export class NameTags {
 
     const cameraPos = camera.position;
 
-    // Rank by distance, keeping only those inside the fade window.
+    // Rank by distance, keeping only those inside the fade window. A target with no name is
+    // there for its bubble alone — yours, which gets no plate — and must not draw an empty one.
     const ranked = targets
       .map((t) => ({ t, d: t.position.distanceTo(cameraPos) }))
-      .filter((e) => e.d < FADE_END)
+      .filter((e) => e.d < FADE_END && e.t.name !== '')
       .sort((a, b) => a.d - b.d)
       .slice(0, MAX_TAGS);
 
@@ -330,23 +427,28 @@ export class NameTags {
 
       // Only touch the texture when the label's content actually changed — creating a
       // CanvasTexture per frame would be a memory leak with a nice API.
-      if (tag.renderedName !== t.name || tag.renderedHighlight !== (t.highlight ?? false)) {
-        const texture = this.textureFor(t.name, t.highlight ?? false);
-        tag.material.map = texture;
-        tag.material.needsUpdate = true;
+      const highlight = t.highlight ?? false;
+      const title = t.title ?? null;
+      if (tag.renderedName !== t.name || tag.renderedHighlight !== highlight || tag.renderedTitle !== title) {
+        const texture = this.textureFor(t.name, highlight, title);
+        tag.material.uniforms.uMap.value = texture;
         tag.renderedName = t.name;
-        tag.renderedHighlight = t.highlight ?? false;
+        tag.renderedHighlight = highlight;
+        tag.renderedTitle = title;
 
         // Sprite scale is in world units; 0.42 m tall reads as a label rather than a
-        // billboard at character scale.
+        // billboard at character scale. A titled plate is proportionally taller.
         const aspect = (texture.userData.aspect as number) || 3;
-        tag.sprite.scale.set(0.42 * aspect, 0.42, 1);
+        const plateHeight = PLATE_HEIGHT * ((texture.userData.lines as number) || 1);
+        tag.sprite.scale.set(plateHeight * aspect, plateHeight, 1);
       }
 
-      tag.sprite.position.set(t.position.x, t.position.y + TAG_HEIGHT, t.position.z);
+      // The plate's bottom edge stays where a one-line plate's is, just clear of the head,
+      // and a title line extends it upward toward the bubble.
+      tag.sprite.position.set(t.position.x, t.position.y + TAG_HEIGHT + (tag.sprite.scale.y - PLATE_HEIGHT) / 2, t.position.z);
       // Fade rather than pop. Squared falloff so tags thin out gently as a crowd recedes.
       const fade = 1 - Math.max(0, Math.min(1, (d - FADE_START) / (FADE_END - FADE_START)));
-      tag.material.opacity = fade * fade;
+      tag.material.uniforms.uOpacity.value = fade * fade;
       tag.sprite.visible = fade > 0.02;
     }
 
@@ -380,8 +482,7 @@ export class NameTags {
 
       if (bubble.renderedName !== text) {
         const texture = this.bubbleTextureFor(text);
-        bubble.material.map = texture;
-        bubble.material.needsUpdate = true;
+        bubble.material.uniforms.uMap.value = texture;
         bubble.renderedName = text;
         // Sized from the texture's own pixel height so a two-line bubble is twice as tall
         // rather than twice as squashed.
@@ -398,7 +499,7 @@ export class NameTags {
         t.position.z,
       );
       const fade = 1 - Math.max(0, Math.min(1, (d - BUBBLE_FADE_START) / (BUBBLE_FADE_END - BUBBLE_FADE_START)));
-      bubble.material.opacity = fade;
+      bubble.material.uniforms.uOpacity.value = fade;
       bubble.sprite.visible = fade > 0.02;
     }
 
@@ -410,10 +511,12 @@ export class NameTags {
   dispose(): void {
     for (const tag of [...this.pool, ...this.bubblePool]) {
       tag.material.dispose();
+      for (const child of tag.sprite.children) ((child as THREE.Mesh).material as THREE.Material).dispose();
       tag.sprite.removeFromParent();
     }
     this.pool.length = 0;
     this.bubblePool.length = 0;
+    this.quad.dispose();
     for (const texture of this.textures.values()) texture.dispose();
     this.textures.clear();
   }

@@ -15,10 +15,15 @@
    * Notes go to the server (`POST /dev/notes`) and land in a JSON-lines file that
    * `npm run notes` prints. They have to outlive the browser: they are written while
    * playing and read while editing the map, which is a different day.
+   *
+   * The panel's words follow the interface language; the marked-position readout does not.
+   * It is a coordinate record read by whoever edits the map, in the vocabulary of the map
+   * files, and translating "facing" would not make it any easier to act on.
    */
   import { onMount } from 'svelte';
   import { LANDMARKS, activeMapId, roadsideLanterns, zoneAt } from '@nagisa/shared';
   import { cmd, selfPose } from '../state/stores.js';
+  import { t, tr } from '../i18n/index.js';
 
   interface Mark {
     pos: [number, number, number];
@@ -102,10 +107,10 @@
 
   async function save(): Promise<void> {
     if (!mark || !text.trim()) {
-      status = 'mark a spot and write something first';
+      status = tr('notes.needBoth');
       return;
     }
-    status = 'saving…';
+    status = tr('notes.saving');
     try {
       const res = await fetch(`${devBase()}/dev/notes`, {
         method: 'POST',
@@ -114,17 +119,17 @@
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        status = body?.error ?? `server said ${res.status}`;
+        status = body?.error ?? tr('notes.serverSaid', { status: res.status });
         return;
       }
       text = '';
-      status = 'saved';
+      status = tr('notes.saved');
       await load();
     } catch {
       // The endpoint is absent unless DEV_NOTES_PATH is set, and a 404 with no CORS header
       // reaches the browser as a network failure rather than as a status — so this is what
       // "the server is running but notes are off" actually looks like from here.
-      status = 'notes are off — start the stack with `npm run dev`';
+      status = tr('notes.off');
     }
   }
 
@@ -156,16 +161,16 @@
 </script>
 
 <div class="notes">
-  <p class="hint">Stand where the problem is, mark it, say what is wrong.</p>
+  <p class="hint">{$t('notes.hint')}</p>
 
-  <button type="button" class="mark" onclick={markHere}>Mark here</button>
+  <button type="button" class="mark" onclick={markHere}>{$t('notes.mark')}</button>
 
-  <input class="coords" readonly value={mark ? summarise(mark) : 'nothing marked yet'} aria-label="Marked position" />
+  <input class="coords" readonly value={mark ? summarise(mark) : $t('notes.nothing')} aria-label={$t('notes.position')} />
 
   {#if nearby.length}
     <label class="pick">
-      <span class="label">This is about</span>
-      <select bind:value={chosen} aria-label="Which landmark this note is about">
+      <span class="label">{$t('notes.about')}</span>
+      <select bind:value={chosen} aria-label={$t('notes.aboutLabel')}>
         {#each nearby as n (n.id)}
           <option value={n.id}>{n.id} · {n.kind} · {n.dist.toFixed(1)} m</option>
         {/each}
@@ -176,12 +181,12 @@
   <textarea
     bind:value={text}
     rows="3"
-    placeholder="e.g. this hut is too close to the road, and its door faces the hill"
-    aria-label="Note"
+    placeholder={$t('notes.placeholder')}
+    aria-label={$t('notes.note')}
   ></textarea>
 
   <div class="row">
-    <button type="button" class="save" onclick={save} disabled={!mark || !text.trim()}>Save note</button>
+    <button type="button" class="save" onclick={save} disabled={!mark || !text.trim()}>{$t('notes.save')}</button>
     {#if status}<span class="status">{status}</span>{/if}
   </div>
 

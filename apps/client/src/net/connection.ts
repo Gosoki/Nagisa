@@ -59,7 +59,13 @@ export interface ConnectionEvents {
   latency: (rttMs: number) => void;
 }
 
-/** Where the resume token lives between sessions. */
+/**
+ * Where the resume token lives: **per tab** (`sessionStorage`), which survives a reload and
+ * a dropped socket but is not shared with the tab next door. In `localStorage` two tabs of
+ * the same browser overwrote each other's token, so whichever dropped first came back
+ * presenting the other's — and, that player not being away, arrived as a stranger who had
+ * lost their activity and check-in.
+ */
 const RESUME_KEY = 'nagisa.resume';
 
 /** Backoff bounds for reconnection, ms. */
@@ -244,7 +250,7 @@ export class Connection {
     // back where they left off under a new identity.
     forgetPose();
     try {
-      localStorage.removeItem(RESUME_KEY);
+      sessionStorage.removeItem(RESUME_KEY);
     } catch {
       /* Private browsing: nothing to clear. */
     }
@@ -397,7 +403,7 @@ export class Connection {
 
   private readResumeToken(): string | null {
     try {
-      return localStorage.getItem(RESUME_KEY);
+      return sessionStorage.getItem(RESUME_KEY);
     } catch {
       // Safari in private mode throws on access. A fresh session is a fine fallback.
       return null;
@@ -406,7 +412,7 @@ export class Connection {
 
   private writeResumeToken(token: string): void {
     try {
-      localStorage.setItem(RESUME_KEY, token);
+      sessionStorage.setItem(RESUME_KEY, token);
     } catch {
       /* Non-fatal: we simply cannot resume after a full reload. */
     }

@@ -25,7 +25,8 @@
  * killing a backgrounded tab, or a browser restart cannot — and those are exactly the
  * interruptions long enough to outlive the grace window, i.e. precisely the cases where
  * the position is the only thing left to reconnect with. So the pose is mirrored into
- * `localStorage` next to the resume token, throttled to keep it off the hot path.
+ * `localStorage` (shared by every tab, unlike the per-tab resume token), throttled to keep it
+ * off the hot path.
  *
  * Stale poses are discarded on read: a position from a week ago is not where you are, and
  * a position saved under a different map does not even mean the same thing.
@@ -33,7 +34,7 @@
 
 import type { Vec3 } from '@nagisa/shared';
 
-/** Storage key, deliberately adjacent to `nagisa.resume` in `connection.ts`. */
+/** Storage key. Named alongside `nagisa.resume` in `connection.ts`, which is per tab. */
 const POSE_KEY = 'nagisa.pose';
 
 /**

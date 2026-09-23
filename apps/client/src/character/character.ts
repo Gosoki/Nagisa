@@ -49,12 +49,21 @@
  * Beyond `LOD_DISTANCE` the face and accessory are hidden and the animation update is
  * skipped entirely — a crowd of eighty on the far side of the plaza costs almost nothing
  * while still reading as a crowd.
+ *
+ * ### Things held in the hand
+ *
+ * A rod while fishing and a paper lantern on the lantern walk. Both are built the first
+ * time they are needed rather than with the figure — most islanders never hold either, and
+ * a prop nobody is carrying should cost nothing — and both hang off the forearm joint, so
+ * they move with the pose instead of being positioned by anyone else.
  */
 
 import * as THREE from 'three';
 import { AnimState } from '@nagisa/shared';
 import { inkDepthMaterial } from '../engine/ink/ink-material.js';
-import { hair as hairMaterial, outfit as outfitMaterial, skin as skinMaterial, surface } from '../world/materials.js';
+import { hair as hairMaterial, outfit as outfitMaterial, shoji, skin as skinMaterial, surface, wood } from '../world/materials.js';
+import { paperLantern } from '../world/props/kit.js';
+import { mergeByMaterial } from '../world/props/geometry.js';
 
 /** Character height, metres. Everything on the island is scaled against this. */
 export const CHARACTER_HEIGHT = 1.7;
@@ -120,11 +129,103 @@ const PROFILES: Record<AnimState, AnimProfile> = {
   [AnimState.Clap]: { armSwing: 0.0, legSwing: 0, elbowBend: 1.25, kneeBend: 0.05, rate: 9.0, bob: 0.009, lean: 0.03, armRaise: 1.05, hipFold: 0 },
   [AnimState.Wave]: { armSwing: 0.0, legSwing: 0, elbowBend: 0.9, kneeBend: 0.05, rate: 6.0, bob: 0.011, lean: 0, armRaise: 2.2, hipFold: 0 },
   [AnimState.Bow]: { armSwing: 0.0, legSwing: 0, elbowBend: 0.15, kneeBend: 0.05, rate: 0, bob: 0, lean: 0.8, armRaise: 0, hipFold: 0 },
-  // Arms forward and a little raised, holding a rod out over the water; breathing, not moving.
-  [AnimState.Fish]: { armSwing: 0.0, legSwing: 0, elbowBend: 0.7, kneeBend: 0.08, rate: 0.9, bob: 0.006, lean: 0.06, armRaise: 0.75, hipFold: 0 },
-  // Both arms up, a small bounce.
-  [AnimState.Cheer]: { armSwing: 0.15, legSwing: 0, elbowBend: 0.3, kneeBend: 0.18, rate: 8.0, bob: 0.03, lean: -0.05, armRaise: 2.6, hipFold: 0 },
+  // Both forearms level in front of the chest, holding the rod out over the water; a slight
+  // forward lean toward the float. The arms are placed by `applyPoseOverrides`, which reads
+  // `armRaise` and `elbowBend` from here so the pose blends in rather than snapping. Slow
+  // breathing and nothing else: a person watching a float stands very still.
+  [AnimState.Fish]: { armSwing: 0.03, legSwing: 0, elbowBend: 0.55, kneeBend: 0.1, rate: 0.8, bob: 0.005, lean: 0.1, armRaise: 0.95, hipFold: 0 },
+  // Both arms up in a V and a small bounce on the knees. The rate is half what a jump for
+  // joy would be: this is someone pleased with a fish, not a goal celebration.
+  [AnimState.Cheer]: { armSwing: 0.1, legSwing: 0, elbowBend: 0.3, kneeBend: 0.2, rate: 5.5, bob: 0.03, lean: -0.08, armRaise: 2.75, hipFold: 0 },
 };
+
+/** States whose pose override takes over the left arm, so a carried lantern goes with it. */
+const TWO_HANDED: ReadonlySet<AnimState> = new Set([AnimState.Clap, AnimState.Bow, AnimState.Fish, AnimState.Cheer]);
+
+/**
+ * How the rod sits in the hand, as a pitch about the forearm's own x axis.
+ *
+ * The fishing pose puts the forearm level and pointing forward (shoulder −0.95 plus elbow
+ * −0.55, less the 0.1 forward lean), so a rod built along +y needs about 135° of pitch in
+ * the forearm's frame to come out forward and some 35° above horizontal in the world —
+ * the angle an angler actually holds a float rod at.
+ */
+const ROD_PITCH = 2.36;
+
+/** Rod length ahead of the hand, and how much of the butt sticks out behind it, metres. */
+const ROD_LENGTH = 2.3;
+const ROD_BUTT = 0.25;
+
+/**
+ * The lantern pole's pitch in the forearm's frame: forward and some 30° up while the arm is
+ * in the carrying pose (shoulder −0.5, elbow −0.95), which hangs the lantern at chest height
+ * a pace ahead — where it lights the path, not the carrier's face.
+ */
+const POLE_PITCH = 2.5;
+const POLE_LENGTH = 0.72;
+
+/**
+ * How opaque a disconnected ("away") player is drawn. Enough to be clearly there — they
+ * are, for up to 45 seconds — and clearly not quite present.
+ */
+const FADED_OPACITY = 0.45;
+
+/**
+ * Translucent twins of the shared character materials, one per base material.
+ *
+ * ### Why not `material.transparent = true`
+ *
+ * Character materials come from the cache in `world/materials.ts` and are **shared** by
+ * every figure wearing the same outfit, skin, hair or shoes. Setting `transparent` and
+ * `opacity` on them — which is what fading a disconnected player used to do — fades every
+ * islander dressed alike, and the next player to come back makes all of them opaque again.
+ * And it did not even fade properly: the ink shader only writes its opacity into the alpha
+ * channel when it was *compiled* with `IS_TRANSPARENT`, so flipping the flag afterwards
+ * blended with the material id as alpha instead.
+ *
+ * ### Why not `material.clone()`
+ *
+ * `ShaderMaterial.clone` deep-copies its uniforms, and an ink material's lighting uniforms
+ * are the *shared* `inkLighting` objects the sky writes once a frame. A clone would keep
+ * the light of the moment it was made — a ghost lit for noon standing in the dusk.
+ *
+ * So a variant is a new material over the same shader source with `IS_TRANSPARENT`
+ * defined, and a **shallow** copy of the uniform map: every uniform object is the base's
+ * own (lighting, colour, the shoji glow) except `uOpacity`, which is the variant's.
+ * Weakly keyed, so a variant lives exactly as long as the material it shadows.
+ */
+const fadedVariants = new WeakMap<THREE.Material, THREE.Material>();
+
+function fadedVariant(base: THREE.Material): THREE.Material {
+  const known = fadedVariants.get(base);
+  if (known) return known;
+  // Every character surface is an ink material; anything else is left opaque rather than
+  // guessed at.
+  if (!(base instanceof THREE.ShaderMaterial)) return base;
+  const variant = new THREE.ShaderMaterial({
+    glslVersion: base.glslVersion ?? undefined,
+    defines: { ...base.defines, IS_TRANSPARENT: '' },
+    uniforms: { ...base.uniforms, uOpacity: { value: FADED_OPACITY } },
+    vertexShader: base.vertexShader,
+    fragmentShader: base.fragmentShader,
+    lights: base.lights,
+    side: base.side,
+    transparent: true,
+  });
+  // Not in three's typings for ShaderMaterial, but read by its program cache; see
+  // `createInkMaterial`, which sets it the same way.
+  const shading = base as unknown as { flatShading: boolean };
+  (variant as unknown as { flatShading: boolean }).flatShading = shading.flatShading;
+  variant.name = `${base.name}:faded`;
+  fadedVariants.set(base, variant);
+  return variant;
+}
+
+/** Scratch for the lantern's plumb line. Module-level: a figure's update never allocates. */
+const POLE_WORLD = new THREE.Quaternion();
+const ROOT_WORLD = new THREE.Quaternion();
+const SWAY = new THREE.Quaternion();
+const X_AXIS = new THREE.Vector3(1, 0, 0);
 
 // ---------------------------------------------------------------------------
 // Geometry helpers
@@ -245,6 +346,22 @@ export class Character {
 
   /** Resting hip height, metres. The bob rides on top of this. */
   private readonly hipHeight = 0.79;
+
+  /** Drawn translucent — see {@link setFaded}. */
+  private faded = false;
+
+  /** The rod, built the first time this figure fishes. Shown only while it is. */
+  private rod: THREE.Group | null = null;
+  private rodTipMarker: THREE.Object3D | null = null;
+
+  /** What the free hand is carrying. */
+  private held: 'lantern' | null = null;
+  /**
+   * The lantern: a pole in the left hand and, at its tip, a hanger that is turned every
+   * frame to cancel the pole's own rotation — so the lantern hangs plumb whatever the arm
+   * is doing, and swings a little when the figure walks.
+   */
+  private lantern: { pole: THREE.Group; hanger: THREE.Group; body: THREE.Object3D } | null = null;
 
   constructor(appearance: CharacterAppearance) {
     this.root.name = 'character';
@@ -382,11 +499,17 @@ export class Character {
     return this.state;
   }
 
+  /** What the figure is visibly doing: a live emote if there is one, else its state. */
+  get effectiveState(): AnimState {
+    return this.emoteRemaining > 0 && this.emoteState !== null ? this.emoteState : this.state;
+  }
+
   /** Switch animation. Blending is handled in {@link update}; this is cheap to call. */
   setAnim(state: AnimState): void {
     if (this.state === state) return;
     this.state = state;
     this.target = PROFILES[state];
+    this.refreshRod();
   }
 
   /**
@@ -397,6 +520,140 @@ export class Character {
   playEmote(state: AnimState, duration = 2.0): void {
     this.emoteState = state;
     this.emoteRemaining = duration;
+    this.refreshRod();
+  }
+
+  /**
+   * Draw this figure translucent (a disconnected player inside their grace window) or
+   * solid again.
+   *
+   * Per figure, not per material: each mesh is pointed at a translucent *variant* of its
+   * material (see {@link fadedVariant}) and back, and the shared originals are never
+   * touched. The ink pipeline handles the variant like any transparent surface — the fill
+   * blends at `FADED_OPACITY` while the info buffer still takes the figure's depth and
+   * normals, so the ghost keeps its pen contours.
+   */
+  setFaded(faded: boolean): void {
+    if (this.faded === faded) return;
+    this.faded = faded;
+    this.applyFade(this.root);
+  }
+
+  /** Point every mesh under `object` at the material the current fade calls for. */
+  private applyFade(object: THREE.Object3D): void {
+    object.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh)) return;
+      // The original is remembered on the mesh the first time it is swapped; a mesh built
+      // while the figure was already faded is caught the same way.
+      const base = (obj.userData.baseMaterial ??= obj.material) as THREE.Material;
+      obj.material = this.faded ? fadedVariant(base) : base;
+    });
+  }
+
+  /**
+   * Carry something in the free hand, or nothing. The lantern walk is the only thing that
+   * asks for this today.
+   */
+  setHeldProp(prop: 'lantern' | null): void {
+    if (this.held === prop) return;
+    this.held = prop;
+    if (prop === 'lantern' && !this.lantern) this.lantern = this.buildLantern();
+    if (this.lantern) this.lantern.pole.visible = prop === 'lantern';
+  }
+
+  get heldProp(): 'lantern' | null {
+    return this.held;
+  }
+
+  /**
+   * World position of the rod's tip, where a fishing line starts. Null when no rod is out.
+   * Updates this figure's world matrices, which the renderer would do anyway.
+   */
+  rodTip(out: THREE.Vector3): THREE.Vector3 | null {
+    if (!this.rod?.visible || !this.rodTipMarker || !this.root.visible) return null;
+    return this.rodTipMarker.getWorldPosition(out);
+  }
+
+  /** World position of the carried lantern's paper body, for its glow. Null if none. */
+  lanternPosition(out: THREE.Vector3): THREE.Vector3 | null {
+    if (this.held !== 'lantern' || !this.lantern || !this.root.visible) return null;
+    return this.lantern.body.getWorldPosition(out);
+  }
+
+  /** Show the rod exactly while the figure is visibly fishing. */
+  private refreshRod(): void {
+    const fishing = this.effectiveState === AnimState.Fish;
+    if (fishing && !this.rod) this.rod = this.buildRod();
+    if (this.rod && this.rod.visible !== fishing) this.rod.visible = fishing;
+  }
+
+  /**
+   * A float rod: a tapering bamboo cane with a dark grip, in the right hand. Two meshes,
+   * a few dozen triangles, two library materials.
+   */
+  private buildRod(): THREE.Group {
+    const rod = new THREE.Group();
+    rod.name = 'rod';
+    rod.position.set(0, -0.235, 0);
+    rod.rotation.x = ROD_PITCH;
+
+    const cane = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.018, ROD_LENGTH + ROD_BUTT, 5), wood('light'));
+    cane.position.y = (ROD_LENGTH - ROD_BUTT) / 2;
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.028, 0.34, 6), wood('dark'));
+    grip.position.y = -0.06;
+    for (const part of [cane, grip]) {
+      part.castShadow = true;
+      part.customDepthMaterial = inkDepthMaterial();
+      rod.add(part);
+    }
+
+    this.rodTipMarker = new THREE.Object3D();
+    this.rodTipMarker.position.y = ROD_LENGTH;
+    rod.add(this.rodTipMarker);
+
+    rod.visible = false;
+    this.elbowR.add(rod);
+    this.applyFade(rod);
+    return rod;
+  }
+
+  /**
+   * A chōchin on a short pole, in the left hand: the kit's paper lantern, small, under a
+   * cord. The paper is the library's `shoji`, whose glow the day cycle already raises
+   * after dusk — so the lantern lights itself at exactly the moment every window on the
+   * island does, and needs nothing of its own to do it.
+   */
+  private buildLantern(): { pole: THREE.Group; hanger: THREE.Group; body: THREE.Object3D } {
+    const pole = new THREE.Group();
+    pole.name = 'lantern';
+    pole.position.set(0, -0.235, 0);
+    pole.rotation.x = POLE_PITCH;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.014, POLE_LENGTH + 0.08, 5), wood('dark'));
+    shaft.position.y = (POLE_LENGTH - 0.08) / 2;
+    shaft.castShadow = true;
+    shaft.customDepthMaterial = inkDepthMaterial();
+    pole.add(shaft);
+
+    const hanger = new THREE.Group();
+    hanger.position.y = POLE_LENGTH;
+    pole.add(hanger);
+    const height = 0.26;
+    const parts = paperLantern(0.095, height, shoji(), wood('dark'));
+    for (const part of parts) part.position.y -= height + 0.08;
+    const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.08, 4), wood('dark'));
+    cord.position.y = -0.04;
+    parts.push(cord);
+    for (const mesh of mergeByMaterial(parts)) {
+      mesh.customDepthMaterial = inkDepthMaterial();
+      hanger.add(mesh);
+    }
+    const body = new THREE.Object3D();
+    body.position.y = -0.08 - height / 2;
+    hanger.add(body);
+
+    this.elbowL.add(pole);
+    this.applyFade(pole);
+    return { pole, hanger, body };
   }
 
   /** Distance-based LOD. Called by the scene once per frame with the camera position. */
@@ -424,6 +681,8 @@ export class Character {
     if (this.emoteRemaining > 0) {
       this.emoteRemaining -= dt;
       if (this.emoteState !== null) goal = PROFILES[this.emoteState];
+      // A cheer over a catch ends with the figure back at its state, rod and all.
+      if (this.emoteRemaining <= 0) this.refreshRod();
     }
 
     // Blend toward the goal. A fixed rate rather than a spring: predictable, and it
@@ -458,13 +717,43 @@ export class Character {
     this.kneeL.rotation.x = Math.max(0, swing) * this.blended.kneeBend + this.blended.hipFold;
     this.kneeR.rotation.x = Math.max(0, counter) * this.blended.kneeBend + this.blended.hipFold;
 
-    this.applyEmoteOverrides();
+    const pose = this.effectiveState;
+    this.applyPoseOverrides(pose);
+    if (this.held === 'lantern' && !TWO_HANDED.has(pose)) this.applyCarryPose();
 
     // The body bobs at twice the limb rate: one rise per footfall, two per stride.
     this.hips.position.y = this.hipHeight - this.blended.hipFold * 0.28 + Math.abs(swing) * this.blended.bob;
     this.torso.rotation.x = this.blended.lean;
     // A slight head counter-rotation keeps the gaze level while the body leans.
     this.head.rotation.x = -this.blended.lean * 0.55;
+
+    if (this.held === 'lantern' && this.lantern) this.hangLantern();
+  }
+
+  /**
+   * The left arm held forward at the waist, carrying the lantern pole ahead of the body.
+   * Applied over locomotion, so the lantern goes up the shrine path held steady rather than
+   * swung like a handbag.
+   */
+  private applyCarryPose(): void {
+    this.shoulderL.rotation.set(-0.5, 0, 0.1);
+    this.elbowL.rotation.set(-0.95, 0, 0);
+  }
+
+  /**
+   * Turn the lantern to hang plumb under the pole's tip, facing the way the figure does,
+   * with a small pendulum swing in step with the stride.
+   *
+   * Exact rather than approximated from the joint angles: the hanger's local rotation is
+   * the inverse of the pole's world rotation times the root's, which is right whatever
+   * the arm is doing — a bow, a cheer and a wave all move the pole.
+   */
+  private hangLantern(): void {
+    const { pole, hanger } = this.lantern!;
+    pole.getWorldQuaternion(POLE_WORLD);
+    this.root.getWorldQuaternion(ROOT_WORLD);
+    SWAY.setFromAxisAngle(X_AXIS, Math.sin(this.phase + 0.6) * 0.25 * this.blended.legSwing);
+    hanger.quaternion.copy(POLE_WORLD.invert()).multiply(ROOT_WORLD).multiply(SWAY);
   }
 
   /**
@@ -472,9 +761,38 @@ export class Character {
    *
    * Waving is one arm only — mirroring it reads as surrender, not greeting. Clapping
    * brings the hands together in front rather than swinging them past each other. Bowing
-   * drops the arms to the sides and holds them there.
+   * drops the arms to the sides and holds them there. Fishing holds the rod out with both
+   * hands; cheering puts both arms up.
+   *
+   * Keyed on the *effective* state, not only on emotes: a remote angler is in the `Fish`
+   * state rather than playing an emote, and still has to hold the rod like one.
    */
-  private applyEmoteOverrides(): void {
+  private applyPoseOverrides(pose: AnimState): void {
+    if (pose === AnimState.Fish) {
+      // Right hand on the grip with the forearm level; the left further up the rod and a
+      // little inboard. Driven by the blended profile so the arms come up rather than
+      // snap, and with the breathing on the shoulders only, so the rod tip barely moves.
+      const raise = this.blended.armRaise;
+      const bend = this.blended.elbowBend;
+      const breath = Math.sin(this.phase) * this.blended.armSwing;
+      this.shoulderR.rotation.set(-raise + breath, 0, -0.1);
+      this.elbowR.rotation.set(-bend, 0, 0);
+      this.shoulderL.rotation.set(-raise * 0.8 + breath, 0, 0.3);
+      this.elbowL.rotation.set(-bend * 1.9, 0, 0);
+      return;
+    }
+
+    if (pose === AnimState.Cheer) {
+      // Both arms up and out in a V, pumping together — alternating reads as running.
+      const up = -this.blended.armRaise + Math.sin(this.phase) * this.blended.armSwing;
+      const splay = 0.38 * Math.min(1, this.blended.armRaise / 2.75);
+      this.shoulderL.rotation.set(up, 0, -splay);
+      this.shoulderR.rotation.set(up, 0, splay);
+      this.elbowL.rotation.set(-this.blended.elbowBend, 0, 0);
+      this.elbowR.rotation.set(-this.blended.elbowBend, 0, 0);
+      return;
+    }
+
     const emote = this.emoteRemaining > 0 ? this.emoteState : null;
 
     if (emote === AnimState.Wave) {

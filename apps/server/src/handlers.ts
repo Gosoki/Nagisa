@@ -90,6 +90,9 @@ const ROOM_CREATE_COOLDOWN_MS = 30_000;
 /** How far ahead an admin may put something on the programme, minutes. */
 const MAX_SCHEDULE_AHEAD_MIN = 120;
 
+/** Extra activities an admin may have on one room's board at once. */
+export const MAX_ADHOC_ACTIVITIES = 6;
+
 /** Shared services every handler may need. Constructed once in `index.ts`. */
 export interface HandlerDeps {
   rooms: RoomManager;
@@ -236,9 +239,22 @@ export function handleHello(
   // Resume first: a valid, in-grace resume takes priority over a new arrival. Invalid or
   // expired tokens are ignored rather than rejected.
   if (payload) {
-    const room = deps.rooms.get(payload.room);
+    // Look where the token says first, then everywhere: a `room_changed` lost with the socket
+    // that carried it leaves the client holding the old room's token for a player who has
+    // since moved.
+    const room = deps.rooms.get(payload.room)?.getPlayer(payload.playerId)
+      ? deps.rooms.get(payload.room)
+      : deps.rooms.findRoomOf(payload.playerId);
     const player = room?.getPlayer(payload.playerId);
-    if (room && player && player.away) {
+    if (room && player) {
+      // Not only a player in their grace window: the server may not have noticed the old
+      // socket die yet (a half-open connection after a network change takes up to a minute
+      // to time out), and the client reconnects at once. The token proves this is the same
+      // visitor; the old socket is the stale one, so it is let go and this one takes over.
+      if (!player.away) {
+        const stale = room.getSession(player.id);
+        if (stale && stale !== session) stale.close(4002, 'replaced');
+      }
       room.resume(session, player);
       // Cosmetic fields may have changed client-side while disconnected; identity is never
       // re-derived from the client, only these presentational fields are refreshed.
@@ -435,6 +451,10 @@ function checkIn(ctx: ConnState, activityId: string, deps: HandlerDeps): void {
     ctx.room.markPlayerChanged(ctx.player.id, { checkedIn: true });
     ctx.room.activities.notifyChanged(activity);
     deps.persist();
+  } else if (result.reason === 'already' && !ctx.player.checkedIn) {
+    // Checked in, left, and came back: the record stands, and so should the mark.
+    ctx.player.checkedIn = true;
+    ctx.room.markPlayerChanged(ctx.player.id, { checkedIn: true });
   }
 }
 
@@ -574,6 +594,13 @@ function handleHostSchedule(ctx: ConnState, msg: ClientHostSchedule, deps: Handl
     return;
   }
   const inMin = Number.isFinite(msg.inMin) ? clamp(Math.round(msg.inMin), 0, MAX_SCHEDULE_AHEAD_MIN) : 0;
+  // Anyone who makes an island is its admin, so this is bounded per room: a handful of extra
+  // things on the board is a party; thousands is a snapshot nobody can download.
+  const pendingAdhoc = ctx.room.activities.list().filter((a) => a.slot?.startsWith('adhoc:') && !a.closed).length;
+  if (pendingAdhoc >= MAX_ADHOC_ACTIVITIES) {
+    refuse(ctx, 'busy');
+    return;
+  }
   // One quiz runs at a time (there is one arena). Asking for another while one is running
   // would put up an activity that could never do its thing, so it is refused; a scheduled one
   // that goes live during this one is called off by the room instead (see `Room.onTransition`).
@@ -606,13 +633,14 @@ function clamp(v: number, lo: number, hi: number): number {
 
 const ADMIN_ACTIONS = new Set(['kick', 'mute', 'unmute', 'grant_host', 'revoke_host']);
 
-/** Recompute a player's role in their room and tell everyone who needs to know. */
-function refreshRole(room: Room, player: Player): void {
+/** Recompute a player's role in their room and tell everyone who needs to know. Returns whether it changed. */
+function refreshRole(room: Room, player: Player): boolean {
   const role = room.roleFor(player);
-  if (role === player.role) return;
+  if (role === player.role) return false;
   player.role = role;
   room.markPlayerChanged(player.id, { role });
   room.sendTo(player.id, { t: 'role_changed', role, activity: player.hostOf ?? undefined });
+  return true;
 }
 
 function handleAdminAction(ctx: ConnState, msg: ClientAdminAction, deps: HandlerDeps): void {
@@ -642,9 +670,12 @@ function handleAdminAction(ctx: ConnState, msg: ClientAdminAction, deps: Handler
     }
     case 'mute':
       target.muted = true;
+      // A keeper's mute holds on their island; the server's admins' holds everywhere.
+      target.mutedIn = ctx.player.globalAdmin ? null : ctx.room.id;
       break;
     case 'unmute':
       target.muted = false;
+      target.mutedIn = null;
       break;
     case 'grant_host': {
       const activity = typeof msg.activity === 'string' ? ctx.room.activities.get(msg.activity) : undefined;
@@ -671,9 +702,11 @@ function handleAdminAction(ctx: ConnState, msg: ClientAdminAction, deps: Handler
       activity.setHost(target.id, target.name);
       target.hostOf = activity.id;
       ctx.room.activities.notifyChanged(activity);
-      refreshRole(ctx.room, target);
-      // Tell them even when the role did not change (an admin made host of something).
-      ctx.room.sendTo(target.id, { t: 'role_changed', role: target.role, activity: activity.id });
+      // Told once: by `refreshRole` when the role moved, directly when it did not (an admin
+      // made host of something is still an admin, and still wants to know).
+      if (!refreshRole(ctx.room, target)) {
+        ctx.room.sendTo(target.id, { t: 'role_changed', role: target.role, activity: activity.id });
+      }
       break;
     }
     case 'revoke_host': {

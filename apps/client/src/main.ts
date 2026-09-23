@@ -12,6 +12,7 @@ import { activeMap, listMaps, resolveMapId } from '@nagisa/shared';
 import { App } from './app.js';
 import { mountOverlay } from './ui/index.js';
 import { appPhase, loadProgress, notify } from './state/stores.js';
+import { tr } from './i18n/index.js';
 
 const container = document.getElementById('app');
 if (!container) throw new Error('#app container missing from the document');
@@ -54,7 +55,7 @@ function installContextLossHandler(): void {
   const canvas = container?.querySelector('canvas');
   canvas?.addEventListener('webglcontextlost', (event) => {
     event.preventDefault();
-    notify('Graphics interrupted — reload to return', 'warn', 30_000);
+    notify(tr('app.contextLost'), 'warn', 30_000);
     console.warn('[nagisa] WebGL context lost');
   });
   canvas?.addEventListener('webglcontextrestored', () => {
@@ -69,7 +70,7 @@ app.boot().catch((err: unknown) => {
   console.error('[nagisa] boot failed', err);
   loadProgress.set({ value: 1, label: 'The island could not be reached' });
   appPhase.set('loading');
-  notify('Something went wrong loading the island', 'warn', 30_000);
+  notify(tr('app.bootFailed'), 'warn', 30_000);
 });
 
 // Clean teardown on navigation. Not strictly required — the tab is going away — but it

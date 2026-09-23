@@ -169,7 +169,8 @@ export class Activity {
     if (mode === 'participant' && this.participants.has(playerId)) return { ok: true };
     if (mode === 'audience' && this.audience.has(playerId)) return { ok: true };
 
-    if (!this.hasRoom()) return { ok: false, reason: 'full' };
+    // Changing from watching to taking part (or back) does not add anybody.
+    if (!this.isAttending(playerId) && !this.hasRoom()) return { ok: false, reason: 'full' };
 
     // A player can hold only one mode at a time; switching modes releases the old slot.
     this.participants.delete(playerId);

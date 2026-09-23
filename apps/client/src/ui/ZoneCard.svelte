@@ -13,15 +13,25 @@
    * whatever the store does afterwards, by latching the zone snapshot and running its own
    * timer on the true→true or false→true edge. That keeps "how long the card stays up" a
    * presentation decision here rather than something the engine needs to know about.
+   *
+   * What it latches is the zone's *id*; the words are looked up in the current language as
+   * it renders, so the card never shows a name in the language you just switched away from.
+   * The Japanese name stays underneath in the other two languages, as flavour — and is left
+   * out where it would only repeat the line above it.
    */
+  import type { ZoneId } from '@nagisa/shared';
   import { zoneAnnounce, currentZone } from '../state/stores.js';
+  import { lang, zoneCaption, zoneName } from '../i18n/index.js';
 
   const HOLD_MS = 3500;
 
   let visible = $state(false);
-  let shownZone = $state<{ name: string; nameJa: string; caption: string } | null>(null);
+  let shownZone = $state<{ id: ZoneId; name: string; nameJa: string; caption: string } | null>(null);
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
 
+  const primary = $derived(shownZone ? zoneName(shownZone.id, $lang) || shownZone.name : '');
+  const secondary = $derived(shownZone && $lang !== 'ja' && shownZone.nameJa !== primary ? shownZone.nameJa : '');
+  const caption = $derived(shownZone ? zoneCaption(shownZone.id, $lang) || shownZone.caption : '');
   $effect(() => {
     if ($zoneAnnounce && $currentZone) {
       shownZone = $currentZone;
@@ -37,9 +47,9 @@
 
 {#if shownZone}
   <div class="zone-card" class:visible aria-hidden={!visible}>
-    <p class="name">{shownZone.name}</p>
-    <p class="ja">{shownZone.nameJa}</p>
-    <p class="caption">{shownZone.caption}</p>
+    <p class="name">{primary}</p>
+    {#if secondary}<p class="ja" lang="ja">{secondary}</p>{/if}
+    <p class="caption">{caption}</p>
   </div>
 {/if}
 

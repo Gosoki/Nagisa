@@ -134,6 +134,9 @@ async function main(): Promise<void> {
     initialRoomCount: CONFIG.ROOM_COUNT,
     persist,
     persisted: { rooms: persisted.rooms, islands: persisted.islands },
+    onProfileTouched: (player) => {
+      if (player.visitorHash) profiles.touch(player.visitorHash, player.profile);
+    },
   });
   log.info('rooms_ready', {
     rooms: rooms.list().length,
@@ -149,7 +152,7 @@ async function main(): Promise<void> {
       rooms: rooms.exportRooms(),
       islands: rooms.exportIslands(),
       profiles: profiles.export(),
-      audit: auditLog.all().slice(-AUDIT_LIMIT),
+      audit: [...auditLog.all()],
     };
   }
 
@@ -232,6 +235,10 @@ async function main(): Promise<void> {
     };
 
     ws.on('message', (raw) => {
+      // A connection we have closed (kicked, replaced, too much garbage) may still deliver
+      // frames until the close handshake completes. None of them may act: a kicked player's
+      // `room_switch` would otherwise walk a dead session into another room.
+      if (session.isClosed) return;
       const msg = decode<ClientMessage>(raw as Buffer);
       // The type is checked against the messages that exist before it is used for anything —
       // a metric label, a handler lookup, a rate-limit bucket. An arbitrary `t` used as a
@@ -302,7 +309,7 @@ async function main(): Promise<void> {
       const left = (perAddress.get(address) ?? 1) - 1;
       if (left > 0) perAddress.set(address, left);
       else perAddress.delete(address);
-      if (state) state.room.disconnect(state.player.id);
+      if (state) state.room.disconnect(state.player.id, session);
     });
 
     ws.on('error', (err) => {
@@ -372,9 +379,6 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
   process.on('SIGINT', () => void shutdown('SIGINT'));
 }
-
-/** How many audit entries are kept across restarts. */
-const AUDIT_LIMIT = 2000;
 
 main().catch((err) => {
   // eslint-disable-next-line no-console -- logger may not exist yet if boot failed before createLogger.

@@ -20,9 +20,17 @@
    * - Swatch colours are character-customisation content, not interface chrome, so they
    *   are drawn from a small bespoke palette rather than the UI tokens (which describe
    *   the *interface*, not what a visitor's haori can look like).
+   * - The language picker is three words, each in its own language, in the corner of the
+   *   card. Someone who arrives in a language they cannot read can still find their own
+   *   name for their own language; nothing else about it needs to be explained. It writes
+   *   the same setting as the one in Settings, so the choice carries into the world.
+   * - Arriving by an invite link says so, quietly, under the tagline — with the code, so
+   *   a visitor can tell it is the island their friend meant before they go ashore.
    */
   import { PROTOCOL } from '@nagisa/shared';
-  import { cmd } from '../state/stores.js';
+  import { cmd, settings } from '../state/stores.js';
+  import { LANGS, LANG_NAMES, lang, t, tr, type Lang } from '../i18n/index.js';
+  import { inviteCodeFromUrl } from '../net/visitor.js';
 
   let name = $state('');
   let appearance = $state({ outfit: 0, skin: 0, accessory: 0 });
@@ -32,10 +40,17 @@
   /** 0 = none. The rest are just enough to feel like a choice, not a shop. */
   const ACCESSORIES = 4;
 
+  /** Read once: the address is not going to change under the entry card. */
+  const inviteCode = inviteCodeFromUrl();
+
   function submit(): void {
     const trimmed = name.trim().slice(0, PROTOCOL.MAX_NAME_LENGTH);
-    const finalName = trimmed.length > 0 ? trimmed : `Visitor ${Math.floor(100 + Math.random() * 900)}`;
+    const finalName = trimmed.length > 0 ? trimmed : tr('entry.defaultName', { n: Math.floor(100 + Math.random() * 900) });
     cmd().enterWorld(finalName, appearance);
+  }
+
+  function setLang(next: Lang): void {
+    settings.update((s) => ({ ...s, lang: next }));
   }
 
   function onKeydown(e: KeyboardEvent): void {
@@ -47,23 +62,43 @@
   <div class="scrim"></div>
 
   <div class="card">
-    <h1 class="title">Nagisa<span class="ja">渚</span></h1>
-    <p class="tagline">It's a small island, but everyone has to be somewhere.</p>
+    <div class="head">
+      <h1 class="title">Nagisa<span class="ja" lang="ja">渚</span></h1>
+      <div class="langs" role="radiogroup" aria-label={$t('lang.label')}>
+        {#each LANGS as l (l)}
+          <button
+            type="button"
+            class="lang"
+            class:selected={$lang === l}
+            role="radio"
+            aria-checked={$lang === l}
+            lang={l === 'zh' ? 'zh-CN' : l}
+            onclick={() => setLang(l)}
+          >
+            {LANG_NAMES[l]}
+          </button>
+        {/each}
+      </div>
+    </div>
+    <p class="tagline">{$t('entry.tagline')}</p>
+    {#if inviteCode}
+      <p class="invite">{$t('entry.invite', { code: inviteCode })}</p>
+    {/if}
 
     <label class="field">
-      <span class="field-label">Name</span>
+      <span class="field-label">{$t('entry.name')}</span>
       <input
         type="text"
         maxlength={PROTOCOL.MAX_NAME_LENGTH}
-        placeholder="What should we call you?"
+        placeholder={$t('entry.namePlaceholder')}
         bind:value={name}
         onkeydown={onKeydown}
       />
     </label>
 
     <div class="picker">
-      <span class="picker-label">Outfit</span>
-      <div class="swatches" role="radiogroup" aria-label="Outfit colour">
+      <span class="picker-label">{$t('entry.outfit')}</span>
+      <div class="swatches" role="radiogroup" aria-label={$t('entry.outfitGroup')}>
         {#each OUTFITS as color, i (i)}
           <button
             type="button"
@@ -72,7 +107,7 @@
             style:background={color}
             role="radio"
             aria-checked={appearance.outfit === i}
-            aria-label="Outfit {i + 1}"
+            aria-label={$t('entry.outfitN', { n: i + 1 })}
             onclick={() => (appearance.outfit = i)}
           ></button>
         {/each}
@@ -80,8 +115,8 @@
     </div>
 
     <div class="picker">
-      <span class="picker-label">Skin</span>
-      <div class="swatches" role="radiogroup" aria-label="Skin tone">
+      <span class="picker-label">{$t('entry.skin')}</span>
+      <div class="swatches" role="radiogroup" aria-label={$t('entry.skinGroup')}>
         {#each SKINS as color, i (i)}
           <button
             type="button"
@@ -90,7 +125,7 @@
             style:background={color}
             role="radio"
             aria-checked={appearance.skin === i}
-            aria-label="Skin tone {i + 1}"
+            aria-label={$t('entry.skinN', { n: i + 1 })}
             onclick={() => (appearance.skin = i)}
           ></button>
         {/each}
@@ -98,8 +133,8 @@
     </div>
 
     <div class="picker">
-      <span class="picker-label">Accessory</span>
-      <div class="swatches" role="radiogroup" aria-label="Accessory">
+      <span class="picker-label">{$t('entry.accessory')}</span>
+      <div class="swatches" role="radiogroup" aria-label={$t('entry.accessory')}>
         {#each Array(ACCESSORIES) as _, i (i)}
           <button
             type="button"
@@ -107,7 +142,7 @@
             class:selected={appearance.accessory === i}
             role="radio"
             aria-checked={appearance.accessory === i}
-            aria-label={i === 0 ? 'No accessory' : `Accessory ${i}`}
+            aria-label={i === 0 ? $t('entry.accessoryNone') : $t('entry.accessoryN', { n: i })}
             onclick={() => (appearance.accessory = i)}
           >
             {#if i === 0}
@@ -137,7 +172,7 @@
       </div>
     </div>
 
-    <button type="button" class="go" onclick={submit}>Go ashore</button>
+    <button type="button" class="go" onclick={submit}>{$t('entry.go')}</button>
   </div>
 </div>
 
@@ -176,11 +211,51 @@
     padding: var(--sp-xl) var(--sp-lg);
   }
 
+  .head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-sm);
+    flex-wrap: wrap;
+  }
+
   .title {
     margin: 0;
     font-size: var(--fs-xl);
     font-weight: 600;
     letter-spacing: 0.01em;
+  }
+
+  .langs {
+    display: flex;
+    gap: 2px;
+  }
+
+  .lang {
+    border: none;
+    background: transparent;
+    border-radius: var(--r-sm);
+    padding: 2px 5px;
+    font-size: var(--fs-xs);
+    color: var(--ui-ink-faint);
+    cursor: pointer;
+    transition: color var(--mo-quick);
+  }
+
+  .lang:hover {
+    color: var(--ui-ink-muted);
+  }
+
+  .lang.selected {
+    color: var(--ui-ink);
+    text-decoration: underline;
+    text-decoration-color: var(--ui-line);
+    text-underline-offset: 3px;
+  }
+
+  .lang:focus-visible {
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 1px;
   }
 
   .ja {
@@ -196,6 +271,13 @@
     font-style: italic;
     color: var(--ui-ink-muted);
     line-height: 1.5;
+  }
+
+  .invite {
+    margin: calc(-1 * var(--sp-xs)) 0 0;
+    font-size: var(--fs-xs);
+    letter-spacing: 0.04em;
+    color: var(--ui-sea);
   }
 
   .field {

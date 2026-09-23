@@ -15,16 +15,45 @@
    * The room switcher is deliberately just a flat list of small rows, not a table — this
    * is one settings panel among four, capped at ~300px, and a room list with columns
    * would blow that budget immediately.
+   *
+   * Language comes first. Someone who has landed in a language they cannot read is looking
+   * for exactly one thing in this panel, and each option is written in its own language so
+   * they can find it without reading anything else. It writes `settings.lang` directly; the
+   * whole interface reads the translator through a store, so it changes at once.
    */
   import { settings, rooms, room, cmd, type Settings } from '../state/stores.js';
+  import { LANGS, LANG_NAMES, t, type Lang } from '../i18n/index.js';
 
   type QualityTier = Settings['quality'];
   const TIERS: QualityTier[] = ['low', 'medium', 'high'];
+
+  function setLang(lang: Lang): void {
+    settings.update((s) => ({ ...s, lang }));
+  }
 </script>
 
 <div class="section">
-  <span class="label">Quality</span>
-  <div class="segmented" role="radiogroup" aria-label="Render quality">
+  <span class="label">{$t('lang.label')}</span>
+  <div class="segmented" role="radiogroup" aria-label={$t('lang.label')}>
+    {#each LANGS as l (l)}
+      <button
+        type="button"
+        class="segment"
+        class:selected={$settings.lang === l}
+        role="radio"
+        aria-checked={$settings.lang === l}
+        lang={l === 'zh' ? 'zh-CN' : l}
+        onclick={() => setLang(l)}
+      >
+        {LANG_NAMES[l]}
+      </button>
+    {/each}
+  </div>
+</div>
+
+<div class="section">
+  <span class="label">{$t('settings.quality')}</span>
+  <div class="segmented" role="radiogroup" aria-label={$t('settings.qualityGroup')}>
     {#each TIERS as tier (tier)}
       <button
         type="button"
@@ -34,21 +63,21 @@
         aria-checked={$settings.quality === tier}
         onclick={() => cmd().setQuality(tier)}
       >
-        {tier}
+        {$t(`settings.tier.${tier}`)}
       </button>
     {/each}
   </div>
 </div>
 
 <div class="section row">
-  <span class="label">Mute audio</span>
+  <span class="label">{$t('settings.mute')}</span>
   <button
     type="button"
     class="toggle"
     class:on={$settings.muted}
     role="switch"
     aria-checked={$settings.muted}
-    aria-label="Mute audio"
+    aria-label={$t('settings.mute')}
     onclick={() => cmd().setMuted(!$settings.muted)}
   >
     <span class="knob"></span>
@@ -56,14 +85,14 @@
 </div>
 
 <div class="section row">
-  <span class="label">Show names</span>
+  <span class="label">{$t('settings.names')}</span>
   <button
     type="button"
     class="toggle"
     class:on={$settings.showNames}
     role="switch"
     aria-checked={$settings.showNames}
-    aria-label="Show names"
+    aria-label={$t('settings.names')}
     onclick={() => settings.update((s) => ({ ...s, showNames: !s.showNames }))}
   >
     <span class="knob"></span>
@@ -71,14 +100,14 @@
 </div>
 
 <div class="section row">
-  <span class="label">Paper texture</span>
+  <span class="label">{$t('settings.paper')}</span>
   <button
     type="button"
     class="toggle"
     class:on={$settings.paperTexture}
     role="switch"
     aria-checked={$settings.paperTexture}
-    aria-label="Paper texture"
+    aria-label={$t('settings.paper')}
     onclick={() => settings.update((s) => ({ ...s, paperTexture: !s.paperTexture }))}
   >
     <span class="knob"></span>
@@ -86,14 +115,14 @@
 </div>
 
 <div class="section row">
-  <span class="label">Reduce motion</span>
+  <span class="label">{$t('settings.motion')}</span>
   <button
     type="button"
     class="toggle"
     class:on={$settings.reducedMotion}
     role="switch"
     aria-checked={$settings.reducedMotion}
-    aria-label="Reduce motion"
+    aria-label={$t('settings.motion')}
     onclick={() => settings.update((s) => ({ ...s, reducedMotion: !s.reducedMotion }))}
   >
     <span class="knob"></span>
@@ -102,7 +131,7 @@
 
 {#if $rooms.length > 1}
   <div class="section">
-    <span class="label">Room</span>
+    <span class="label">{$t('settings.room')}</span>
     <ul class="rooms">
       {#each $rooms as r (r.id)}
         <li>

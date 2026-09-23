@@ -125,7 +125,7 @@ rounded and clamped to 0–120. Its slot key is `adhoc:<uuid>`, so it never coll
 programme. The host panel offers it as one row: a template, a delay, a button. Every such
 request goes into the audit log as `schedule:<template>`.
 
-There is one quiz arena, so asking for a quiz while one is live is refused with `busy`.
+There is one quiz arena, so asking for a quiz while one is live is refused with `already_running` (as is a second treasure hunt).
 
 ---
 

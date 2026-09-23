@@ -60,6 +60,7 @@ import {
   isMuted,
   janken,
   lastDig,
+  vista,
   latency,
   notify,
   omikujiSlip,
@@ -75,7 +76,7 @@ import {
   zonePopulation,
 } from '../state/stores.js';
 import type { Speech } from '../character/speech.js';
-import { badgeName, fishName, fortuneText, tr, zoneName } from '../i18n/index.js';
+import { badgeName, fishName, fortuneText, roomName, tr, zoneName } from '../i18n/index.js';
 
 /** Minimum movement before a transform is worth sending, metres. */
 const POSITION_DEADBAND = 0.02;
@@ -166,6 +167,17 @@ export class WorldSync {
   ) {
     this.unsubscribers.push(connection.on('message', this.onMessage));
     this.unsubscribers.push(connection.on('latency', (rtt) => latency.set(rtt)));
+    // Lines typed while the connection was down wait here rather than in the socket's outbox,
+    // which would send them all at once: a new connection's budget is a burst of four, and
+    // the fifth line on would be dropped without a word.
+    this.unsubscribers.push(
+      connection.on('state', (state) => {
+        if (state !== 'connected') return;
+        this.chatTokens = 4;
+        this.chatRefilledAt = performance.now();
+        this.drainChat();
+      }),
+    );
     // The server forgets an announcement when its time is up; the board here should too,
     // rather than keep everything it was ever told until the next snapshot.
     const prune = setInterval(() => {
@@ -231,7 +243,8 @@ export class WorldSync {
 
       case 'role_changed':
         self.update((s) => ({ ...s, role: msg.role }));
-        if (msg.role >= Role.Host) notify(tr(msg.role >= Role.Admin ? 'role.admin' : 'role.hosting'), 'good');
+        // Made host of something: say that, even to an admin, whose role does not change.
+        if (msg.role >= Role.Host) notify(tr(msg.activity || msg.role < Role.Admin ? 'role.hosting' : 'role.admin'), 'good');
         break;
 
       case 'room_changed':
@@ -246,9 +259,14 @@ export class WorldSync {
         this.lastTick = -1;
         this.resetGames();
         followTarget.set(null);
+        // Nothing of the old island follows us: not its toast, not the view from its lookout.
+        if (this.toastTimer !== null) clearTimeout(this.toastTimer);
+        this.toastTimer = null;
+        currentToast.set(null);
+        vista.set(null);
         // A new shard spawns us afresh, so the next snapshot's position is authoritative.
         this.adoptedSpawn = false;
-        notify(tr('island.moved', { name: msg.room.kind === 'private' ? tr('island.private', { code: msg.room.code ?? '' }) : msg.room.name }), 'good');
+        notify(tr('island.moved', { name: msg.room.kind === 'private' ? tr('island.private', { code: msg.room.code ?? '' }) : roomName(msg.room) }), 'good');
         break;
 
       case 'error':
@@ -309,8 +327,17 @@ export class WorldSync {
     this.roster = snap.players.map((p) => p.id);
 
     const selfId = this.selfId();
-    const others = snap.players.filter((p) => p.id !== selfId);
+    // The server leaves `away` and `checkedIn` out when they are false. A snapshot replaces
+    // everything, so absent must mean false here — merged as `undefined`, someone who came
+    // back while we were away would stay faded for as long as we had missed their return.
+    const others = snap.players
+      .filter((p) => p.id !== selfId)
+      .map((p) => ({ ...p, away: p.away === true, checkedIn: p.checkedIn === true }));
     this.remote.reset(others);
+    // Someone we already had keeps their figure, so give it the snapshot's position too:
+    // moves are only sent while people move, and one who walked off and stopped while we
+    // were away would otherwise stand where we last saw them until they next took a step.
+    for (const p of others) this.remote.applyTransform(p.id, p.pos, p.yaw, p.anim);
     players.set(others);
 
     activities.set(snap.activities);
@@ -441,11 +468,15 @@ export class WorldSync {
     }
 
     if (delta.announcements?.length) {
-      announcements.update((list) => [...delta.announcements!, ...list].slice(0, 40));
+      // An announcement made in the same tick as our snapshot arrives twice — in the snapshot
+      // and in this delta. Keep one, and do not toast it again.
+      const known = new Set(get(announcements).map((a) => a.id));
+      const fresh = delta.announcements.filter((a) => !known.has(a.id));
+      announcements.update((list) => [...fresh, ...list].slice(0, 40));
       // Present the highest-priority new announcement *addressed to you*; a burst should
       // not queue six toasts one after another. Everything lands on the notice board
       // regardless — scope decides who is interrupted, not who may read.
-      const top = delta.announcements
+      const top = fresh
         .filter((a) => this.addressedToMe(a))
         .sort((a, b) => (a.priority === b.priority ? b.at - a.at : a.priority === 'high' ? -1 : 1))[0];
       if (top) this.showToast(top);
@@ -715,6 +746,10 @@ export class WorldSync {
     omikujiSlip.set(null);
     lastDig.set(null);
     this.local.setFishing(false);
+    // The seat goes with the connection too (the server frees it on a drop and on a room
+    // switch). Left sitting, every movement key would be swallowed at the new harbour.
+    this.local.setSeated(false);
+    self.update((s) => (s.seated ? { ...s, seated: false } : s));
   }
 
   private showToast(announcement: AnnouncementView): void {
@@ -759,8 +794,9 @@ export class WorldSync {
       self.update((s) => ({ ...s, seated: false }));
     }
     const key = msg.key ? `error.${msg.key}` : byCode[msg.code];
-    const text = key ? tr(key, msg.params) : msg.message;
-    notify(text === key ? msg.message : text, fatal ? 'warn' : 'neutral');
+    // The server's own `message` is English and for logs; never show it to a player.
+    const text = key ? tr(key, msg.params) : '';
+    notify(!text || text === key ? tr('error.generic') : text, fatal ? 'warn' : 'neutral');
   }
 
   // -------------------------------------------------------------------------
@@ -914,7 +950,7 @@ export class WorldSync {
   }
 
   private drainChat(): void {
-    if (this.chatTimer !== null) return;
+    if (this.chatTimer !== null || this.connection.currentState !== 'connected') return;
     const now = performance.now();
     this.chatTokens = Math.min(4, this.chatTokens + ((now - this.chatRefilledAt) / 1000) * 0.9);
     this.chatRefilledAt = now;

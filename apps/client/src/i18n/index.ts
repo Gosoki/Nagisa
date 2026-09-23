@@ -32,6 +32,7 @@ import {
   getZone,
   type ActivityView,
   type InteractableEffect,
+  type RoomView,
   type ZoneId,
 } from '@nagisa/shared';
 import { settings, type Lang } from '../state/settings.js';
@@ -131,6 +132,15 @@ export function templateTitle(id: string, l: Lang = currentLang()): string {
   if (l === 'zh') return tpl.titleZh ?? tpl.title;
   if (l === 'ja') return tpl.titleJa ?? tpl.title;
   return tpl.title;
+}
+
+/**
+ * A public shard's name in the player's language. The server names shards in English
+ * ("Nagisa — Shore 2") for logs and metrics; the number is all that differs between them.
+ */
+export function roomName(room: Pick<RoomView, 'id' | 'name' | 'kind'>, l: Lang = currentLang()): string {
+  const shore = room.kind === 'public' ? /^shore-(\d+)$/.exec(room.id) : null;
+  return shore ? translate(l, 'island.shore', { n: Number(shore[1]) }) : room.name;
 }
 
 export function fishName(id: string, l: Lang = currentLang()): string {

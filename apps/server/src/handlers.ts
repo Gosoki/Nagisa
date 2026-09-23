@@ -210,7 +210,7 @@ function sendWelcome(session: Session, room: Room, player: Player, resumed: bool
 
 /** The refusal key for a room that could not be had. */
 function roomRefusalKey(reason: RoomRefusal): string {
-  return reason === 'full' ? 'full' : reason === 'busy' ? 'busy' : 'room_not_found';
+  return reason === 'full' ? 'full' : reason === 'busy' ? 'islands_busy' : 'room_not_found';
 }
 
 /**
@@ -508,7 +508,7 @@ function handleRoomCreate(ctx: ConnState, _msg: unknown, deps: HandlerDeps): voi
   }
   const island = deps.rooms.createPrivate({ hash: ctx.player.visitorHash, name: ctx.player.name, playerId: ctx.player.id });
   if (!island) {
-    refuse(ctx, 'busy', undefined, ErrorCode.RoomFull);
+    refuse(ctx, 'islands_busy', undefined, ErrorCode.RoomFull);
     return;
   }
   ctx.lastRoomCreateAt = now;
@@ -598,7 +598,7 @@ function handleHostSchedule(ctx: ConnState, msg: ClientHostSchedule, deps: Handl
   // things on the board is a party; thousands is a snapshot nobody can download.
   const pendingAdhoc = ctx.room.activities.list().filter((a) => a.slot?.startsWith('adhoc:') && !a.closed).length;
   if (pendingAdhoc >= MAX_ADHOC_ACTIVITIES) {
-    refuse(ctx, 'busy');
+    refuse(ctx, 'schedule_full');
     return;
   }
   // One quiz runs at a time (there is one arena), and one treasure hunt (one set of spots).
@@ -608,7 +608,7 @@ function handleHostSchedule(ctx: ConnState, msg: ClientHostSchedule, deps: Handl
   if (template.feature === 'quiz' || template.feature === 'treasure') {
     const running = ctx.room.activities.list().some((a) => a.feature === template.feature && a.state === ActivityState.Live);
     if (running) {
-      refuse(ctx, 'busy');
+      refuse(ctx, 'already_running');
       return;
     }
   }

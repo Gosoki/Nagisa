@@ -277,7 +277,7 @@ test('an island admin can add only a handful of extra activities', () => {
   assert.equal(adhoc(), MAX_ADHOC_ACTIVITIES);
   send(admin, { t: 'host_schedule', template: 'fireworks', inMin: 10 }, deps);
   assert.equal(adhoc(), MAX_ADHOC_ACTIVITIES, 'one more is refused');
-  assert.equal(lastOf(socket, 'error')?.key, 'busy');
+  assert.equal(lastOf(socket, 'error')?.key, 'schedule_full');
 });
 
 test('granting host tells the new host once', () => {
@@ -316,3 +316,45 @@ test('a line written and taken down in the same tick is sent as removed', () => 
   assert.ok(!deltas.flatMap((d) => d.guestbook ?? []).some((g) => g.id === id));
   room.stop();
 });
+
+// ---------------------------------------------------------------------------------------------
+// The tick
+// ---------------------------------------------------------------------------------------------
+
+test('a game that throws in a tick costs nobody their join, and the tick sequence stays whole', () => {
+  const room = bareRoom();
+  const watcher = joinBare(room);
+  room.forceTick();
+  const before = of(watcher.socket, 'delta').at(-1)!.tick;
+
+  // A bug in a game, in the same tick someone arrives.
+  const fishing = room.fishing as unknown as { tick(now: number): void };
+  const realTick = fishing.tick;
+  fishing.tick = () => {
+    throw new Error('boom');
+  };
+  const arrival = joinBare(room);
+  room.forceTick();
+  fishing.tick = realTick;
+
+  const deltas = of(watcher.socket, 'delta');
+  const broken = deltas.at(-1)!;
+  assert.equal(broken.tick, before + 1, 'the tick still goes out');
+  assert.ok(broken.join?.some((p) => p.id === arrival.player.id), 'with the arrival in it');
+
+  // A failure while putting the delta together still spends the tick on an empty one.
+  const book = room.guestbook as unknown as { drain(): unknown };
+  const realDrain = book.drain;
+  book.drain = () => {
+    throw new Error('boom');
+  };
+  room.forceTick();
+  book.drain = realDrain;
+  room.forceTick();
+  const ticks = of(watcher.socket, 'delta').map((d) => d.tick);
+  assert.deepEqual(ticks.slice(-2), [before + 2, before + 3], 'the failed tick went out empty');
+  assert.ok(ticks.every((t, i) => i === 0 || t === ticks[i - 1] + 1), `no gaps: ${ticks.join(',')}`);
+  assert.deepEqual(room.getDeltasSince(before + 1)?.map((d) => d.tick), [before + 2, before + 3]);
+  room.stop();
+});
+

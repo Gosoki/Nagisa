@@ -522,7 +522,13 @@ if (gb) {
   check('the counter counts', text('BoardPanel').includes('19/' + shared.PROTOCOL.MAX_GUESTBOOK_LENGTH), text('BoardPanel'));
   key('Enter', gb);
   await settle();
-  check('Enter signs', called('guestbookWrite', 'Hello from the pier') && gb.value === '');
+  check('Enter signs', called('guestbookWrite', 'Hello from the pier'));
+  check('but keeps the words until the line is up (a refusal must not lose them)', gb.value === 'Hello from the pier');
+  let board = [];
+  stores.guestbook.subscribe((v) => (board = v))();
+  stores.guestbook.set([{ id: 'g-new', authorId: 'p1', name: 'Sawada', text: 'Hello from the pier', at: Date.now() }, ...board]);
+  await settle();
+  check('and clears them once it is', gb.value === '');
 }
 stores.announcements.set([]);
 stores.guestbook.set([]);
@@ -578,7 +584,8 @@ const mine = { id: 'r-k7m2q', name: 'Sawada’s island', population: 2, capacity
 stores.room.set(mine);
 stores.rooms.set([shore1, shore2, mine]);
 await settle();
-for (const want of ['Private island', 'K7M2Q', 'Made by Sawada', '2 of 40 here', 'Copy invite link', 'Send this to friends']) {
+// The count is who is here now (two others and you), not the list's number from the last fetch.
+for (const want of ['Private island', 'K7M2Q', 'Made by Sawada', '3 of 40 here', 'Copy invite link', 'Send this to friends']) {
   check('a private island shows ' + JSON.stringify(want), text('IslandPanel').includes(want), text('IslandPanel'));
 }
 button('IslandPanel', /^Copy invite link$/)?.click();

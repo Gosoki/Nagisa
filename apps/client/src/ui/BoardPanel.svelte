@@ -65,12 +65,28 @@
     return $isAdmin || (entry.authorId !== null && entry.authorId === $self.id);
   }
 
+  /**
+   * The lines already on the board when ours was sent. The draft is cleared when a new line
+   * of ours shows up, not when the button is pressed: a refused one (the half-minute rest
+   * between signatures) would otherwise take what was typed with it.
+   */
+  let awaiting = $state<Set<string> | null>(null);
+
   function sign(): void {
     const text = draft.trim();
     if (!$atBoard || !text) return;
+    awaiting = new Set($guestbook.map((g) => g.id));
     cmd().guestbookWrite(text);
-    draft = '';
   }
+
+  $effect(() => {
+    const before = awaiting;
+    if (!before) return;
+    if ($guestbook.some((g) => !before.has(g.id) && g.authorId !== null && g.authorId === $self.id)) {
+      draft = '';
+      awaiting = null;
+    }
+  });
 
   function onKeydown(e: KeyboardEvent): void {
     if (e.key === 'Enter') {

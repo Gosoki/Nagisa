@@ -19,9 +19,9 @@
    */
   import { tick } from 'svelte';
   import { normaliseRoomCode, type RoomView } from '@nagisa/shared';
-  import { cmd, room, rooms } from '../state/stores.js';
+  import { cmd, population, room, rooms } from '../state/stores.js';
   import { inviteLink } from '../net/visitor.js';
-  import { t } from '../i18n/index.js';
+  import { lang, roomName, t } from '../i18n/index.js';
 
   /** How long "Link copied" replaces the button's label. */
   const COPIED_MS = 2400;
@@ -113,7 +113,7 @@
       {#if here.ownerName}
         <p class="meta">{$t('island.owner', { name: here.ownerName })}</p>
       {/if}
-      <p class="meta">{$t('island.people', { n: here.population, cap: here.capacity })}</p>
+      <p class="meta">{$t('island.people', { n: $population, cap: here.capacity })}</p>
       <button type="button" class="primary" onclick={copy}>
         {copied ? $t('island.copied') : $t('island.copy')}
       </button>
@@ -132,8 +132,8 @@
       {/if}
       <p class="hint">{$t('island.inviteHow')}</p>
     {:else}
-      <p class="name">{here.name}</p>
-      <p class="meta">{$t('island.public')} · {$t('island.people', { n: here.population, cap: here.capacity })}</p>
+      <p class="name">{roomName(here, $lang)}</p>
+      <p class="meta">{$t('island.public')} · {$t('island.people', { n: $population, cap: here.capacity })}</p>
     {/if}
   </section>
 
@@ -169,8 +169,9 @@
           {@const current = here?.id === r.id}
           {@const full = r.capacity > 0 && r.population >= r.capacity}
           <li class="room" class:current>
-            <span class="room-name">{r.name}</span>
-            <span class="room-pop">{$t('island.people', { n: r.population, cap: r.capacity })}</span>
+            <span class="room-name">{roomName(r, $lang)}</span>
+            <!-- Where we are, count the room we can see; the list's numbers are a fetch old. -->
+            <span class="room-pop">{$t('island.people', { n: current ? $population : r.population, cap: r.capacity })}</span>
             {#if current}
               <span class="here-tag">{$t('island.current')}</span>
             {:else if full}

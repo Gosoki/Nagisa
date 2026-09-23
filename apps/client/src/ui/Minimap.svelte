@@ -47,7 +47,7 @@
     isLand,
     type Interactable,
   } from '@nagisa/shared';
-  import { currentZone, followTarget, planImage, players, profile, selfPose, settings } from '../state/stores.js';
+  import { currentZone, followTarget, planImage, players, profile, remotePose, selfPose, settings } from '../state/stores.js';
   import { lang, t, zoneName } from '../i18n/index.js';
 
   /** On-screen size, CSS pixels: the desktop size, and the phone size. */
@@ -271,7 +271,9 @@
     // Other people.
     const following = $followTarget?.id;
     for (const p of $players) {
-      const [px, pz] = project(p.pos[0], p.pos[2], size);
+      // Where they are now, not where they arrived (see `remotePose`).
+      const live = remotePose.at(p.id);
+      const [px, pz] = project(live ? live.x : p.pos[0], live ? live.z : p.pos[2], size);
       const isFollowed = p.id === following;
       ctx.fillStyle = isFollowed ? '#C4503A' : 'rgba(38, 34, 30, 0.78)';
       ctx.beginPath();

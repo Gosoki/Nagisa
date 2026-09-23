@@ -24,6 +24,12 @@ function detectLang(): Lang {
 
 export interface Settings {
   quality: QualityTier;
+  /**
+   * Whether `quality` is the person's own pick. A pick is kept from load to load; a detected
+   * tier is detected afresh every time, so settings carried to a weaker device do not carry
+   * the stronger one's guess with them.
+   */
+  qualityChosen: boolean;
   /** Interface language. Defaults to the browser's. */
   lang: Lang;
   /** Master audio mute. Audio starts muted until the first gesture — browsers require it. */
@@ -52,6 +58,7 @@ const SETTINGS_KEY = 'nagisa.settings';
 function loadSettings(): Settings {
   const defaults: Settings = {
     quality: 'high',
+    qualityChosen: false,
     lang: detectLang(),
     muted: true,
     showNames: true,
@@ -66,6 +73,10 @@ function loadSettings(): Settings {
     const merged = raw ? { ...defaults, ...(JSON.parse(raw) as Partial<Settings>) } : defaults;
     // A value written by a build that spoke a language this one does not.
     if (merged.lang !== 'zh' && merged.lang !== 'ja' && merged.lang !== 'en') merged.lang = defaults.lang;
+    if (merged.quality !== 'low' && merged.quality !== 'medium' && merged.quality !== 'high') {
+      merged.quality = defaults.quality;
+      merged.qualityChosen = false;
+    }
     return merged;
   } catch {
     return defaults;

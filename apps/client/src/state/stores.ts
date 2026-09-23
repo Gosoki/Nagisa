@@ -228,6 +228,15 @@ export function notify(text: string, tone: LocalNotice['tone'] = 'neutral', ttlM
 export const selfPose = { x: 0, y: 0, z: 0, yaw: 0 };
 
 /**
+ * Where someone else is right now, as the engine draws them — or null if the engine does not
+ * have them. `players[i].pos` is only where they were when they arrived: moves go straight
+ * to the figures, never through the store (ten writes a second per person would re-render
+ * every list that shows people). So anything drawn on a map reads this instead, in its own
+ * frame loop, for the same reason as `selfPose`. The app installs the lookup at boot.
+ */
+export const remotePose: { at(id: PlayerId): { x: number; z: number } | null } = { at: () => null };
+
+/**
  * The island photographed from above, for the minimap to blit.
  *
  * Captured once after the world is built (see `world/plan.ts`) rather than drawn a second

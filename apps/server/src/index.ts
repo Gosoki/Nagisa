@@ -40,6 +40,9 @@ import { ProfileStore } from './games/profiles.js';
 /** Every message type a client may send. Anything else is an invalid frame. */
 const CLIENT_TYPES: ReadonlySet<string> = new Set(['hello', ...Object.keys(HANDLERS)]);
 
+/** Rate-limited messages the player is told about: deliberate actions that otherwise vanish. */
+const SAY_WHEN_LIMITED: ReadonlySet<string> = new Set(['room_switch', 'room_create', 'chat']);
+
 /** Invalid frames answered with an error before the rest are ignored… */
 const REPLIED_INVALID_FRAMES = 3;
 /** …and tolerated before the connection is closed. */
@@ -283,7 +286,11 @@ async function main(): Promise<void> {
       const type = msg.t as Exclude<ClientMessageType, 'hello'>;
       const handler = HANDLERS[type];
       if (!session.allow(type)) {
-        session.send({ t: 'error', code: ErrorCode.RateLimited, message: `rate limited: ${type}` });
+        // Most refusals here are a script's, or movement the next frame supersedes, and are
+        // not worth a word. Things a person does on purpose, and would otherwise see nothing
+        // happen after, are told to slow down.
+        const say = SAY_WHEN_LIMITED.has(type) ? 'too_fast' : undefined;
+        session.send({ t: 'error', code: ErrorCode.RateLimited, message: `rate limited: ${type}`, key: say });
         return;
       }
       try {

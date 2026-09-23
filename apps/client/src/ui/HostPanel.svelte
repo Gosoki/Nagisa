@@ -29,7 +29,7 @@
     type ActivityView,
     type AnnouncementView,
   } from '@nagisa/shared';
-  import { hostedActivities, isAdmin, isHost, cmd, notify } from '../state/stores.js';
+  import { activities, hostedActivities, isAdmin, isHost, cmd, notify } from '../state/stores.js';
   import { activityTitle, lang, t, templateTitle, tr } from '../i18n/index.js';
 
   type Scope = 'activity' | 'zone' | 'island';
@@ -40,11 +40,33 @@
   let template = $state(ACTIVITY_TEMPLATES[0]?.id ?? '');
   let delay = $state<number>(5);
 
+  /** How long to wait for the scheduled activity to appear before saying nothing. */
+  const CONFIRM_MS = 5000;
+
+  /**
+   * A request in flight. "Scheduled" is said when the activity shows up on the board, not
+   * when the button is pressed: the server may refuse (too many extras, one already running),
+   * and saying both "scheduled" and why it was not is worse than waiting a tick.
+   */
+  let pending = $state<{ template: string; known: Set<string>; timer: ReturnType<typeof setTimeout> } | null>(null);
+
   function schedule(): void {
     if (!template) return;
+    if (pending) clearTimeout(pending.timer);
+    const known = new Set($activities.map((a) => a.id));
+    pending = { template, known, timer: setTimeout(() => (pending = null), CONFIRM_MS) };
     cmd().schedule(template, delay);
-    notify(tr('host.scheduled', { title: templateTitle(template) }), 'neutral');
   }
+
+  $effect(() => {
+    const wanted = pending;
+    if (!wanted) return;
+    const made = $activities.find((a) => a.templateId === wanted.template && !wanted.known.has(a.id));
+    if (!made) return;
+    clearTimeout(wanted.timer);
+    pending = null;
+    notify(tr('host.scheduled', { title: templateTitle(wanted.template) }), 'neutral');
+  });
 
   const composer = $state<Record<string, { text: string; scope: Scope }>>({});
 

@@ -21,8 +21,8 @@
    * they can find it without reading anything else. It writes `settings.lang` directly; the
    * whole interface reads the translator through a store, so it changes at once.
    */
-  import { settings, rooms, room, cmd, type Settings } from '../state/stores.js';
-  import { LANGS, LANG_NAMES, t, type Lang } from '../i18n/index.js';
+  import { settings, rooms, room, cmd, population, type Settings } from '../state/stores.js';
+  import { LANGS, LANG_NAMES, lang, roomName, t, type Lang } from '../i18n/index.js';
 
   type QualityTier = Settings['quality'];
   const TIERS: QualityTier[] = ['low', 'medium', 'high'];
@@ -142,8 +142,8 @@
             disabled={$room?.id === r.id}
             onclick={() => cmd().switchRoom(r.id)}
           >
-            <span>{r.name}</span>
-            <span class="pop">{r.population}</span>
+            <span>{roomName(r, $lang)}</span>
+            <span class="pop">{$room?.id === r.id ? $population : r.population}</span>
           </button>
         </li>
       {/each}

@@ -844,22 +844,47 @@ export class Room implements GameRoom {
   private runTick(): void {
     const startedAt = performance.now();
     this.lastTickAt = Date.now();
+    this.tick++;
     try {
-      this.tick++;
-      this.advance(Date.now());
-      const delta = this.buildDelta();
-      this.pushHistory(delta);
-      this.broadcast(delta);
-      this.clearPending();
-    } catch (err) {
-      // A bug in one tick must never take the room down — the next tick gets a clean
-      // slate. Losing one tick's worth of updates is far cheaper than losing the room.
-      this.clearPending();
-      this.log.error('room_tick_error', { room: this.id, err });
-      metrics.errorsTotal.inc({ kind: 'room_tick' });
+      // A bug in one game must not cost the tick what everyone else did in it — the joins,
+      // the leaves, the chat. It is logged, and the tick goes out with what was gathered.
+      try {
+        this.advance(Date.now());
+      } catch (err) {
+        this.tickFailed(err);
+      }
+      let recorded = false;
+      try {
+        const delta = this.buildDelta();
+        this.pushHistory(delta);
+        recorded = true;
+        this.broadcast(delta);
+      } catch (err) {
+        this.tickFailed(err);
+        // The tick number is spent either way. A client that sees a gap asks to be replayed
+        // from the history, which would not have this tick — and then drops every later delta
+        // as out of order until the history rolls past it, a frozen room for twelve seconds.
+        // An empty delta keeps the sequence whole.
+        if (!recorded) {
+          const empty: ServerDelta = { t: 'delta', tick: this.tick };
+          this.pushHistory(empty);
+          try {
+            this.broadcast(empty);
+          } catch {
+            /* Whoever missed it asks for a replay, which now has it. */
+          }
+        }
+      }
     } finally {
+      // The next tick gets a clean slate whatever happened in this one.
+      this.clearPending();
       metrics.tickDurationMs.observe(performance.now() - startedAt);
     }
+  }
+
+  private tickFailed(err: unknown): void {
+    this.log.error('room_tick_error', { room: this.id, err });
+    metrics.errorsTotal.inc({ kind: 'room_tick' });
   }
 
   /**

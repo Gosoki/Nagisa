@@ -48,7 +48,7 @@ receives is the public shards plus the room it is in).
   script trying random codes cannot fill the server with empty islands. Codes come from the
   system CSPRNG.
 - **Limits**: switching islands is rate-limited (a burst of 3, then one per 5 s), making one
-  to one per 30 s per connection; at most 200 private islands are awake at once (`busy`
+  to one per 30 s per connection; at most 200 private islands are awake at once (`islands_busy`
   beyond that — sleeping ones wake as others fall asleep).
 - **Idle rooms** stop ticking and are dropped from memory after ten empty minutes — private
   islands and any public shard beyond the first `ROOM_COUNT`. Their registry entry (code,
@@ -133,7 +133,7 @@ live the server runs a `QuizRunner`:
 A contestant who leaves the room is out. Joining after the lobby closes makes you a spectator.
 The badge needs a field of at least two — a quiz won alone still counts toward `quizWins`, but
 is not a championship. There is one arena, so one quiz at a time: an admin asking for another
-while one runs is refused (`busy`), and a scheduled quiz that goes live during an ad-hoc one is
+while one runs is refused (`already_running`), and a scheduled quiz that goes live during an ad-hoc one is
 ended at once rather than shown as live with nothing happening.
 
 ### Fishing (`effect: 'fish'` interactables; derby: `feature: 'derby'`)
@@ -239,7 +239,10 @@ language (`i18n/core.ts`, `error.<key>`):
 
 `too_far` · `cooldown {seconds}` · `seat_taken` · `muted` · `not_here` · `full` · `not_found` ·
 `forbidden` · `busy` · `already_stamped` · `not_open` · `room_not_found` · `invalid` ·
-`too_long {max}` · `empty` · `no_hunt`
+`too_long {max}` · `empty` · `no_hunt` · `islands_busy` (too many islands awake to make or
+wake another) · `schedule_full` (too many extra activities on the board) · `already_running`
+(a quiz or hunt is already live) · `too_fast` (a room switch, island or chat line over the rate
+limit) — `busy` is kept for a janken opponent who is in another duel
 
 ---
 

@@ -192,6 +192,11 @@ console.log('\\nZone card');
 stores.zoneAnnounce.set(true);
 await sleep(80);
 check('zone card shows the caption', text().includes('The middle of things'));
+// The engine puts the flag back down on its own timer, a little before the card's own.
+stores.zoneAnnounce.set(false);
+await sleep(3700);
+const zoneCard = dom.window.document.querySelector('.zone-card');
+check('and the card goes away on its own', !!zoneCard && !zoneCard.classList.contains('visible'), zoneCard?.outerHTML.slice(0, 120));
 
 console.log('\\nAnnouncements');
 stores.currentToast.set({ id:'an1', text:'The lamp is lit.', fromName:'Keeper', scope:{kind:'island'}, at: Date.now(), ttlMs: 8000, priority:'normal' });

@@ -332,7 +332,7 @@ with the programme brought up to date before the first visitor's snapshot.
 
 A code nobody registered opens nothing. Otherwise a script trying random codes would fill
 the server with empty islands. For the same reason at most 200 private islands may be awake
-at once; past that, a request to wake another is refused as `busy`.
+at once; past that, a request to wake another is refused as `islands_busy`.
 
 ### 3.8 Persistence
 
@@ -389,7 +389,7 @@ random string in the browser rather than a login.
 | A tick throws | Caught per tick; that tick's pending changes are discarded and the next tick starts clean. Losing 100 ms of updates is far cheaper than losing the room. |
 | Server restarts | Public shards restore their schedule, announcements, guestbook and check-in records at boot; private islands restore theirs when their code is next used; profiles and the registry come back whole. **Rosters and hosts do not**: the players they name belonged to a process that no longer exists, and a roster of ghosts would hold capacity nobody can use. Every client returns as a new player — on the island named in its URL, where it was standing — and the island's own schedule carries on. Clients reconnect with backoff and jitter, so they do not all return at once. |
 | The persistence file cannot be parsed | It is renamed aside to `<path>.corrupt-<timestamp>` for a human, and the server starts empty rather than overwriting it on the next save. A malformed *section* costs that section only. |
-| Too many private islands awake | Creating or waking one more is refused with `busy`; the player stays where they are, or is matchmade onto a public shard if it was their first frame. Islands fall asleep ten minutes after they empty. |
+| Too many private islands awake | Creating or waking one more is refused with `islands_busy`; the player stays where they are, or is matchmade onto a public shard if it was their first frame. Islands fall asleep ten minutes after they empty. |
 
 ---
 

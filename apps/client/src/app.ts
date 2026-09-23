@@ -90,6 +90,7 @@ import {
   atBoard,
   fishing,
   openPanel,
+  remotePose,
   replacedElsewhere,
   room,
   selectedPlayer,
@@ -119,6 +120,17 @@ const FOLLOW_STOP_DISTANCE = 2.6;
  * in place, because the target jitters by centimetres between network samples.
  */
 const FOLLOW_REPATH_SQ = 1.6 * 1.6;
+
+/**
+ * How far short of the followed person the walk aims, metres. A walk counts as arrived within
+ * a metre of its target (`ARRIVAL_RADIUS` in local-player.ts), so this has to sit at least that
+ * far inside {@link FOLLOW_STOP_DISTANCE} — aimed any further out, the walk ends outside the
+ * stop distance and following never settles.
+ */
+const FOLLOW_AIM_SHORT = FOLLOW_STOP_DISTANCE - 1.3;
+
+/** A follow walk that ended short of them is tried again at most this often, ms. */
+const FOLLOW_RETRY_MS = 1000;
 
 /**
  * How far from a person's middle, in CSS pixels, a tap still picks them. About a fingertip:
@@ -174,6 +186,8 @@ export class App {
   private followingId: string | null = null;
   /** Where the followed player was when the current walk was issued. */
   private followAnchor: THREE.Vector3 | null = null;
+  /** When a follow walk that ended short may be issued again (`performance.now()` ms). */
+  private followRetryAt = 0;
 
   /** Zone the player was in last frame, for change detection. */
   private lastZone: ZoneId | null = null;
@@ -195,9 +209,12 @@ export class App {
       if (f?.id !== this.followingId) this.followAnchor = null;
       this.followingId = f?.id ?? null;
     });
-    const tier = detectTier();
+    // The person's own pick wins (it said "from the next load" when they made it); otherwise
+    // the device is measured afresh every load.
+    const saved = get(settings);
+    const tier = saved.qualityChosen ? saved.quality : detectTier();
     const quality = settingsFor(tier);
-    settings.update((s) => ({ ...s, quality: tier }));
+    if (!saved.qualityChosen) settings.update((s) => ({ ...s, quality: tier }));
 
     this.renderer = new Renderer(container, quality);
     this.input = new Input(container);
@@ -234,6 +251,7 @@ export class App {
     // This is the only per-pointer-event value that crosses into the interface.
     this.input.onStickChange = (state) => stickState.set(state);
     this.input.onTap = (x, y) => this.pickPlayerAt(x, y);
+    remotePose.at = (id) => this.remote.positionOf(id);
 
     this.registerCommands();
     this.subscribeSettings();
@@ -478,8 +496,10 @@ export class App {
       return;
     }
 
-    // Manual input cancelled the walk we issued — take that as "I'll take it from here".
-    if (this.followAnchor && !this.local.autoWalking && distance > FOLLOW_STOP_DISTANCE) {
+    // Taking the stick or the keys — the same input that cancels the walk we issued — is
+    // "I'll take it from here". A walk that merely ended is not: they kept going, and it is
+    // issued again below.
+    if (this.followAnchor && (Math.abs(this.input.move.x) > 0.05 || Math.abs(this.input.move.y) > 0.05)) {
       followTarget.set(null);
       this.followAnchor = null;
       notify(tr('follow.stopped'), 'neutral', 1800);
@@ -487,14 +507,19 @@ export class App {
     }
 
     const moved = !this.followAnchor || this.followAnchor.distanceToSquared(position) > FOLLOW_REPATH_SQ;
-    if (moved) {
+    // Ended short of them — they moved on, or the way was blocked. Try again, but not every
+    // frame: a route is not free, and a blocked one stays blocked for a while.
+    const now = performance.now();
+    const stalled = !this.local.autoWalking && now >= this.followRetryAt;
+    if (moved || stalled) {
       // Aim for a point short of them, so arriving does not mean standing inside them.
-      const inset = Math.max(0, distance - FOLLOW_STOP_DISTANCE * 0.8) / distance;
+      const inset = Math.max(0, distance - FOLLOW_AIM_SHORT) / distance;
       void this.local.walkTo(
         this.local.position.x + dx * inset,
         this.local.position.z + dz * inset,
       );
       this.followAnchor = (this.followAnchor ?? new THREE.Vector3()).copy(position);
+      this.followRetryAt = now + FOLLOW_RETRY_MS;
     }
   }
 
@@ -790,7 +815,7 @@ export class App {
       switchRoom: (id) => this.sync?.switchRoom(id),
 
       setQuality: (tier: QualityTier) => {
-        settings.update((s) => ({ ...s, quality: tier }));
+        settings.update((s) => ({ ...s, quality: tier, qualityChosen: true }));
         // A tier change alters scene *content* (mesh density, scatter counts), which
         // cannot be rebuilt in place without a visible hitch, so it takes effect on the
         // next load. Saying so is better than pretending it applied.

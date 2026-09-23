@@ -41,8 +41,11 @@
         visible = false;
       }, HOLD_MS);
     }
-    return () => clearTimeout(hideTimer);
   });
+  // Only leaving the page cancels the hide. A teardown on the effect above would run when the
+  // engine flips the flag back to false — which it does on its own clock, a moment before
+  // this one — and cancel it, leaving the card up for good.
+  $effect(() => () => clearTimeout(hideTimer));
 </script>
 
 {#if shownZone}

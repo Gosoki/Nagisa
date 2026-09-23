@@ -92,7 +92,7 @@ but no snapshot is in an undefined state and should wait, not render.
 | `name`, `appearance` | Cleaned server-side (`apps/server/src/text.ts`): control characters, bidirectional overrides and isolates, zero-width characters (joiners included), LRM/RLM, the BOM and line separators removed, whitespace collapsed, cut to 20 code points; empty becomes `Visitor`. Appearance indices clamped. |
 | `resumeToken` | Resume a player the server is still holding in its grace window (§9). Invalid or expired tokens are ignored, not rejected. |
 | `at` | Where the client last stood. Used for a *new* player's spawn when it survives the walkability contract: finite, inside the map, and within 6 m of walkable ground after snapping. Otherwise the player lands at a harbour. See §9. |
-| `room` | A room id **or a private island's invite code**. A registered code the server is not currently holding re-opens that island. An unknown code, a full island or too many awake islands means the player is matchmade onto a public shard instead and then told why (`error` with `key` `room_not_found`, `full` or `busy`). |
+| `room` | A room id **or a private island's invite code**. A registered code the server is not currently holding re-opens that island. An unknown code, a full island or too many awake islands means the player is matchmade onto a public shard instead and then told why (`error` with `key` `room_not_found`, `full` or `islands_busy`). |
 | `visitor` | This browser's visitor key. The server hashes it (SHA-256) and keys a profile by the hash; the key itself is never stored. Absent or malformed means a profile that lasts only for this session. |
 | `caps` | `{ mobile, lowMemory }`. Advisory. |
 
@@ -317,7 +317,7 @@ removes it on a public shard), so a reload returns you there and a copied URL is
 invitation.
 
 Refusals are `error` frames with a `key`: `room_not_found` (no island has that code),
-`full`, `busy` (too many private islands awake to wake another), and for `room_create`
+`full`, `islands_busy` (too many private islands awake to wake another), and for `room_create`
 `cooldown {seconds}` (one island per connection per 30 s).
 
 Matchmaking (`rooms.ts`) deliberately **fills the fullest public shard that still has
@@ -530,7 +530,7 @@ business — malformed frames, internal faults, role checks a normal interface n
 you attempt — carry no key.
 
 `too_far` · `cooldown {seconds}` · `seat_taken` · `muted` · `not_here` · `full` ·
-`not_found` · `forbidden` · `busy` · `already_stamped` · `not_open` · `room_not_found` ·
+`not_found` · `forbidden` · `busy` (a janken opponent mid-duel) · `islands_busy` · `schedule_full` · `already_running` · `no_hunt` · `already_stamped` · `not_open` · `room_not_found` ·
 `invalid` · `too_long {max}` · `empty`
 
 ### Rate limits

@@ -470,10 +470,11 @@ export class App {
 
       this.fx.update(dt, this.elapsed);
 
-      // A photograph is of the island, not of who is standing on it: the name plates and
-      // bubbles are hidden for the frame being captured.
-      this.nameTags.group.visible = !this.renderer.capturing;
       this.updateNameTags();
+      // A photograph is of the island, not of who is standing on it: the name plates and
+      // bubbles are hidden for the frame being captured. After the update, which shows the
+      // layer again whenever tags are switched on.
+      if (this.renderer.capturing) this.nameTags.group.visible = false;
       this.updateZone(dt);
       this.updateInteractables(dt);
 
@@ -943,7 +944,8 @@ export class App {
         const pad = (n: number): string => String(n).padStart(2, '0');
         const here = get(room);
         const place = here ? (here.kind === 'private' ? tr('island.private', { code: here.code ?? '' }) : roomName(here)) : '';
-        const mark = ['渚', place, `${stamp.getFullYear()}.${pad(stamp.getMonth() + 1)}.${pad(stamp.getDate())}`, WEATHER_MARK[get(weather)]]
+        // The island's mark, unless the place's own name already carries it (渚岛, 渚島).
+        const mark = [place.includes('渚') ? '' : '渚', place, `${stamp.getFullYear()}.${pad(stamp.getMonth() + 1)}.${pad(stamp.getDate())}`, WEATHER_MARK[get(weather)]]
           .filter(Boolean)
           .join(' · ');
         void this.renderer.capture().then(async (captured) => {

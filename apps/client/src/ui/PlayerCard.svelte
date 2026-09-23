@@ -27,14 +27,17 @@
     activities,
     cmd,
     followTarget,
+    friends,
+    friendsHere,
     isAdmin,
     janken,
     mutedSet,
+    notify,
     players,
     selectedPlayer,
     toggleMute,
   } from '../state/stores.js';
-  import { activityTitle, badgeIcon, badgeName, lang, t, zoneName } from '../i18n/index.js';
+  import { activityTitle, badgeIcon, badgeName, lang, t, tr, zoneName } from '../i18n/index.js';
 
   let cardEl = $state<HTMLElement>();
   let whisperEl = $state<HTMLInputElement>();
@@ -42,6 +45,8 @@
   let whisperText = $state('');
   let confirmKick = $state(false);
   let hostChoice = $state('');
+  /** Asked to be friends from this card; the button rests until the card changes. */
+  let asked = $state(false);
 
   const player = $derived($selectedPlayer ? ($players.find((p) => p.id === $selectedPlayer) ?? null) : null);
 
@@ -56,7 +61,18 @@
     whisperOpen = false;
     whisperText = '';
     confirmKick = false;
+    asked = false;
   });
+
+  /** Their standing ask to you, if they have made one. */
+  const askedMe = $derived(player ? ($friends.requests.find((r) => r.player === player.id) ?? null) : null);
+
+  function askFriend(): void {
+    if (!player) return;
+    cmd().friend('request', player.id);
+    asked = true;
+    notify(tr('friend.sent', { name: player.name }), 'neutral');
+  }
 
   $effect(() => {
     if (whisperOpen) whisperEl?.focus();
@@ -178,6 +194,15 @@
       <button type="button" class="act" class:on={muted} aria-pressed={muted} onclick={() => toggleMute(player.id, player.name)}>
         {muted ? $t('player.unmute') : $t('player.mute')}
       </button>
+      {#if $friends.enabled}
+        {#if $friendsHere.has(player.id)}
+          <span class="friend-tag">{$t('friend.isFriend')}</span>
+        {:else if askedMe}
+          <button type="button" class="act on" onclick={() => askedMe && cmd().friend('accept', askedMe.id)}>{$t('friend.acceptFrom')}</button>
+        {:else}
+          <button type="button" class="act" disabled={asked} onclick={askFriend}>{$t('friend.add')}</button>
+        {/if}
+      {/if}
     </div>
 
     {#if whisperOpen}
@@ -350,6 +375,13 @@
     color: var(--ui-ink-muted);
     cursor: pointer;
     line-height: 1.3;
+  }
+
+  .friend-tag {
+    align-self: center;
+    padding: 0 var(--sp-xs);
+    font-size: var(--fs-xs);
+    color: var(--ui-sea);
   }
 
   .act:hover:not(:disabled) {

@@ -43,6 +43,7 @@ export function newProfile(now = Date.now()): ProfileRecord {
     jankenWins: 0,
     quizWins: 0,
     treasures: 0,
+    friends: [],
     lastSeen: now,
   };
 }
@@ -73,6 +74,11 @@ function sanitise(raw: Partial<ProfileRecord> | null | undefined): ProfileRecord
     jankenWins: Number.isFinite(raw.jankenWins) ? Number(raw.jankenWins) : 0,
     quizWins: Number.isFinite(raw.quizWins) ? Number(raw.quizWins) : 0,
     treasures: Number.isFinite(raw.treasures) ? Number(raw.treasures) : 0,
+    friends: Array.isArray(raw.friends)
+      ? raw.friends
+          .filter((f) => f && typeof f.hash === 'string' && typeof f.name === 'string')
+          .map((f) => ({ hash: f.hash, name: f.name, since: Number.isFinite(f.since) ? Number(f.since) : 0 }))
+      : [],
     lastSeen: Number.isFinite(raw.lastSeen) ? Number(raw.lastSeen) : 0,
   };
 }
@@ -104,6 +110,11 @@ export class ProfileStore {
   touch(hash: string, rec: ProfileRecord, now = Date.now()): void {
     rec.lastSeen = now;
     if (this.records.get(hash) !== rec) this.records.set(hash, rec);
+  }
+
+  /** The record for a visitor hash if there is one. Unlike `forVisitor`, neither creates nor marks it. */
+  peek(hash: string): ProfileRecord | undefined {
+    return this.records.get(hash);
   }
 
   get size(): number {

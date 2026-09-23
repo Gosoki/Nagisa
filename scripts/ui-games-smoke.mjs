@@ -181,7 +181,7 @@ stores.commands.update((c) => ({
   ...c,
   ...Object.fromEntries(
     ['fishHook', 'fishStop', 'jankenRespond', 'jankenThrow', 'jankenChallenge', 'whisper', 'follow', 'admin',
-     'guestbookWrite', 'guestbookRemove', 'setTitle', 'createIsland', 'joinIsland', 'dig'].map((n) => [n, spy(n)]),
+     'guestbookWrite', 'guestbookRemove', 'setTitle', 'createIsland', 'joinIsland', 'dig', 'friend'].map((n) => [n, spy(n)]),
   ),
 }));
 
@@ -438,6 +438,24 @@ button('PlayerCard', /^Mute$/)?.click();
 await settle();
 check('mute mutes, and the button turns into unmute', stores.isMuted('p2') && !!button('PlayerCard', /^Unmute$/));
 button('PlayerCard', /^Unmute$/)?.click();
+await settle();
+
+// Friends, from the card: nothing to offer without a visitor key; an ask; their ask; a friend.
+check('no friend button without a visitor key', !button('PlayerCard', /^Add friend$/));
+stores.friends.set({ friends: [], requests: [], enabled: true });
+await settle();
+button('PlayerCard', /^Add friend$/)?.click();
+await settle();
+check('add friend asks them', called('friend', 'request', 'p2'), JSON.stringify(sent));
+check('and rests', button('PlayerCard', /^Add friend$/)?.disabled === true);
+stores.friends.set({ friends: [], requests: [{ id: 'fr-keeper', name: 'Keeper', player: 'p2' }], enabled: true });
+await settle();
+button('PlayerCard', /^Accept request$/)?.click();
+check('their ask can be accepted from their card', called('friend', 'accept', 'fr-keeper'));
+stores.friends.set({ friends: [{ id: 'fr-keeper', name: 'Keeper', online: true, player: 'p2', room: { id: 'shore-1', name: 'Nagisa — Shore 1', kind: 'public' } }], requests: [], enabled: true });
+await settle();
+check('a friend is marked as one', text('PlayerCard').includes('Friend') && !button('PlayerCard', /^Add friend$/));
+stores.friends.set({ friends: [], requests: [], enabled: false });
 await settle();
 
 stores.self.update((s) => ({ ...s, role: 3 }));

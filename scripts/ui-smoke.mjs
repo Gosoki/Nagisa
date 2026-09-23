@@ -239,6 +239,40 @@ if (muteBtn) {
 }
 stores.openPanel.set(null);
 
+console.log('\\nFriends');
+const friendCalls = [];
+stores.commands.update(c => ({ ...c, friend: (a, id) => friendCalls.push([a, id]), joinIsland: (id) => friendCalls.push(['join', id]) }));
+stores.openPanel.set('people');
+await sleep(60);
+check('without a visitor key the panel says why there are no friends', text().includes('can’t keep your progress'), text().slice(-200));
+stores.friends.set({
+  enabled: true,
+  requests: [{ id: 'fr-mio', name: 'Mio' }],
+  friends: [
+    { id: 'fr-keeper', name: 'Keeper', online: true, player: 'p2', room: { id: 'shore-1', name: 'Nagisa — Shore 1', kind: 'public' } },
+    { id: 'fr-sora', name: 'Sora', online: true, player: 'x9', room: { id: 'r-k7m2q', name: '渚 K7M2Q', kind: 'private', code: 'K7M2Q' } },
+    { id: 'fr-ren', name: 'Ren', online: false },
+  ],
+});
+stores.room.set({ id: 'shore-1', name: 'Nagisa — Shore 1', population: 3, capacity: 60, kind: 'public' });
+await sleep(80);
+check('an ask waits with its answers', text().includes('Mio would like to be friends') && !!byText(/^Accept$/) && !!byText(/^Decline$/));
+byText(/^Accept$/)?.click();
+check('accept answers it', friendCalls.some(([a, id]) => a === 'accept' && id === 'fr-mio'));
+check('a friend here says so, and is marked in the list above', text().includes('On this island') && [...dom.window.document.querySelectorAll('.friend-mark')].length === 1);
+check('a friend elsewhere says where', text().includes('Private island K7M2Q'), text().slice(-300));
+byText(/^Go to them$/)?.click();
+check('and going to them goes by the code', friendCalls.some(([a, id]) => a === 'join' && id === 'K7M2Q'));
+check('an offline friend is shown as offline', text().includes('Ren') && text().includes('Offline'));
+const removeBtns = () => buttons().filter(b => /^Remove\??$/.test(b.textContent.trim()));
+removeBtns()[0]?.click();
+await sleep(40);
+check('removing asks once more', !friendCalls.some(([a]) => a === 'remove') && buttons().some(b => b.textContent.trim() === 'Remove?'));
+buttons().find(b => b.textContent.trim() === 'Remove?')?.click();
+check('and then removes', friendCalls.some(([a]) => a === 'remove'));
+stores.friends.set({ friends: [], requests: [], enabled: false });
+stores.openPanel.set(null);
+
 stores.self.update(s => ({ ...s, role: 3 }));
 stores.openPanel.set('host');
 await sleep(80);

@@ -35,6 +35,7 @@ import {
   type RoomView,
   type ServerFish,
   type ServerDig,
+  type ServerFriends,
   type ServerOmikuji,
   type ZoneId,
 } from '@nagisa/shared';
@@ -556,6 +557,18 @@ export const fishing: Writable<FishingState> = writable({
 /** The omikuji slip you just drew, while it is being shown. */
 export const omikujiSlip: Writable<Omit<ServerOmikuji, 't'> | null> = writable(null);
 
+/** Your friends and the asks waiting for you. `enabled` is false without a visitor key. */
+export const friends: Writable<Omit<ServerFriends, 't'>> = writable({ friends: [], requests: [], enabled: false });
+
+/** Friends standing on this island right now, by their player id here. */
+export const friendsHere: Readable<Set<PlayerId>> = derived(
+  [friends, players],
+  ([$friends, $players]) => {
+    const here = new Set($players.map((p) => p.id));
+    return new Set($friends.friends.flatMap((f) => (f.player && here.has(f.player) ? [f.player] : [])));
+  },
+);
+
 /** The treasure hunt that is running, if one is. */
 export const treasureHunt: Readable<ActivityView | null> = derived(
   activities,
@@ -708,6 +721,8 @@ export interface WorldCommands {
   reconnect(): void;
   /** Dig where you stand, during a treasure hunt. */
   dig(): void;
+  /** Ask a player here to be friends; accept, decline or end one by its id. */
+  friend(action: 'request' | 'accept' | 'decline' | 'remove', target: string): void;
 }
 
 /** No-op implementations, replaced at boot. Keeps components safe before wiring. */
@@ -749,6 +764,7 @@ export const commands: Writable<WorldCommands> = writable({
   takePhoto: noop,
   reconnect: noop,
   dig: noop,
+  friend: noop,
 });
 
 /** Convenience for components: `cmd().joinActivity(...)`. */

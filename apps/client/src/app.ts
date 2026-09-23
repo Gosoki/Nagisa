@@ -926,6 +926,8 @@ export class App {
         else location.reload();
       },
 
+      friend: (action, target) => this.sync?.send({ t: 'friend', action, target }),
+
       dig: () => {
         this.sync?.send({ t: 'dig' });
         // Bend to the sand; what it says comes back as a `dig` message.

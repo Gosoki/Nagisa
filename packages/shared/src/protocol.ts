@@ -595,6 +595,18 @@ export type ClientJanken =
   | { t: 'janken'; action: 'throw'; duel: string; hand: Hand };
 
 /**
+ * Friends. `request` asks a player in your room (`target` is their `PlayerId`); the others
+ * act on a friend or a request by its opaque id (`FriendView.id`, `FriendRequestView.id`).
+ * A friendship is kept against both visitor keys, so both sides need one; `remove` ends it
+ * for both. The answer is a fresh {@link ServerFriends}.
+ */
+export interface ClientFriend {
+  t: 'friend';
+  action: 'request' | 'accept' | 'decline' | 'remove';
+  target: string;
+}
+
+/**
  * Dig where you stand, while a treasure hunt is live. The server answers with
  * {@link ServerDig}; a find is also a `treasure` event for everyone.
  */
@@ -681,7 +693,8 @@ export type ClientMessage =
   | ClientSetTitle
   | ClientRoomCreate
   | ClientHostSchedule
-  | ClientDig;
+  | ClientDig
+  | ClientFriend;
 
 export type ClientMessageType = ClientMessage['t'];
 
@@ -967,6 +980,41 @@ export type WorldEvent =
 
 export type WorldEventKind = WorldEvent['k'];
 
+/** One of your friends, as you see them. */
+export interface FriendView {
+  /** Stable and opaque: the same friend has the same id from visit to visit. Not their key. */
+  id: string;
+  /** Their name when last seen (their current one, while online). */
+  name: string;
+  online: boolean;
+  /** While online: who they are in the room they are in, and which room that is. */
+  player?: PlayerId;
+  room?: { id: RoomId; name: string; kind: 'public' | 'private'; code?: string };
+}
+
+/** Somebody who would like to be your friend. Accept or decline it by `id`. */
+export interface FriendRequestView {
+  id: string;
+  name: string;
+  /** Who they are right now, if they are here. */
+  player?: PlayerId;
+}
+
+/**
+ * Your friends and the requests waiting for you, sent whole whenever any of it changes — a
+ * friend arriving, leaving or moving island included. `enabled` is false for a visitor with
+ * no key, who can neither keep friends nor be kept as one.
+ */
+export interface ServerFriends {
+  t: 'friends';
+  friends: FriendView[];
+  requests: FriendRequestView[];
+  enabled: boolean;
+}
+
+/** How many friends one visitor may keep. */
+export const FRIEND_LIMIT = 50;
+
 /** Your progress changed. */
 export interface ServerProfile {
   t: 'profile';
@@ -1062,7 +1110,8 @@ export type ServerMessage =
   | ServerOmikuji
   | ServerJanken
   | ServerWhisper
-  | ServerDig;
+  | ServerDig
+  | ServerFriends;
 
 export type ServerMessageType = ServerMessage['t'];
 

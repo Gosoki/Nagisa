@@ -23,9 +23,38 @@
    * A name is also a button: it opens that person's card (PlayerCard.svelte), which is where
    * whispering, janken and the rest live — the list stays a list. The badge someone wears is
    * shown as its small icon beside their name, the same mark their name tag carries.
+   *
+   * **Friends** are listed under the people here: asks waiting for an answer, then everyone
+   * on the list — on or off, and on which island. A friend on another island is one button
+   * away ("go to them" goes to their island, private or not: a friendship is as much of an
+   * invitation as a link). Someone who is a friend is also marked in the list above.
    */
-  import { commands, followTarget, myTitle, mutedSet, players, selectedPlayer, self, toggleMute } from '../state/stores.js';
-  import { badgeIcon, badgeName, lang, t, zoneName } from '../i18n/index.js';
+  import type { FriendView } from '@nagisa/shared';
+  import { cmd, commands, followTarget, friends, friendsHere, myTitle, mutedSet, players, room, selectedPlayer, self, toggleMute } from '../state/stores.js';
+  import { badgeIcon, badgeName, lang, roomName, t, zoneName } from '../i18n/index.js';
+
+  /** The friend whose "remove" has been pressed once, waiting for the second press. */
+  let removing = $state<string | null>(null);
+
+  function place(f: FriendView): string {
+    if (!f.room) return '';
+    if (f.room.id === $room?.id) return $t('friend.here');
+    return f.room.kind === 'private' ? $t('island.private', { code: f.room.code ?? '' }) : roomName(f.room, $lang);
+  }
+
+  function goTo(f: FriendView): void {
+    if (!f.room) return;
+    cmd().joinIsland(f.room.kind === 'private' && f.room.code ? f.room.code : f.room.id);
+  }
+
+  function remove(f: FriendView): void {
+    if (removing !== f.id) {
+      removing = f.id;
+      return;
+    }
+    removing = null;
+    cmd().friend('remove', f.id);
+  }
 </script>
 
 {#snippet badge(id: string | null | undefined)}
@@ -58,6 +87,7 @@
           onclick={() => selectedPlayer.set(p.id)}
         >{p.name}</button>
         {@render badge(p.title)}
+        {#if $friendsHere.has(p.id)}<span class="friend-mark" title={$t('friend.isFriend')}>{$t('friend.isFriend')}</span>{/if}
       </span>
       <span class="zone">{p.zone ? zoneName(p.zone, $lang) : ''}</span>
       <button
@@ -82,6 +112,44 @@
 {#if $players.length === 0}
   <p class="empty">{$t('people.alone')}</p>
 {/if}
+
+<section class="friends" aria-labelledby="friends-title">
+  <h3 class="section-title" id="friends-title">{$t('friend.title')}</h3>
+  {#if !$friends.enabled}
+    <p class="empty">{$t('friend.needsKey')}</p>
+  {:else}
+    {#each $friends.requests as r (r.id)}
+      <div class="row ask">
+        <span class="who"><span class="name">{$t('friend.asked', { name: r.name })}</span></span>
+        <button type="button" class="act shown on" onclick={() => cmd().friend('accept', r.id)}>{$t('friend.accept')}</button>
+        <button type="button" class="act shown" onclick={() => cmd().friend('decline', r.id)}>{$t('friend.decline')}</button>
+      </div>
+    {/each}
+    {#if $friends.friends.length === 0}
+      <p class="empty">{$t('friend.none')}</p>
+    {:else}
+      <ul class="list">
+        {#each $friends.friends as f (f.id)}
+          <li class="row" class:offline={!f.online}>
+            <span class="who">
+              <span class="dot" class:on={f.online} aria-hidden="true"></span>
+              <span class="name">{f.name}</span>
+            </span>
+            <span class="zone">{f.online ? place(f) : $t('friend.offline')}</span>
+            {#if f.online && f.room && f.room.id !== $room?.id}
+              <button type="button" class="act shown on" onclick={() => goTo(f)}>{$t('friend.go')}</button>
+            {:else if f.online && f.player && $followTarget?.id !== f.player}
+              <button type="button" class="act follow" onclick={() => $commands.follow(f.player ?? null)}>{$t('people.follow')}</button>
+            {/if}
+            <button type="button" class="act" class:on={removing === f.id} onclick={() => remove(f)} onblur={() => (removing = removing === f.id ? null : removing)}>
+              {removing === f.id ? $t('friend.removeConfirm') : $t('friend.remove')}
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  {/if}
+</section>
 
 <style>
   .list {
@@ -210,5 +278,45 @@
   .mute.on {
     border-color: var(--ui-ink-faint);
     color: var(--ui-ink-faint);
+  }
+
+  .friends {
+    margin-top: var(--sp-md);
+  }
+
+  .section-title {
+    margin: 0 0 var(--sp-xs);
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--ui-ink-muted);
+  }
+
+  /* Answers to an ask are not revealed on hover: they are the whole point of the row. */
+  .act.shown {
+    opacity: 1;
+  }
+
+  .friend-mark {
+    flex: none;
+    font-size: var(--fs-xs);
+    color: var(--ui-sea);
+  }
+
+  .dot {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    align-self: center;
+    background: var(--ui-ink-faint);
+  }
+
+  .dot.on {
+    background: var(--ui-live);
+  }
+
+  .row.offline .name {
+    color: var(--ui-ink-muted);
   }
 </style>

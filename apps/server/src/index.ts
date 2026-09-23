@@ -140,6 +140,7 @@ async function main(): Promise<void> {
     onProfileTouched: (player) => {
       if (player.visitorHash) profiles.touch(player.visitorHash, player.profile);
     },
+    profiles,
   });
   log.info('rooms_ready', {
     rooms: rooms.list().length,

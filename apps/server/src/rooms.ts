@@ -36,6 +36,8 @@ import type { Session } from './session.js';
 import type { Logger } from './logger.js';
 import type { PersistedIsland, PersistedRoom } from './persistence.js';
 import { metrics } from './metrics.js';
+import { Friends } from './friends.js';
+import { ProfileStore } from './games/profiles.js';
 
 /**
  * Fraction of a room's capacity reserved as headroom when matchmaking targets it. A room
@@ -68,6 +70,8 @@ export interface RoomManagerOptions {
   autostart?: boolean;
   /** A keyed player's profile changed — keep its record fresh in the store. */
   onProfileTouched?: (player: Player) => void;
+  /** Every visitor's record: friends who are not on are looked up here. Tests may omit it. */
+  profiles?: ProfileStore;
 }
 
 /** Why a requested room could not be had. */
@@ -81,8 +85,16 @@ export class RoomManager {
   private readonly islands = new Map<string, PersistedIsland>();
   private readonly log: Logger;
 
+  /** Who is friends with whom, and who of them is on. See friends.ts. */
+  readonly friends: Friends;
+
   constructor(private readonly opts: RoomManagerOptions) {
     this.log = opts.log;
+    this.friends = new Friends({
+      roomOf: (id) => this.findRoomOf(id),
+      profiles: opts.profiles ?? new ProfileStore(),
+      persist: opts.persist,
+    });
     for (const [id, state] of Object.entries(opts.persisted?.rooms ?? {})) this.dormant.set(id, state);
     for (const island of opts.persisted?.islands ?? []) {
       if (island && typeof island.code === 'string' && normaliseRoomCode(island.code) === island.code) {
@@ -112,6 +124,7 @@ export class RoomManager {
       random: this.opts.random,
       onPopulation: () => this.publishPopulation(),
       onProfile: (player) => this.profileChanged(player),
+      onPresence: (player, present) => this.friends.presenceChanged(player, present),
     });
     return this.wake(room);
   }
@@ -160,6 +173,7 @@ export class RoomManager {
       random: this.opts.random,
       onPopulation: () => this.publishPopulation(),
       onProfile: (player) => this.profileChanged(player),
+      onPresence: (player, present) => this.friends.presenceChanged(player, present),
     });
     this.log.info('island_opened', { code });
     return this.wake(room);

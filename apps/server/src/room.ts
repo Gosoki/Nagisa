@@ -160,6 +160,8 @@ export interface RoomOptions {
    * in any room — is sent it. Without one, only the player themself is.
    */
   onProfile?: (player: Player) => void;
+  /** Told when a player arrives in (`true`) or is removed from (`false`) this room. */
+  onPresence?: (player: Player, present: boolean) => void;
 }
 
 export class Room implements GameRoom {
@@ -222,6 +224,7 @@ export class Room implements GameRoom {
   private readonly persistFn: () => void;
   private readonly onPopulation: () => void;
   private readonly onProfile: (player: Player) => void;
+  private readonly onPresence: (player: Player, present: boolean) => void;
   private readonly randomFn: () => number;
   private readonly scheduleEnabled: boolean;
 
@@ -241,6 +244,7 @@ export class Room implements GameRoom {
     this.persistFn = opts.persist ?? (() => {});
     this.onPopulation = opts.onPopulation ?? (() => {});
     this.onProfile = opts.onProfile ?? ((player) => this.sendProfile(player));
+    this.onPresence = opts.onPresence ?? (() => {});
     this.randomFn = opts.random ?? Math.random;
     this.scheduleEnabled = opts.schedule ?? true;
 
@@ -339,6 +343,7 @@ export class Room implements GameRoom {
     if (this.isKeeper(player) && this.owner) this.owner.name = player.name;
     this.pendingJoins.push(player.toView());
     this.onPopulation();
+    this.onPresence(player, true);
     this.log.info('player_joined', { room: this.id, playerId: player.id, name: player.name });
   }
 
@@ -457,6 +462,7 @@ export class Room implements GameRoom {
     this.pendingLeaves.push(playerId);
     if (this.players.size === 0) this.emptySince = Date.now();
     this.onPopulation();
+    this.onPresence(player, false);
     this.log.info('player_removed', { room: this.id, playerId, reason });
     return player;
   }

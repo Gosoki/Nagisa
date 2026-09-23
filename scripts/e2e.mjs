@@ -641,6 +641,24 @@ async function main() {
   ken.send({ t: 'dig' });
   check('one dig at a time', !!(await ken.wait('error', (f) => f.key === 'cooldown', 3000)));
 
+  // -- Friends ------------------------------------------------------------
+  console.log('\nFriends');
+  const hana = await arrive('Hana', { visitor: visitorFor('Hana') });
+  const kou = await arrive('Kou', { visitor: visitorFor('Kou') });
+  check('a keyed visitor is sent a friends list', (await hana.wait('friends', () => true, 3000))?.enabled === true);
+  hana.send({ t: 'friend', action: 'request', target: kou.welcome.self });
+  const ask = await kou.wait('friends', (f) => f.requests.some((r) => r.name === 'Hana'), 3000);
+  check('an ask reaches them', !!ask);
+  kou.send({ t: 'friend', action: 'accept', target: ask?.requests[0]?.id });
+  const onHanas = await hana.wait('friends', (f) => f.friends.some((x) => x.name === 'Kou' && x.online), 3000);
+  const onKous = await kou.wait('friends', (f) => f.friends.some((x) => x.name === 'Hana' && x.online), 3000);
+  check('accepted, each is on the other\'s list, online', !!onHanas && !!onKous);
+  kou.send({ t: 'room_create' });
+  const followed = await hana.wait('friends', (f) => f.friends.some((x) => x.name === 'Kou' && x.room?.kind === 'private' && !!x.room.code), 4000);
+  check('a friend who moves to a private island is seen there, code and all', !!followed, followed?.friends);
+  hana.close();
+  kou.close();
+
   for (const c of [carol, dave, eve, pilgrimAgain, angler, signer, jan, ken, sparky]) c.close();
 
   // -- Protocol version ---------------------------------------------------

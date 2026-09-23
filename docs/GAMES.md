@@ -217,6 +217,28 @@ that is refused with `cooldown`.
 per player per 30 s, not while muted. The board keeps the newest 60 per room, persisted.
 `guestbook_remove{id}` — your own line (same player id or visitor), or any line if admin.
 
+### Friends (`server/src/friends.ts`)
+
+A friendship is a pair of visitor keys, recorded on both profiles (`ProfileRecord.friends`,
+at most `FRIEND_LIMIT` = 50), so both sides need a key. One asks from the player card while
+the two share an island (`friend{action:'request', target: PlayerId}`, one ask per 3 s); the
+other accepts or declines by the ask's id whenever they like within ten minutes (asks are
+kept in memory only). Asking someone who has already asked you is accepting. `remove` ends it
+for both, whether or not the other is on.
+
+Every change — an ask, an answer, a friend arriving, leaving or moving island — re-sends the
+whole list as `friends{friends, requests, enabled}`. Rooms report arrivals and departures to
+an index of who is on by key; the re-sends are gathered until the current task is done, so a
+friend changing islands (a leave and a join in one breath) is seen moving, never leaving.
+Friends are identified on the wire by an opaque id (a hash of the key's hash), never by
+anything that identifies the visitor elsewhere.
+
+A friend sees which island you are on, *including a private island's code* — a friendship
+is exactly as much consent as an invite link. The people panel lists friends with where they
+are and a "go to them" button; the card offers "add friend" and "accept request". Refusals:
+`friend_needs_key` · `friend_unavailable {name}` (they have no key) · `already_friends {name}` ·
+`friends_full {max}`.
+
 ### Whispers and dice
 
 `chat{text, to}` — delivered as `whisper` to both ends and nobody else; never bubbled, never in

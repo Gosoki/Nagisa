@@ -39,6 +39,7 @@ import {
   type PlayerId,
   type QuizView,
   type ServerDelta,
+  type ServerFriends,
   type ServerError,
   type ServerJanken,
   type ServerMessage,
@@ -58,6 +59,7 @@ import {
   followTarget,
   guestbook,
   isMuted,
+  friends,
   janken,
   lastDig,
   vista,
@@ -149,6 +151,8 @@ export class WorldSync {
   private chatQueue: ClientMessage[] = [];
   private chatTimer: ReturnType<typeof setTimeout> | null = null;
   private chatTokens = 4;
+  /** Whether this connection has had its first friends list (see `onFriends`). */
+  private friendsSeen = false;
   private chatRefilledAt = performance.now();
 
   /**
@@ -212,6 +216,8 @@ export class WorldSync {
         // Anything that was mid-flight on the old connection is gone with it: the server
         // reels a line in and cancels a duel when the socket drops.
         this.resetGames();
+        // A new connection's first friends list is how things stand, not news.
+        this.friendsSeen = false;
         // A resumed session means we were already here; a fresh one means we just
         // arrived. Only the first deserves a greeting.
         if (msg.resumed) notify(tr('net.welcomeBack'), 'good');
@@ -288,6 +294,10 @@ export class WorldSync {
 
       case 'janken':
         this.onJanken(msg);
+        break;
+
+      case 'friends':
+        this.onFriends(msg);
         break;
 
       case 'dig':
@@ -633,6 +643,33 @@ export class WorldSync {
     } catch (err) {
       console.error('[sync] world event handler threw', err);
     }
+  }
+
+  /**
+   * A fresh friends list. What changed is worth a word — a new ask, a new friend, a friend
+   * who has just come on — but not on the first list of a connection, which is only news
+   * of how things stand.
+   */
+  private onFriends(msg: ServerFriends): void {
+    const before = get(friends);
+    friends.set({ friends: msg.friends, requests: msg.requests, enabled: msg.enabled });
+    if (!this.friendsSeen) {
+      this.friendsSeen = true;
+      return;
+    }
+    const knownAsks = new Set(before.requests.map((r) => r.id));
+    for (const r of msg.requests) if (!knownAsks.has(r.id)) notify(tr('friend.asked', { name: r.name }), 'good', 5000);
+    const was = new Map(before.friends.map((f) => [f.id, f]));
+    for (const f of msg.friends) {
+      const old = was.get(f.id);
+      if (!old) notify(tr('friend.added', { name: f.name }), 'good', 4000);
+      else if (!old.online && f.online && f.room) pushSystemChat(tr('friend.online', { name: f.name, place: this.placeOf(f.room) }));
+    }
+  }
+
+  /** How a friend's island reads in a line: a shard's name, or a private island's code. */
+  private placeOf(r: NonNullable<ServerFriends['friends'][number]['room']>): string {
+    return r.kind === 'private' ? tr('island.private', { code: r.code ?? '' }) : roomName(r);
   }
 
   private onFish(msg: Extract<ServerMessage, { t: 'fish' }>): void {

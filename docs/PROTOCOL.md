@@ -462,6 +462,7 @@ Semantics are in [GAMES.md](GAMES.md); these are the messages.
 | `guestbook_remove { id }` | Take a line down: your own, or any if admin. |
 | `set_title { badge \| null }` | Wear a badge you hold under your name, or none. |
 | `dig` | Dig where you stand, while a treasure hunt is live. One per 1.5 s. |
+| `friend { action, target }` | `request` a player here (`target`: their id) to be friends; `accept` / `decline` an ask or `remove` a friend by its opaque id. Both sides need a visitor key. |
 | `chat { text, to? }` | With `to`, a whisper: delivered to both ends only, never in a delta, never bubbled. |
 
 **Server → client, to one player only**
@@ -469,6 +470,7 @@ Semantics are in [GAMES.md](GAMES.md); these are the messages.
 | Message | Purpose |
 |---|---|
 | `profile { profile }` | Your `ProfileView` changed. |
+| `friends { friends, requests, enabled }` | Your friends (`id`, `name`, `online`, and while online `player` and `room`) and the asks waiting for you — sent after the welcome and whenever any of it changes. |
 | `fish { phase, … }` | Your line: `waiting`, `bite` (with `window` ms), `caught` (`fish`, `size`, `newSpecies`, `record`, `personalBest`), `escaped` (`reason`: `early`, `late`, `moved`), `idle`. |
 | `omikuji { fortune, item, direction, again }` | Your slip; indices into the shared tables. `again` = you had drawn today already. |
 | `janken { kind, duel, opponent, opponentName, … }` | Your side of a duel: `invited`, `waiting`, `start`, `result`, `cancelled`. |

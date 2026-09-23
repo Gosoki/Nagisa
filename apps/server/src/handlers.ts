@@ -45,6 +45,7 @@ import {
   type ClientFirework,
   type ClientFish,
   type ClientGuestbookRemove,
+  type ClientFriend,
   type ClientGuestbookWrite,
   type ClientHello,
   type ClientHostAnnounce,
@@ -205,6 +206,7 @@ function sendWelcome(session: Session, room: Room, player: Player, resumed: bool
     rooms: deps.rooms.listViews(room),
     profile: profileView(player.profile, player.profilePersistent),
   });
+  session.send(deps.rooms.friends.viewFor(player));
   session.send(room.buildSnapshot());
 }
 
@@ -261,7 +263,11 @@ export function handleHello(
       player.name = name;
       player.appearance = appearance;
       if (opts.adminGranted) player.globalAdmin = true;
-      if (!player.visitorHash) attachProfile(player, msg.visitor, deps);
+      if (!player.visitorHash) {
+        attachProfile(player, msg.visitor, deps);
+        // Now on the friends index under the key it has just shown.
+        if (player.visitorHash) deps.rooms.friends.presenceChanged(player, true);
+      }
       const role = room.roleFor(player);
       if (role !== player.role) {
         player.role = role;
@@ -862,6 +868,10 @@ function handleFirework(ctx: ConnState, msg: ClientFirework): void {
   ctx.room.fireworks.launch(ctx.player, Date.now(), msg.hue, msg.pattern);
 }
 
+function handleFriend(ctx: ConnState, msg: ClientFriend, deps: HandlerDeps): void {
+  deps.rooms.friends.handle(ctx.player, msg.action, msg.target);
+}
+
 function handleDig(ctx: ConnState): void {
   ctx.room.treasure.dig(ctx.player, Date.now());
 }
@@ -917,6 +927,7 @@ export const HANDLERS: {
   janken: handleJanken,
   roll: handleRoll,
   dig: handleDig,
+  friend: handleFriend,
   firework: handleFirework,
   guestbook_write: handleGuestbookWrite,
   guestbook_remove: handleGuestbookRemove,

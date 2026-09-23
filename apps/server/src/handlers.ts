@@ -265,7 +265,9 @@ export function handleHello(
       player.name = name;
       player.appearance = appearance;
       if (opts.adminGranted) player.globalAdmin = true;
-      if (!player.visitorHash) {
+      // A key kept off this island is not taken on here: it would bring its owner back in,
+      // badges and all, through a session that arrived without it.
+      if (!player.visitorHash && !deps.rooms.isBanned(room, hashVisitorKey(msg.visitor))) {
         attachProfile(player, msg.visitor, deps);
         // Now on the friends index under the key it has just shown.
         if (player.visitorHash) deps.rooms.friends.presenceChanged(player, true);
@@ -284,7 +286,8 @@ export function handleHello(
   // outage, a restart). The second kind comes back where they stood, if that can be believed.
   const id = randomUUID();
   const preferred = typeof msg.room === 'string' ? msg.room : payload?.room;
-  const picked = deps.rooms.pickRoom(preferred, hashVisitorKey(msg.visitor));
+  // The server's own admins are kept off nowhere.
+  const picked = deps.rooms.pickRoom(preferred, opts.adminGranted ? null : hashVisitorKey(msg.visitor));
   const room = picked.room;
   const spawn = returningSpawn(msg.at) ?? spawnPoint(Math.floor(Math.random() * 1000));
   const player = new Player(id, name, appearance, Role.Guest, spawn);
@@ -707,14 +710,21 @@ function handleAdminAction(ctx: ConnState, msg: ClientAdminAction, deps: Handler
       // Off a private island for a while, not just out of the door: the invite link would
       // bring them straight back otherwise.
       const banned = ctx.room.kind === 'private' && deps.rooms.banFromIsland(ctx.room, target.visitorHash);
-      ctx.room.sendTo(target.id, {
-        t: 'error',
-        code: ErrorCode.Kicked,
-        message: 'Kicked by admin',
-        fatal: true,
-        ...(banned ? { key: 'kicked_banned', params: { n: PROTOCOL.ISLAND_BAN_MIN } } : {}),
-      });
-      ctx.room.removePlayer(target.id, 'kicked_by_admin');
+      // A ban is on the visitor, not the tab: their other tabs here go with them — away ones
+      // too, or one would resume its way back in.
+      const leaving = banned
+        ? [...ctx.room.allPlayers()].filter((p) => p.visitorHash === target.visitorHash && !p.globalAdmin)
+        : [target];
+      for (const p of leaving) {
+        ctx.room.sendTo(p.id, {
+          t: 'error',
+          code: ErrorCode.Kicked,
+          message: 'Kicked by admin',
+          fatal: true,
+          ...(banned ? { key: 'kicked_banned', params: { n: PROTOCOL.ISLAND_BAN_MIN } } : {}),
+        });
+        ctx.room.removePlayer(p.id, 'kicked_by_admin');
+      }
       break;
     }
     case 'mute':

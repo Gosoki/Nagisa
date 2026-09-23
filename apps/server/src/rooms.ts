@@ -334,7 +334,7 @@ export class RoomManager {
     if (!('room' in resolved)) return { ok: false, reason: resolved.refusal };
     const room = resolved.room;
     if (room === fromRoom) return { ok: true, room: fromRoom };
-    if (this.isBanned(room, player.visitorHash)) return { ok: false, reason: 'banned' };
+    if (!player.globalAdmin && this.isBanned(room, player.visitorHash)) return { ok: false, reason: 'banned' };
     if (!room.hasCapacity) return { ok: false, reason: 'full' };
 
     fromRoom.removePlayer(player.id, 'room_switch', { closeSession: false });
@@ -415,7 +415,8 @@ export class RoomManager {
    */
   banFromIsland(room: Room, visitorHash: string | null, now = Date.now()): boolean {
     const entry = room.code ? this.islands.get(room.code) : undefined;
-    if (!entry || !visitorHash) return false;
+    // Nobody is kept off their own island, whoever kicked them.
+    if (!entry || !visitorHash || visitorHash === entry.ownerHash) return false;
     const bans = (entry.bans ?? []).filter((b) => b.until > now && b.hash !== visitorHash);
     bans.unshift({ hash: visitorHash, until: now + ISLAND_BAN_MS });
     entry.bans = bans.slice(0, ISLAND_BANS_LIMIT);
@@ -426,7 +427,7 @@ export class RoomManager {
   /** Whether this visitor is being kept off this island just now. Forgets bans that have run out. */
   isBanned(room: Room, visitorHash: string | null, now = Date.now()): boolean {
     const entry = room.code ? this.islands.get(room.code) : undefined;
-    if (!entry?.bans || !visitorHash) return false;
+    if (!entry?.bans || !visitorHash || visitorHash === entry.ownerHash) return false;
     entry.bans = entry.bans.filter((b) => b.until > now);
     if (entry.bans.length === 0) delete entry.bans;
     return entry.bans?.some((b) => b.hash === visitorHash) ?? false;

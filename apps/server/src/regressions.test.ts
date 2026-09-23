@@ -509,3 +509,34 @@ test('a kick on a public shore keeps nobody off it', () => {
   assert.equal(lastOf(guest.socket, 'error')?.key, undefined);
   assert.equal(connect(deps, { room: shore.id, visitor: 'shoreguestshoreguestshore' }).conn.room, shore);
 });
+
+test('a ban takes every tab of the visitor, keeps a banned key from being taken on, and spares keepers and admins', () => {
+  const deps = makeDeps();
+  const keeperKey = 'tabkeepertabkeepertabkeeper';
+  const guestKey = 'tabguesttabguesttabguest';
+  const island = deps.rooms.createPrivate({ hash: hashVisitorKey(keeperKey), name: 'Mio', playerId: 'p-mio' })!;
+  const keeper = connect(deps, { room: island.code!, visitor: keeperKey });
+  const tabA = connect(deps, { room: island.code!, visitor: guestKey });
+  const tabB = connect(deps, { room: island.code!, visitor: guestKey });
+
+  send(keeper.conn, { t: 'admin_action', action: 'kick', target: tabA.conn.player.id }, deps);
+  assert.equal(island.getPlayer(tabB.conn.player.id), undefined, 'the other tab goes too');
+  assert.equal(lastOf(tabB.socket, 'error')?.key, 'kicked_banned');
+  const token = issueResumeToken(SECRET, { playerId: tabB.conn.player.id, room: island.id });
+  assert.notEqual(connect(deps, { resumeToken: token, room: island.code!, visitor: guestKey }).conn.room, island, 'and cannot resume its way back');
+
+  // Arriving keyless and showing the banned key on a resume does not bring the key in.
+  const keyless = connect(deps, { room: island.code! });
+  assert.equal(keyless.conn.room, island);
+  const resumed = connect(deps, { resumeToken: issueResumeToken(SECRET, { playerId: keyless.conn.player.id, room: island.id }), visitor: guestKey });
+  assert.equal(resumed.conn.player.id, keyless.conn.player.id);
+  assert.equal(resumed.conn.player.visitorHash, null, 'the banned key is not taken on here');
+
+  // An admin with the server's token is kept off nowhere, even under a key that was kicked.
+  const admin = connect(deps, { room: island.code!, visitor: guestKey }, true);
+  assert.equal(admin.conn.room, island);
+
+  // Nor is a keeper kept off their own island, whoever kicks them.
+  assert.equal(deps.rooms.banFromIsland(island, hashVisitorKey(keeperKey)), false);
+  assert.equal(deps.rooms.isBanned(island, hashVisitorKey(keeperKey)), false);
+});

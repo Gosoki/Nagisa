@@ -562,7 +562,7 @@ socket stays open. A rejected activity join must never cost you the world.
 | `not_found` | no | Unknown activity, room, player, interactable or line. |
 | `room_full` / `activity_full` | no | At capacity (also used for a refused room request on `hello`). |
 | `invalid_transition` | no | Illegal activity lifecycle change. |
-| `kicked` | yes | Removed by an admin. The client discards its resume token. On a private island the frame carries `key: "kicked_banned"` and `params.n` (minutes) when the kicked visitor had a key: the registry keeps them off that island for `PROTOCOL.ISLAND_BAN_MIN` minutes, across restarts. A visitor without a key cannot be recognised coming back, so for them a kick is only a kick. |
+| `kicked` | yes | Removed by an admin. The client discards its resume token. On a private island the frame carries `key: "kicked_banned"` and `params.n` (minutes) when the kicked visitor had a key: the registry keeps them off that island for `PROTOCOL.ISLAND_BAN_MIN` minutes, across restarts, and every other tab of theirs there is sent the same frame and removed. Keepers and the server's admins are never kept off. A visitor without a key cannot be recognised coming back, so for them a kick is only a kick. |
 | `server_shutdown` | yes | Graceful shutdown. Client *does* reconnect (with backoff). |
 | `internal` | usually no | Server-side fault; logged with the connection id. Fatal only when it happens while handling `hello`, and the socket is then closed with 1011. |
 

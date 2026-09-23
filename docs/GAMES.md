@@ -303,5 +303,8 @@ limit) — `busy` is kept for a janken opponent who is in another duel
 | Janken | `games/janken.ts` | `ui/JankenCard.svelte` | |
 | Fireworks | `games/fireworks.ts` | `fx/` | `maps/*.ts` (`fireworks`) |
 | Treasure hunt | `games/treasure.ts` | `ui/TreasureHud.svelte`, `fx/` (glyphs, gold burst) | `games/treasure.ts` |
+| Today's tasks | `games/daily.ts` (and a `daily()` call in each game) | `ui/CollectionPanel.svelte` | `games/daily.ts` |
+| Weather | `games/fishing.ts` (bites) | `world/sky.ts`, `fx/rain.ts`, `audio/ambience.ts`, `ui/Minimap.svelte` | `games/weather.ts` |
+| Friends | `friends.ts` | `ui/PeoplePanel.svelte`, `ui/PlayerCard.svelte` | `protocol.ts` (`FriendView`) |
 | Guestbook | `games/guestbook.ts` | `ui/BoardPanel.svelte` | |
 | Languages | — | `i18n/` | names in `maps/*.ts`, `games/*.ts` |

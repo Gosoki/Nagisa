@@ -36,6 +36,9 @@ import { PermissionError } from './permissions.js';
 import { createServer, WS_PATH } from './http.js';
 import { ProfileStore } from './games/profiles.js';
 
+/** Largest frame a client may send, bytes. See the WebSocketServer options below. */
+const MAX_CLIENT_FRAME_BYTES = 16 * 1024;
+
 /** How often empty rooms are checked for putting to sleep. */
 const IDLE_SWEEP_MS = 60_000;
 
@@ -119,7 +122,21 @@ async function main(): Promise<void> {
 
   // --- Transport -------------------------------------------------------------------
   const deps: HandlerDeps = { rooms, audit: auditLog, log, config: CONFIG, profiles, persist };
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({
+    noServer: true,
+    // The largest thing a client legitimately sends is a line of text — a few hundred bytes.
+    // Without a cap, `ws` accepts frames up to 100 MiB, and one such frame parsed as JSON is
+    // enough to take the process down.
+    maxPayload: MAX_CLIENT_FRAME_BYTES,
+    // What the architecture relies on for the hot path: packed transforms are integers and
+    // compress several-fold. Light settings — this is bandwidth, not archival — and small
+    // frames (pings, single moves) are not worth compressing at all.
+    perMessageDeflate: {
+      zlibDeflateOptions: { level: 3 },
+      threshold: 512,
+      concurrencyLimit: 8,
+    },
+  });
   let ready = false;
 
   const httpServer = createServer({ config: CONFIG, log, rooms, wss, isReady: () => ready });

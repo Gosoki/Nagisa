@@ -41,11 +41,18 @@ receives is the public shards plus the room it is in).
   creates the room, moves you there (`room_changed`, carrying your new role and a fresh resume
   token) and records you — by visitor-key hash — as its keeper. Keepers are `Role.Admin`
   *in their own island only*.
-- **Join**: `hello.room` or `room_switch.room` may be a room id *or* a code. A code the server
-  is not currently holding **re-opens** the island (with its keeper, if the registry knows
-  one): an invite link keeps working after everyone has left and after a restart.
-- **Idle islands** stop ticking and are dropped from memory after ten empty minutes. Their
-  registry entry (code, keeper, name) and their persisted state (schedule, guestbook) stay.
+- **Join**: `hello.room` or `room_switch.room` may be a room id *or* a code. A registered code
+  the server is not currently holding **re-opens** the island, with its keeper: an invite link
+  keeps working after everyone has left and — with `PERSIST_PATH` set — after a restart. A code
+  nobody registered opens nothing (`room_not_found`; a `hello` is matchmade instead), so a
+  script trying random codes cannot fill the server with empty islands. Codes come from the
+  system CSPRNG.
+- **Limits**: switching islands is rate-limited (a burst of 3, then one per 5 s), making one
+  to one per 30 s per connection; at most 200 private islands are awake at once (`busy`
+  beyond that — sleeping ones wake as others fall asleep).
+- **Idle rooms** stop ticking and are dropped from memory after ten empty minutes — private
+  islands and any public shard beyond the first `ROOM_COUNT`. Their registry entry (code,
+  keeper, name) and their persisted state (schedule, announcements, guestbook) stay.
 - **Room switch** detaches you from any activity, reels in any line, cancels any duel and
   re-spawns you at the new island's harbour. Your role is recomputed for the new room.
 
@@ -121,6 +128,10 @@ live the server runs a `QuizRunner`:
    is cleared and the activity ends.
 
 A contestant who leaves the room is out. Joining after the lobby closes makes you a spectator.
+The badge needs a field of at least two — a quiz won alone still counts toward `quizWins`, but
+is not a championship. There is one arena, so one quiz at a time: an admin asking for another
+while one runs is refused (`busy`), and a scheduled quiz that goes live during an ad-hoc one is
+ended at once rather than shown as live with nothing happening.
 
 ### Fishing (`effect: 'fish'` interactables; derby: `feature: 'derby'`)
 
@@ -185,7 +196,15 @@ per player per 30 s, not while muted. The board keeps the newest 60 per room, pe
 ### Whispers and dice
 
 `chat{text, to}` — delivered as `whisper` to both ends and nobody else; never bubbled, never in
-history. Muted players cannot whisper. `roll{sides}` — 2–1000, default 100; one per 2 s.
+history. Muted players cannot whisper (they are told — a whisper has no optimistic echo, so
+silence would read as a lost message), and nobody can whisper to someone in their grace
+window. `roll{sides}` — 2–1000, default 100; one per 2 s.
+
+### Seats
+
+A `sit` interactable holds one person. Sitting where someone present is already sitting is
+refused (`seat_taken`, and the client stands you back up); a seat is freed by standing, by
+moving more than 1.5 m past its reach, by dropping, or by leaving.
 
 ---
 

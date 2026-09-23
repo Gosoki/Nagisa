@@ -22,9 +22,13 @@ services:
       # bandwidth on mobile connections; add rooms rather than raising this.
       ROOM_CAPACITY: '120'
       ROOM_COUNT: '2'
+      # Players on one private island (made with "Make a private island" and shared by code).
+      PRIVATE_ROOM_CAPACITY: '40'
 
       # --- Persistence ---
-      # Activities, announcements and check-in records survive a restart.
+      # Each island's schedule, announcements and guestbook, the registry of private
+      # islands and their keepers, and visitors' stamps / fish books / badges survive a
+      # restart. Without it, invite links stop working when the process restarts.
       PERSIST_PATH: '/data/nagisa.json'
 
       # --- Static client ---

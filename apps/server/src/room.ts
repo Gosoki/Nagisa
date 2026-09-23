@@ -46,6 +46,7 @@ import {
   PROTOCOL,
   Role,
   ZONES,
+  encode,
   getInteractable,
   interactablePosition,
   packTransform,
@@ -751,9 +752,11 @@ export class Room implements GameRoom {
   }
 
   private broadcast(delta: ServerDelta): void {
+    if (this.sessions.size === 0) return;
     const droppable = isQuietDelta(delta);
+    const frame = encode(delta);
     for (const session of this.sessions.values()) {
-      session.send(delta, { droppable });
+      session.sendEncoded('delta', frame, { droppable });
     }
   }
 

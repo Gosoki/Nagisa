@@ -348,7 +348,8 @@ function handleChat(ctx: ConnState, msg: ClientChat): void {
       return;
     }
     const target = typeof msg.to === 'string' ? ctx.room.getPlayer(msg.to) : undefined;
-    if (!target || target.id === ctx.player.id) {
+    // Someone in their grace window has no socket to hear it; a receipt would be a lie.
+    if (!target || target.id === ctx.player.id || target.away) {
       refuse(ctx, 'not_found', undefined, ErrorCode.NotFound);
       return;
     }

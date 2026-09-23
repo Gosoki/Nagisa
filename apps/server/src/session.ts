@@ -144,6 +144,16 @@ export class Session {
    * Returns true if the frame was sent (handed to the socket), false if it was dropped.
    */
   send(msg: ServerMessage, opts: SendOptions = {}): boolean {
+    return this.sendEncoded(msg.t, encode(msg), opts);
+  }
+
+  /**
+   * Send a frame that has already been serialised. A room broadcasting one delta to a
+   * hundred sessions encodes it once and hands every session the same string, rather than
+   * each session stringifying the same object again — at 10 Hz that is most of the tick's
+   * CPU. `type` is the message's `t`, for the backpressure policy and the metrics.
+   */
+  sendEncoded(type: ServerMessage['t'], frame: string, opts: SendOptions = {}): boolean {
     if (this.closed) return false;
     if (this.ws.readyState !== this.ws.OPEN) return false;
 
@@ -152,16 +162,16 @@ export class Session {
     // un-repairable state loss. `DROPPABLE_TYPES` further restricts this to message
     // types that are structurally safe to lose (currently just `delta`), so a caller
     // cannot accidentally mark e.g. an `error` as droppable and have it honoured.
-    const isDroppable = opts.droppable === true && DROPPABLE_TYPES.has(msg.t);
+    const isDroppable = opts.droppable === true && DROPPABLE_TYPES.has(type);
 
     if (isDroppable && this.ws.bufferedAmount > BACKPRESSURE_HIGH_WATERMARK) {
-      metrics.messagesDropped.inc({ type: msg.t });
+      metrics.messagesDropped.inc({ type });
       return false;
     }
 
     try {
-      this.ws.send(encode(msg));
-      metrics.messagesOut.inc({ type: msg.t });
+      this.ws.send(frame);
+      metrics.messagesOut.inc({ type });
       return true;
     } catch (err) {
       this.log.warn('session_send_failed', { connId: this.connId, err });

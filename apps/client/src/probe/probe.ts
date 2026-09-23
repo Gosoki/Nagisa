@@ -21,11 +21,12 @@
  */
 
 import * as THREE from 'three';
-import { ISLAND_EXTENT, SUMMIT, ZONES, activeMap, heightAt, resolveMapId, type ZoneId } from '@nagisa/shared';
+import { AnimState, ISLAND_EXTENT, SUMMIT, ZONES, activeMap, heightAt, resolveMapId, type ZoneId } from '@nagisa/shared';
 import { Renderer } from '../engine/renderer.js';
 import { settingsFor, type QualityTier } from '../engine/quality.js';
 import { Island } from '../world/island.js';
 import { Character } from '../character/character.js';
+import { benchSeat } from '../world/props/furniture.js';
 
 /**
  * Named camera positions.
@@ -131,6 +132,13 @@ const VIEWPOINTS: Record<string, Viewpoint> = {
    * origin is the summit, and a camera at eye height there is buried inside the terrain.
    */
   figure: { eye: [66.6, 9.5, 43.2], target: [64, 9, 40], fov: 38 },
+  /**
+   * The rig review: one figure per animation state, held still — see `LINEUP`. Clipping is a
+   * property of a *pose*, and the crowd above only ever stands or walks, so an arm through a
+   * chest in the fishing pose or a shin through a bench was invisible to every other view.
+   * Frame a few of them at a time with `?eye=…&target=…`.
+   */
+  lineup: { eye: [66.6, 11.5, 41.5], target: [66.6, 8.9, 35], fov: 50, empty: true },
 
   // Plan views — one per terrace, plus the island. See `plan()` above.
   'plan-island': plan(0, 0, 8, 300),
@@ -144,6 +152,63 @@ const VIEWPOINTS: Record<string, Viewpoint> = {
   'plan-beach': plan(46, 92, 1.6, 72),
 };
 
+/**
+ * The lineup: every pose the rig can hold, a metre apart in a row across the flat of the
+ * plaza, facing +z. Accessories rotate along the row so each hat is seen in several poses.
+ *
+ * `phase` is where in its cycle the figure is frozen; π/2 is the peak of a stride, which is
+ * where a swinging limb is furthest from home and so where it is most likely to go through
+ * something. The last three pressed "Sit" at the plaza bench — from the prompt's own spot,
+ * from the edge of its reach, and from behind the bench — and are seated the way
+ * `LocalPlayer.setSeated` seats a player: walked onto the bench first.
+ */
+interface LineupFigure {
+  state: AnimState;
+  /** Wave, clap and bow are one-shot emotes, not states; the pose code only honours them as such. */
+  emote?: boolean;
+  phase?: number;
+  accessory: number;
+  lantern?: boolean;
+  faded?: boolean;
+  /** Sat down at a bench from here, and walked onto it, instead of standing in the row. */
+  bench?: [number, number];
+}
+
+const HALF_PI = Math.PI / 2;
+const LINEUP: LineupFigure[] = [
+  { state: AnimState.Idle, accessory: 0 },
+  { state: AnimState.Walk, phase: HALF_PI, accessory: 1 },
+  { state: AnimState.Run, phase: HALF_PI, accessory: 2 },
+  { state: AnimState.Jump, accessory: 3 },
+  { state: AnimState.Fall, accessory: 4 },
+  { state: AnimState.Sit, phase: HALF_PI, accessory: 1 },
+  { state: AnimState.Clap, emote: true, phase: HALF_PI, accessory: 2 },
+  { state: AnimState.Wave, emote: true, phase: HALF_PI, accessory: 3 },
+  { state: AnimState.Bow, emote: true, accessory: 4 },
+  { state: AnimState.Fish, accessory: 0 },
+  { state: AnimState.Cheer, phase: HALF_PI, accessory: 1 },
+  { state: AnimState.Walk, phase: HALF_PI, accessory: 3, lantern: true },
+  { state: AnimState.Idle, accessory: 3, faded: true },
+  // `plaza-bench`'s prompt, 0.45 m off the bench's centre; 2.4 m out in front of it; behind.
+  { state: AnimState.Sit, phase: HALF_PI, accessory: 2, bench: [67.6, 46.9] },
+  { state: AnimState.Sit, phase: HALF_PI, accessory: 4, bench: [69.18, 49.19] },
+  { state: AnimState.Sit, phase: HALF_PI, accessory: 3, bench: [67.4, 48.9] },
+];
+const LINEUP_ORIGIN = { x: 60, z: 35, spacing: 1.1 };
+
+/** Put a figure into a pose and leave it there: the frame loop never updates these. */
+function holdPose(character: Character, figure: LineupFigure): void {
+  if (figure.emote) character.playEmote(figure.state, Infinity);
+  else character.setAnim(figure.state);
+  if (figure.lantern) character.setHeldProp('lantern');
+  if (figure.faded) character.setFaded(true);
+  // One step long enough that the profile blend lands on its target outright, then the
+  // cycle is moved to the phase asked for and applied again without advancing.
+  character.update(1 / 9);
+  character.setPhase(figure.phase ?? 0);
+  character.update(0);
+}
+
 const params = new URLSearchParams(location.search);
 
 // Before anything reads the terrain field. Same rule and same reason as `main.ts`.
@@ -153,6 +218,12 @@ const viewName = params.get('view') ?? 'plaza';
 const tier = (params.get('tier') ?? 'high') as QualityTier;
 const timeOfDay = Number(params.get('time') ?? 0.42);
 const inkEnabled = params.get('ink') !== '0';
+
+/** `?eye=x,y,z&target=x,y,z&fov=n` override the named viewpoint, for close-ups. */
+const vec3Param = (name: string): [number, number, number] | null => {
+  const parts = params.get(name)?.split(',').map(Number);
+  return parts?.length === 3 && parts.every(Number.isFinite) ? (parts as [number, number, number]) : null;
+};
 
 const container = document.getElementById('probe') as HTMLElement;
 const readout = document.getElementById('readout') as HTMLElement;
@@ -170,6 +241,12 @@ declare global {
      * and a running rAF loop never lets it.
      */
     __probeStop?: () => void;
+    /**
+     * Re-aim the camera and render a few more frames, so one island build can be photographed
+     * from several places — building it costs far more than drawing it.
+     * Resets `__probeReady`, which comes back true once the new frame is on the canvas.
+     */
+    __probeLook?: (eye: [number, number, number], target: [number, number, number], fov?: number) => void;
   }
 }
 
@@ -192,7 +269,7 @@ async function main(): Promise<void> {
   // island's coordinates. Fall back to framing whatever is loaded, from its own extent, so
   // `--map lantern-atoll` produces a picture of the atoll rather than of empty sea where the
   // plaza would have been.
-  const view =
+  const named =
     VIEWPOINTS[viewName] ??
     (activeMap().id === 'nagisa-island'
       ? VIEWPOINTS.plaza
@@ -201,6 +278,12 @@ async function main(): Promise<void> {
           target: [SUMMIT.x, SUMMIT.height * 0.4, SUMMIT.z],
           fov: 42,
         });
+  const view: Viewpoint = {
+    ...named,
+    eye: vec3Param('eye') ?? named.eye,
+    target: vec3Param('target') ?? named.target,
+    fov: Number(params.get('fov')) || named.fov,
+  };
   const focusZone = nearestZoneTo(view.target[0], view.target[2]);
   const anchor = ZONES.find((z) => z.id === focusZone) ?? ZONES[0];
   for (let i = 0; i < 9; i++) {
@@ -218,6 +301,22 @@ async function main(): Promise<void> {
     character.setAnim(i % 3 === 0 ? 1 : 0);
     renderer.scene.add(character.root);
     crowd.push(character);
+  }
+
+  // The lineup is posed once and never animated, so it is kept apart from the crowd.
+  const held: Character[] = [];
+  if (viewName === 'lineup') {
+    LINEUP.forEach((figure, i) => {
+      const character = new Character({ outfit: i, skin: i % 5, accessory: figure.accessory });
+      const seat = figure.bench ? benchSeat(figure.bench[0], figure.bench[1], 3.5) : null;
+      const [x, z, yaw] = seat ? [seat.x, seat.z, seat.yaw] : [LINEUP_ORIGIN.x + i * LINEUP_ORIGIN.spacing, LINEUP_ORIGIN.z, 0];
+      character.root.position.set(x, heightAt(x, z), z);
+      character.root.rotation.y = yaw;
+      if (seat) character.setSeatHeight(seat.y - character.root.position.y);
+      renderer.scene.add(character.root);
+      holdPose(character, figure);
+      held.push(character);
+    });
   }
 
   // `?debug=ocean` recolours the sea to flat magenta. Diagnostic only, and worth keeping:
@@ -271,6 +370,7 @@ async function main(): Promise<void> {
         character.updateLod(camera.position);
         character.update(dt);
       }
+      for (const character of held) character.updateLod(camera.position);
       // The camera never moves, so it is re-aimed once and then left alone; re-aiming
       // every frame would fight any future orbit control added here.
       if (frames === 2) {
@@ -311,6 +411,20 @@ async function main(): Promise<void> {
   });
 
   window.__probeStop = () => renderer.stop();
+  window.__probeLook = (eye, target, fov) => {
+    camera.position.set(...eye);
+    camera.lookAt(...target);
+    if (fov) {
+      camera.fov = fov;
+      camera.updateProjectionMatrix();
+    }
+    focus.set(...target);
+    window.__probeReady = false;
+    // Past the info snapshot, a few frames short of the stop: the shadow box re-centres on
+    // the new focus and the adaptive resolution settles again before the picture is taken.
+    frames = 3;
+    renderer.start();
+  };
   renderer.start();
 }
 

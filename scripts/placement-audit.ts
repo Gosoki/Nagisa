@@ -67,6 +67,7 @@ import {
   LAMP_RADIUS,
   getZone,
   insideStructure,
+  structureDepth,
   landmarkExtent,
   isWalkable,
   resolveMapId,
@@ -964,6 +965,13 @@ for (const l of [...LANDMARKS, ...derivedSeats]) {
   }
   if (hi - lo > SEAT_TILT) seatFaults.push([l, `${(hi - lo).toFixed(2)} m across the seat`]);
   if (insideStructure(l.x, l.z)) seatFaults.push([l, 'inside a building']);
+  // Its ends as well as its middle: a bench beside a house with one end in the wall passed
+  // the line above, and was drawn with its plank and its stone block through the plinth.
+  let intoWall = 0;
+  for (const [ox, oz] of [[-1.1, -0.35], [1.1, -0.35], [-1.1, 0.35], [1.1, 0.35]] as const) {
+    intoWall = Math.max(intoWall, structureDepth(l.x + ox * cos + oz * sin, l.z - ox * sin + oz * cos));
+  }
+  if (intoWall > 0 && !insideStructure(l.x, l.z)) seatFaults.push([l, `an end ${intoWall.toFixed(2)} m into a wall`]);
   const lane = nearestLane(l.x, l.z);
   if (lane.id !== null && lane.dist < lane.halfWidth + 1) {
     seatFaults.push([l, `${(lane.halfWidth + 1 - lane.dist).toFixed(1)} m inside the ${lane.id} carriageway`]);

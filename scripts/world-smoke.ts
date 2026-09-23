@@ -17,6 +17,7 @@
 
 import * as THREE from 'three';
 import {
+  AnimState,
   ISLAND_EXTENT,
   activeMap,
   listMaps,
@@ -42,6 +43,7 @@ import { buildTerrain } from '../apps/client/src/world/terrain.worker.js';
 import { Scatter } from '../apps/client/src/world/scatter.js';
 import { createLandmark, knownLandmarkKinds } from '../apps/client/src/world/props/index.js';
 import { Character } from '../apps/client/src/character/character.js';
+import { BENCH_SEAT_HEIGHT } from '../apps/client/src/world/props/furniture.js';
 
 // Which map to check. Every assertion below is written against the *active pack*, never
 // against Nagisa Island's numbers, so `--map lantern-atoll` runs the identical contract
@@ -54,6 +56,17 @@ import { WAVE_AMPLITUDE } from '../apps/client/src/world/waves.js';
 
 let failures = 0;
 let checks = 0;
+
+/** Whether (x, z) falls inside any of these triangles, given in plan as [ax, az, bx, bz, cx, cz]. */
+function insidePlan(triangles: ReadonlyArray<readonly number[]>, x: number, z: number): boolean {
+  const side = (ax: number, az: number, bx: number, bz: number): number => (bx - ax) * (z - az) - (bz - az) * (x - ax);
+  return triangles.some(([ax, az, bx, bz, cx, cz]) => {
+    const d1 = side(ax!, az!, bx!, bz!);
+    const d2 = side(bx!, bz!, cx!, cz!);
+    const d3 = side(cx!, cz!, ax!, az!);
+    return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+  });
+}
 
 function check(name: string, ok: boolean, detail?: unknown): void {
   checks++;
@@ -271,6 +284,58 @@ console.log('\nLandmarks');
   }
   check('every building stands on level ground', uneven.length === 0, uneven.slice(0, 8));
 
+  // --- Nothing stands inside a boulder ---------------------------------------------------
+  //
+  // `placement-audit` lets rocks and furniture stand as close to things as they like — a
+  // lantern belongs against a wall — and it works from footprint tables, which know nothing
+  // of the rock the builder actually makes: one twice the table's size, with a second lump
+  // beside it. So when a boulder was moved off the lighthouse road it landed on the gate
+  // lamp beside it, whose base then stood 0.3 m inside the rock, and no check said so.
+  //
+  // Measured here against the built rock's own shadow in plan — every triangle projected
+  // flat, turned and scaled the way `Island` places it, so the gap between a boulder and the
+  // lump beside it stays a gap — sampling each other landmark's base at the middle and
+  // three-tenths of the way out along its footprint.
+  const rockInside: string[] = [];
+  for (const rock of LANDMARKS) {
+    if (rock.kind !== 'rock') continue;
+    const built = createLandmark('rock', rock.opts as Record<string, unknown> | undefined);
+    built.rotation.y = rock.rot;
+    built.scale.setScalar(rock.scale ?? 1);
+    built.updateMatrixWorld(true);
+    const shadow: number[][] = [];
+    built.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh)) return;
+      const position = obj.geometry.getAttribute('position');
+      const index = obj.geometry.getIndex();
+      const v = new THREE.Vector3();
+      const count = index ? index.count : position.count;
+      for (let i = 0; i < count; i += 3) {
+        const tri: number[] = [];
+        for (let k = 0; k < 3; k++) {
+          v.fromBufferAttribute(position, index ? index.getX(i + k) : i + k).applyMatrix4(obj.matrixWorld);
+          tri.push(rock.x + v.x, rock.z + v.z);
+        }
+        shadow.push(tri);
+      }
+    });
+    for (const other of LANDMARKS) {
+      if (other.kind === 'rock' || EXEMPT_FROM_FLATNESS.has(other.kind) || other.opts?.inWater) continue;
+      if (Math.hypot(other.x - rock.x, other.z - rock.z) > 12) continue;
+      const [dw, dd] = FOOTPRINT[other.kind] ?? [3, 3];
+      const scale = other.scale ?? 1;
+      const w = Number(other.opts?.w ?? dw) * scale * 0.3;
+      const d = Number(other.opts?.d ?? dd) * scale * 0.3;
+      const cos = Math.cos(other.rot);
+      const sin = Math.sin(other.rot);
+      const samples = [[0, 0], [-w, -d], [w, -d], [-w, d], [w, d]] as const;
+      if (samples.some(([ox, oz]) => insidePlan(shadow, other.x + ox * cos + oz * sin, other.z - ox * sin + oz * cos))) {
+        rockInside.push(`${other.id} in ${rock.id}`);
+      }
+    }
+  }
+  check('nothing stands inside a boulder', rockInside.length === 0, rockInside.slice(0, 6));
+
   // --- Nothing floating sits under the sea ---------------------------------------------
   //
   // The ocean is not a plane at y = 0. It swings through ±WAVE_AMPLITUDE as the crests pass,
@@ -442,6 +507,43 @@ console.log('\nCharacters');
     }
   }
   check(`all ${built} appearance combinations build at a plausible height`, bad === 0, { bad });
+}
+
+// Feet on the ground, in every pose, at every point in its cycle — the lowest point of the
+// posed figure, which is a sole in all of them. The rig used to walk with both shoes 11 cm
+// in the air at the top of each stride (25 at a run), and sat with them 12 cm underground;
+// nothing looked, because the figure's height was the only thing measured. A run is allowed
+// its flight; nothing else leaves the ground, and nothing sinks into it.
+{
+  const EMOTES = new Set([AnimState.Clap, AnimState.Wave, AnimState.Bow]);
+  const poses: Array<[string, AnimState, number, number]> = [
+    ['idle', AnimState.Idle, 0, 0.035],
+    ['walk', AnimState.Walk, 0, 0.035],
+    ['run', AnimState.Run, 0, 0.1],
+    ['clap', AnimState.Clap, 0, 0.035],
+    ['wave', AnimState.Wave, 0, 0.035],
+    ['bow', AnimState.Bow, 0, 0.035],
+    ['fish', AnimState.Fish, 0, 0.035],
+    ['cheer', AnimState.Cheer, 0, 0.035],
+    ['sit on the ground', AnimState.Sit, 0, 0.035],
+    ['sit on a bench', AnimState.Sit, BENCH_SEAT_HEIGHT, 0.035],
+  ];
+  const off: string[] = [];
+  for (const [name, state, seat, lift] of poses) {
+    for (let k = 0; k < 8; k++) {
+      const c = new Character({ outfit: 0, skin: 0, accessory: 0 });
+      if (EMOTES.has(state)) c.playEmote(state, Infinity);
+      else c.setAnim(state);
+      c.setSeatHeight(seat);
+      c.update(1 / 9);
+      c.setPhase((k / 8) * Math.PI * 2);
+      c.update(0);
+      const lowest = new THREE.Box3().setFromObject(c.root).min.y;
+      if (lowest < -0.03 || lowest > lift) off.push(`${name} @${k}/8: ${(lowest * 100).toFixed(1)} cm`);
+      c.dispose();
+    }
+  }
+  check('every pose keeps its feet on the ground', off.length === 0, off.slice(0, 6));
 }
 
 // ---------------------------------------------------------------------------

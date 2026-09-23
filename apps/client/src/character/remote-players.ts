@@ -23,7 +23,8 @@
  */
 
 import * as THREE from 'three';
-import { AnimState, PROTOCOL, type PlayerId, type PlayerView, type Vec3 } from '@nagisa/shared';
+import { AnimState, MOVE_SPEED, PROTOCOL, type PlayerId, type PlayerView, type Vec3 } from '@nagisa/shared';
+import { benchSeat } from '../world/props/furniture.js';
 import { Character } from './character.js';
 
 /** One networked sample. */
@@ -55,6 +56,9 @@ class RemotePlayer {
 
   /** True while the server says this player's session is disconnected but recoverable. */
   away = false;
+
+  /** Where the seat under this player was last looked up. See {@link interpolate}. */
+  private seatedAt = { x: NaN, z: NaN };
 
   constructor(view: PlayerView) {
     this.view = view;
@@ -140,15 +144,27 @@ class RemotePlayer {
     this.character.root.rotation.y = target.yaw;
 
     // Trust the networked state for anything that is not locomotion (sitting, bowing),
-    // and derive locomotion from observed speed so legs never skate.
+    // and derive locomotion from observed speed so legs never skate. The walk/run line is the
+    // local player's own (see `LocalPlayer.updateAnimState`): it was 4.2 m/s, the walking pace
+    // before walking became 9, and every remote islander out for a walk was drawn running.
     if (
       target.anim === AnimState.Idle ||
       target.anim === AnimState.Walk ||
       target.anim === AnimState.Run
     ) {
-      this.character.setAnim(speed < 0.4 ? AnimState.Idle : speed < 4.2 ? AnimState.Walk : AnimState.Run);
+      this.character.setAnim(speed < 0.4 ? AnimState.Idle : speed < MOVE_SPEED.walk * 1.15 ? AnimState.Walk : AnimState.Run);
     } else {
       this.character.setAnim(target.anim);
+    }
+
+    // What they are sitting on. Someone who sat at a bench walked onto it before sitting (see
+    // `LocalPlayer.setSeated`), so a sitter standing on a bench's seat is sitting on the
+    // bench, and anyone else is on the ground. Looked up when they settle, not every frame.
+    if (target.anim === AnimState.Sit && (target.x !== this.seatedAt.x || target.z !== this.seatedAt.z)) {
+      this.seatedAt.x = target.x;
+      this.seatedAt.z = target.z;
+      const seat = benchSeat(target.x, target.z, 0.3);
+      this.character.setSeatHeight(seat ? seat.y - target.y : 0);
     }
   }
 }

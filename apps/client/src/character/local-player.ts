@@ -45,6 +45,7 @@ import {
 } from '@nagisa/shared';
 import type { CameraRig } from '../engine/camera-rig.js';
 import type { Input } from '../input/input.js';
+import { benchSeat, type BenchSeat } from '../world/props/furniture.js';
 import { Character, type CharacterAppearance } from './character.js';
 
 /**
@@ -94,6 +95,21 @@ const GROUND_EPSILON = 0.08;
 /** How fast the character turns to face its direction of travel, radians per second. */
 const TURN_RATE = 11;
 
+/**
+ * How far from a bench a player may be when they sit and still be walked onto it. A `sit`
+ * prompt reaches 3 m from the bench it names; a little over that, so its whole reach counts.
+ */
+const SEAT_REACH = 3.5;
+
+/** Close enough to the seat to sit down on it, metres. */
+const SEAT_ARRIVAL = 0.04;
+
+/** How far out in front of a bench standing up steps, metres: clear of the seat's edge. */
+const SEAT_STEP_OFF = 0.42;
+
+/** How long walking onto or off a seat may take before it gives up, seconds. */
+const SEAT_WALK_TIMEOUT = 2;
+
 export class LocalPlayer {
   readonly character: Character;
 
@@ -108,6 +124,13 @@ export class LocalPlayer {
 
   /** Set while the player is attached to a seat; suppresses movement input. */
   private seated = false;
+  /** The bench being sat on, if it is one. See {@link setSeated}. */
+  private seat: BenchSeat | null = null;
+  /**
+   * A few steps taken for the player: onto the seat after sitting, or off the front of the
+   * bench after standing. Cleared on arrival, by the timeout, or — standing — by any input.
+   */
+  private seatWalk: { x: number; z: number; elapsed: number } | null = null;
   /** Holding a rod out while the line is in the water. See `setFishing`. */
   private fishing = false;
 
@@ -140,6 +163,7 @@ export class LocalPlayer {
     this.yaw = yaw;
     this.velocity.set(0, 0, 0);
     this.grounded = true;
+    this.leaveSeat();
     this.finishWalk('cancelled');
     this.syncTransform();
   }
@@ -148,7 +172,21 @@ export class LocalPlayer {
   applyCorrection(x: number, y: number, z: number): void {
     this.position.set(x, y, z);
     this.velocity.set(0, 0, 0);
+    // A correction that leaves a seated player on their seat leaves them seated on it.
+    if (!this.seat || Math.hypot(this.seat.x - x, this.seat.z - z) > 0.2) this.leaveSeat();
     this.syncTransform();
+  }
+
+  /**
+   * Forget the bench and any steps toward or away from it. A player moved by anything but
+   * their own feet — a room switch lands them at another island's harbour straight after
+   * standing them up — must not walk back toward a bench that is no longer where they are,
+   * and a figure moved off a bench while seated sits on the ground rather than in mid-air.
+   */
+  private leaveSeat(): void {
+    this.seat = null;
+    this.seatWalk = null;
+    this.character.setSeatHeight(0);
   }
 
   /** Current horizontal speed, m/s. Used to pick the animation state. */
@@ -178,11 +216,39 @@ export class LocalPlayer {
     this.syncTransform();
   }
 
-  /** Sit down / stand up. Seated players do not accept movement input. */
+  /**
+   * Sit down / stand up. Seated players do not accept movement input.
+   *
+   * Sitting at a bench walks the player onto it first. The prompt reaches three metres, and
+   * a figure that sat down where it stood either sat on nothing in front of the bench or —
+   * benches are not solid — sat inside it, with the plank through its middle. The walk is
+   * ordinary movement, so the server sees a player taking a few steps inside the seat's
+   * reach, and everyone else sees them walk over, turn round and sit. Anywhere without a
+   * bench (the teahouse's mats) is the ground, and they sit where they are.
+   *
+   * Standing up from a bench steps forward off it, for the same reason in reverse.
+   */
   setSeated(seated: boolean): void {
     this.seated = seated;
-    if (seated) this.velocity.set(0, 0, 0);
-    this.character.setAnim(seated ? AnimState.Sit : AnimState.Idle);
+    if (seated) {
+      this.velocity.set(0, 0, 0);
+      this.finishWalk('cancelled');
+      this.seat = benchSeat(this.position.x, this.position.z, SEAT_REACH);
+      this.seatWalk = this.seat ? { x: this.seat.x, z: this.seat.z, elapsed: 0 } : null;
+      this.character.setSeatHeight(0);
+    } else {
+      const seat = this.seat;
+      this.seat = null;
+      this.seatWalk = null;
+      if (seat && Math.hypot(seat.x - this.position.x, seat.z - this.position.z) < 0.2) {
+        this.seatWalk = {
+          x: seat.x + Math.sin(seat.yaw) * SEAT_STEP_OFF,
+          z: seat.z + Math.cos(seat.yaw) * SEAT_STEP_OFF,
+          elapsed: 0,
+        };
+      }
+    }
+    this.character.setAnim(seated && !this.seatWalk ? AnimState.Sit : AnimState.Idle);
   }
 
   /**
@@ -285,11 +351,17 @@ export class LocalPlayer {
    */
   fixedUpdate(dt: number): void {
     this.tickWalkWatchdog(dt);
+    this.tickSeatWalk(dt);
     this.resolveIntent(this.tmpDir);
 
     const depth = -Math.min(0, heightAt(this.position.x, this.position.z));
     const wading = depth > 0.15;
-    const maxSpeed = wading ? WADE_SPEED : this.input.run && !this.seated ? RUN_SPEED : WALK_SPEED;
+    let maxSpeed: number = wading ? WADE_SPEED : this.input.run && !this.seated ? RUN_SPEED : WALK_SPEED;
+    // Ease into the last few centimetres of a step onto a seat rather than overshooting it:
+    // at walking pace one physics step is 15 cm.
+    if (this.seatWalk) {
+      maxSpeed = Math.min(maxSpeed, Math.hypot(this.seatWalk.x - this.position.x, this.seatWalk.z - this.position.z) * 8 + 0.2);
+    }
 
     // Horizontal: accelerate toward the intended velocity, then damp.
     if (this.tmpDir.lengthSq() > 0.0001) {
@@ -396,6 +468,8 @@ export class LocalPlayer {
     }
 
     this.updateFacing(dt);
+    // On the seat: turn round to face out from the bench, the way one sits down.
+    if (this.seated && this.seat && !this.seatWalk) this.turnToward(this.seat.yaw, dt);
     this.updateAnimState(wading);
     this.syncTransform();
   }
@@ -417,6 +491,19 @@ export class LocalPlayer {
    */
   private resolveIntent(out: THREE.Vector3): THREE.Vector3 {
     out.set(0, 0, 0);
+    if (this.seatWalk) {
+      // Any input takes over from stepping off a bench; nothing interrupts sitting down on
+      // one, which is what the player just asked for.
+      const steering = Math.abs(this.input.move.x) > 0.05 || Math.abs(this.input.move.y) > 0.05;
+      if (!this.seated && steering) {
+        this.seatWalk = null;
+      } else {
+        const dx = this.seatWalk.x - this.position.x;
+        const dz = this.seatWalk.z - this.position.z;
+        const dist = Math.hypot(dx, dz) || 1;
+        return out.set(dx / dist, 0, dz / dist);
+      }
+    }
     if (this.seated) return out;
 
     // A scripted walk overrides manual input, but any manual input cancels it.
@@ -483,7 +570,11 @@ export class LocalPlayer {
   private updateFacing(dt: number): void {
     const speed = this.speed;
     if (speed < 0.25) return;
-    const desired = Math.atan2(this.velocity.x, this.velocity.z);
+    this.turnToward(Math.atan2(this.velocity.x, this.velocity.z), dt);
+  }
+
+  /** Turn part of the way toward a bearing. */
+  private turnToward(desired: number, dt: number): void {
     // Shortest-arc interpolation; without the wrap the character spins the long way
     // round every time it crosses ±π.
     let delta = desired - this.yaw;
@@ -492,9 +583,31 @@ export class LocalPlayer {
     this.yaw += delta * Math.min(1, TURN_RATE * dt);
   }
 
+  /**
+   * Finish a step onto or off a seat: arrived, or given up on. Arriving on a bench sits the
+   * figure at the bench's height; giving up on one sits it on the ground where it got to,
+   * which is at least never inside anything.
+   */
+  private tickSeatWalk(dt: number): void {
+    const walk = this.seatWalk;
+    if (!walk) return;
+    walk.elapsed += dt;
+    const arrived = Math.hypot(walk.x - this.position.x, walk.z - this.position.z) < SEAT_ARRIVAL;
+    if (!arrived && walk.elapsed < SEAT_WALK_TIMEOUT) return;
+    this.seatWalk = null;
+    this.velocity.x = 0;
+    this.velocity.z = 0;
+    if (!this.seated) return;
+    if (arrived && this.seat) {
+      this.character.setSeatHeight(this.seat.y - this.position.y);
+    } else {
+      this.seat = null;
+    }
+  }
+
   /** Pick the animation state from the physics state. */
   private updateAnimState(wading: boolean): void {
-    if (this.seated) {
+    if (this.seated && !this.seatWalk) {
       this.character.setAnim(AnimState.Sit);
       return;
     }

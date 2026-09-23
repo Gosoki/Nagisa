@@ -33,14 +33,20 @@ export function stampStand(_opts?: Opts): THREE.Group {
   const light = wood('light');
   const parts: THREE.Mesh[] = [];
 
-  // Stone footing and post.
+  /** Height of the box's floor. */
+  const y0 = 1.02;
+
+  // Stone footing, and a post whose cap is the bracket under the box's floor — `cappedPost`
+  // stands its cap 0.45 of the post's thickness above the post. It was a metre tall, which ran
+  // it up through the floor and left the cap standing inside the box between the stamp and
+  // the ink pad, through the stamp's handle.
   parts.push(box(0.7, 0.16, 0.7, stone('dark'), 0, 0.08, 0));
-  for (const mesh of cappedPost(1.0, 0.16, timber)) {
+  const postTop = y0 - 0.03 - 0.16 * 0.45;
+  for (const mesh of cappedPost(postTop - 0.16, 0.16, timber)) {
     mesh.position.y += 0.16;
     parts.push(mesh);
   }
   // The box: back, sides and floor, open to the front.
-  const y0 = 1.02;
   parts.push(box(0.9, 0.06, 0.6, light, 0, y0, 0));
   parts.push(box(0.9, 0.42, 0.05, light, 0, y0 + 0.24, 0.28));
   parts.push(box(0.05, 0.42, 0.6, light, -0.43, y0 + 0.24, 0));
@@ -101,10 +107,14 @@ export function rodRack(_opts?: Opts): THREE.Group {
 
   for (const x of [-0.7, 0.7]) parts.push(box(0.09, 0.9, 0.09, timber, x, 0.45, 0));
   parts.push(box(1.6, 0.07, 0.07, timber, 0, 0.84, 0));
-  // Rods: long thin shafts leaning back against the rail.
+  // Rods: long thin shafts, butts on the ground behind the rail and leaning on its top edge.
+  // They used to lean at the same angle from a butt 0.7 m back, which crossed the rail 0.7 m
+  // above it: two rods standing up on their own, resting on nothing.
   const rod = wood('beam');
+  const lean = 0.42;
+  const butt = 0.02 + 0.89 * Math.tan(lean);
   for (const x of [-0.35, 0.3]) {
-    const shaft = cyl(0.012, 0.022, 2.6, 5, rod, x, 1.2, 0.16, -0.42, 0, 0);
+    const shaft = cyl(0.012, 0.022, 2.6, 5, rod, x, 1.3 * Math.cos(lean), butt - 1.3 * Math.sin(lean), -lean, 0, 0);
     parts.push(shaft);
   }
   // A bucket at the foot.

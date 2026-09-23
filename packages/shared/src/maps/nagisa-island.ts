@@ -812,7 +812,9 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'ov-well', kind: 'well', x: 60.9, z: -60.9, rot: 2.166 },
   { id: 'ov-lantern-1', kind: 'post-lantern', x: 64.3, z: -26.9, rot: -1.118 },
   { id: 'ov-lantern-2', kind: 'post-lantern', x: 68.4, z: -37.6, rot: 2.024 },
-  { id: 'ov-bench-1', kind: 'bench', x: 57.9, z: -33.5, rot: -1.118 },
+  // 0.35 m along its length from where it was, which ran its end 0.14 m into the side wall of
+  // the house beside it — `placement-audit` now checks a seat's ends, not only its middle.
+  { id: 'ov-bench-1', kind: 'bench', x: 57.75, z: -33.8, rot: -1.118 },
 
   // ═══ North Harbour (0, -74) — the working fishery ═══════════════════════
   // Both funaya now face the bay, which is the only direction a boat house can face: the
@@ -874,7 +876,10 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   // Off the road. It stood 4.3 m from the coast lane's centreline, which is 0.9 m inside a
   // 3.4 m carriageway — a boulder you walk into on a road, reported twice from two steps
   // apart. Two and a half metres to the side clears the shoulder as well as the metalling.
-  { id: 'lh-rock-2', kind: 'rock', x: -47.5, z: -50.2, rot: 2.4, scale: 1.2 },
+  // And a metre and a half on from there, because that step put it on top of the gate lamp
+  // `lh-gatelamp-1b`, which stood inside the boulder. Now 0.6 m clear of the lamp's base and
+  // 1.2 m off the carriageway; `world-smoke` checks the one against the built rock.
+  { id: 'lh-rock-2', kind: 'rock', x: -48.3, z: -48.8, rot: 2.4, scale: 1.2 },
 
   // ═══ Shrine (-64, 37) — the western headland ════════════════════════════
   // The whole composition is one line: the **sandō**, which is `shrine-ascent`'s first leg

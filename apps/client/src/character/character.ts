@@ -60,7 +60,7 @@
 
 import * as THREE from 'three';
 import { AnimState } from '@nagisa/shared';
-import { inkDepthMaterial } from '../engine/ink/ink-material.js';
+import { createInkMaterial, inkDepthMaterial } from '../engine/ink/ink-material.js';
 import { hair as hairMaterial, outfit as outfitMaterial, shoji, skin as skinMaterial, surface, wood } from '../world/materials.js';
 import { paperLantern } from '../world/props/kit.js';
 import { mergeByMaterial } from '../world/props/geometry.js';
@@ -109,8 +109,6 @@ interface AnimProfile {
   lean: number;
   /** Constant shoulder elevation — raised for waving and clapping. */
   armRaise: number;
-  /** Hip flexion held constant, for sitting. */
-  hipFold: number;
 }
 
 /**
@@ -118,26 +116,67 @@ interface AnimProfile {
  *
  * These numbers are the entire animation system. Tuning the world's *feel* — whether
  * people bustle or amble — happens here and nowhere else.
+ *
+ * `bob` is the lift *on top of* a planted stride (see {@link legReach}): the dip of the body
+ * as the legs open is the walk's own rise and fall, so a walk needs almost none and a run
+ * gets its flight from it. Sitting is not a profile at all — it depends on what is under the
+ * figure, and is posed by `Character.applySeat`.
  */
 const PROFILES: Record<AnimState, AnimProfile> = {
-  [AnimState.Idle]: { armSwing: 0.04, legSwing: 0.0, elbowBend: 0.18, kneeBend: 0.05, rate: 1.1, bob: 0.011, lean: 0, armRaise: 0, hipFold: 0 },
-  [AnimState.Walk]: { armSwing: 0.5, legSwing: 0.68, elbowBend: 0.42, kneeBend: 0.62, rate: 7.0, bob: 0.042, lean: 0.05, armRaise: 0, hipFold: 0 },
-  [AnimState.Run]: { armSwing: 0.9, legSwing: 1.1, elbowBend: 0.95, kneeBend: 1.15, rate: 10.4, bob: 0.082, lean: 0.2, armRaise: 0.12, hipFold: 0 },
-  [AnimState.Jump]: { armSwing: 0.1, legSwing: 0.22, elbowBend: 0.5, kneeBend: 0.8, rate: 0, bob: 0, lean: -0.1, armRaise: 1.5, hipFold: 0 },
-  [AnimState.Fall]: { armSwing: 0.1, legSwing: 0.32, elbowBend: 0.4, kneeBend: 0.5, rate: 0, bob: 0, lean: 0.09, armRaise: 1.1, hipFold: 0 },
-  [AnimState.Sit]: { armSwing: 0.02, legSwing: 0, elbowBend: 0.55, kneeBend: 1.5, rate: 0.8, bob: 0.005, lean: 0.1, armRaise: 0, hipFold: 1.45 },
-  [AnimState.Clap]: { armSwing: 0.0, legSwing: 0, elbowBend: 1.25, kneeBend: 0.05, rate: 9.0, bob: 0.009, lean: 0.03, armRaise: 1.05, hipFold: 0 },
-  [AnimState.Wave]: { armSwing: 0.0, legSwing: 0, elbowBend: 0.9, kneeBend: 0.05, rate: 6.0, bob: 0.011, lean: 0, armRaise: 2.2, hipFold: 0 },
-  [AnimState.Bow]: { armSwing: 0.0, legSwing: 0, elbowBend: 0.15, kneeBend: 0.05, rate: 0, bob: 0, lean: 0.8, armRaise: 0, hipFold: 0 },
-  // Both forearms level in front of the chest, holding the rod out over the water; a slight
-  // forward lean toward the float. The arms are placed by `applyPoseOverrides`, which reads
-  // `armRaise` and `elbowBend` from here so the pose blends in rather than snapping. Slow
-  // breathing and nothing else: a person watching a float stands very still.
-  [AnimState.Fish]: { armSwing: 0.03, legSwing: 0, elbowBend: 0.55, kneeBend: 0.1, rate: 0.8, bob: 0.005, lean: 0.1, armRaise: 0.95, hipFold: 0 },
+  [AnimState.Idle]: { armSwing: 0.04, legSwing: 0.0, elbowBend: 0.18, kneeBend: 0.05, rate: 1.1, bob: 0.011, lean: 0, armRaise: 0 },
+  [AnimState.Walk]: { armSwing: 0.5, legSwing: 0.62, elbowBend: 0.42, kneeBend: 0.62, rate: 7.0, bob: 0.012, lean: 0.05, armRaise: 0 },
+  [AnimState.Run]: { armSwing: 0.9, legSwing: 0.95, elbowBend: 0.95, kneeBend: 1.15, rate: 10.4, bob: 0.07, lean: 0.2, armRaise: 0.12 },
+  [AnimState.Jump]: { armSwing: 0.1, legSwing: 0.22, elbowBend: 0.5, kneeBend: 0.8, rate: 0, bob: 0, lean: -0.1, armRaise: 1.5 },
+  [AnimState.Fall]: { armSwing: 0.1, legSwing: 0.32, elbowBend: 0.4, kneeBend: 0.5, rate: 0, bob: 0, lean: 0.09, armRaise: 1.1 },
+  // Legs still: `applySeat` places them, and a knee bend here used to fold one shin up
+  // through its own thigh and the bench every few seconds.
+  [AnimState.Sit]: { armSwing: 0.02, legSwing: 0, elbowBend: 0.55, kneeBend: 0, rate: 0.8, bob: 0.005, lean: 0.1, armRaise: 0 },
+  [AnimState.Clap]: { armSwing: 0.0, legSwing: 0, elbowBend: 1.25, kneeBend: 0.05, rate: 9.0, bob: 0.009, lean: 0.03, armRaise: 1.05 },
+  [AnimState.Wave]: { armSwing: 0.0, legSwing: 0, elbowBend: 0.9, kneeBend: 0.05, rate: 6.0, bob: 0.011, lean: 0, armRaise: 2.2 },
+  [AnimState.Bow]: { armSwing: 0.0, legSwing: 0, elbowBend: 0.15, kneeBend: 0.05, rate: 0, bob: 0, lean: 0.8, armRaise: 0 },
+  // The rod held out over the water in the right hand, forearm level; a slight forward lean
+  // toward the float. The arms are placed by `applyPoseOverrides`, which reads `armRaise` and
+  // `elbowBend` from here so the pose blends in rather than snapping. Slow breathing and
+  // nothing else: a person watching a float stands very still.
+  [AnimState.Fish]: { armSwing: 0.03, legSwing: 0, elbowBend: 0.55, kneeBend: 0.1, rate: 0.8, bob: 0.005, lean: 0.1, armRaise: 0.95 },
   // Both arms up in a V and a small bounce on the knees. The rate is half what a jump for
   // joy would be: this is someone pleased with a fish, not a goal celebration.
-  [AnimState.Cheer]: { armSwing: 0.1, legSwing: 0, elbowBend: 0.3, kneeBend: 0.2, rate: 5.5, bob: 0.03, lean: -0.08, armRaise: 2.75, hipFold: 0 },
+  [AnimState.Cheer]: { armSwing: 0.1, legSwing: 0, elbowBend: 0.3, kneeBend: 0.2, rate: 5.5, bob: 0.03, lean: -0.08, armRaise: 2.75 },
 };
+
+/**
+ * Leg geometry, metres: the thigh and shin bones, and the shoe hanging off the shin. The rig
+ * below is built from these and {@link legReach} measures it, and the two have to agree.
+ */
+const THIGH = 0.34;
+const SHIN = 0.34;
+const SHOE = { height: 0.075, length: 0.2, forward: 0.045 };
+
+/**
+ * How far below its hip joint a leg reaches at these joint angles — to the lowest corner of
+ * the shoe, because a shoe tipped by the shin puts its toe or its heel down first.
+ */
+function legReach(hip: number, knee: number): number {
+  const shin = hip + knee;
+  // Rotating about +x swings the foot backward for a positive angle, which drops the toe.
+  const end = Math.sin(shin) > 0 ? SHOE.forward + SHOE.length / 2 : SHOE.forward - SHOE.length / 2;
+  return THIGH * Math.cos(hip) + (SHIN + SHOE.height / 2) * Math.cos(shin) + end * Math.sin(shin);
+}
+
+/** A straight leg's reach. The resting hip height is set against it. */
+const REST_REACH = legReach(0, 0);
+
+/** States in which the feet are off the ground by design, and are not planted. */
+const AIRBORNE: ReadonlySet<AnimState> = new Set([AnimState.Jump, AnimState.Fall]);
+
+/**
+ * From a seat's surface up to the hips: the depth of the hips block below its origin, so the
+ * figure sits *on* the seat rather than hovering over it or sinking into it.
+ */
+const SEAT_TO_HIPS = 0.13;
+
+/** The hip joints hang this far below the hips. */
+const HIP_DROP = 0.085;
 
 /** States whose pose override takes over the left arm, so a carried lantern goes with it. */
 const TWO_HANDED: ReadonlySet<AnimState> = new Set([AnimState.Clap, AnimState.Bow, AnimState.Fish, AnimState.Cheer]);
@@ -221,6 +260,35 @@ function fadedVariant(base: THREE.Material): THREE.Material {
   return variant;
 }
 
+/**
+ * A faded figure's depth, drawn before any of its colour.
+ *
+ * Translucent surfaces are sorted back to front *per mesh* and each blends over whatever is
+ * already there, so a faded figure showed everything inside it: the upper arms running into
+ * the chest, the neck inside the collar, the back of the head through the face, the eyes
+ * through the hair. A ghost should be the figure's front surface, faded — so every faded
+ * mesh carries a depth-only twin, all of them drawn first (`GHOST_DEPTH_ORDER`), and the
+ * faded colour after them passes the depth test only where it is the nearest surface.
+ *
+ * After the opaque world rather than with it, as a translucent pass that writes no colour:
+ * drawn with the opaque meshes it would hide the scenery behind the ghost, and there would
+ * be nothing there to see through to.
+ */
+let ghostDepth: THREE.ShaderMaterial | null = null;
+
+function ghostDepthMaterial(): THREE.ShaderMaterial {
+  if (!ghostDepth) {
+    ghostDepth = createInkMaterial({ transparent: true });
+    ghostDepth.colorWrite = false;
+    ghostDepth.name = 'ghost-depth';
+  }
+  return ghostDepth;
+}
+
+/** Translucent draw order: after the sea (−1), before every effect (3 and up). */
+const GHOST_DEPTH_ORDER = 1;
+const GHOST_FILL_ORDER = 2;
+
 /** Scratch for the lantern's plumb line. Module-level: a figure's update never allocates. */
 const POLE_WORLD = new THREE.Quaternion();
 const ROOT_WORLD = new THREE.Quaternion();
@@ -239,27 +307,56 @@ const X_AXIS = new THREE.Vector3(1, 0, 0);
  * from cubes gets a heavy line drawn around every single edge and reads as a pile of
  * blocks. Rounding the corners softens those into the one or two lines a person would
  * actually draw, while keeping the flat faces that make the shading read as flat.
+ *
+ * ### Normals from the rounding, not from the triangles
+ *
+ * A box's six faces share no vertices, so normals computed from its triangles disagree
+ * wherever two faces meet: the "rounded" corner was really two creases, the shading
+ * stepped across it, and the contour pass drew both. The normal here is the direction
+ * the rounding pushed the vertex out along — the face's own normal on the flat, turning
+ * through the bevel — which is the same for the two copies of every edge vertex, so a
+ * corner shades as the curve it is meant to be and draws as one line at most.
+ *
+ * ### Where the flat ends
+ *
+ * Parts big enough to be seen as masses (`bevel`) get three rows per face, and the two
+ * inner rows are moved out to exactly where the rounding begins: each face is then a flat
+ * panel with one row of bevel round it. On two uniform rows there is no vertex where the
+ * flat ends, and the face shades as a dome. The small parts — brows, ears, cuffs — keep
+ * two rows, and are too small for the difference to show.
  */
-function roundedBox(w: number, h: number, d: number, radius: number, material: THREE.Material): THREE.Mesh {
-  const geo = new THREE.BoxGeometry(w, h, d, 2, 2, 2);
+function roundedBox(w: number, h: number, d: number, radius: number, material: THREE.Material, bevel = Math.min(w, h, d) >= 0.06): THREE.Mesh {
+  const rows = bevel ? 3 : 2;
+  const geo = new THREE.BoxGeometry(w, h, d, rows, rows, rows);
   const pos = geo.attributes.position as THREE.BufferAttribute;
+  const nor = geo.attributes.normal as THREE.BufferAttribute;
   const v = new THREE.Vector3();
+  const clamped = new THREE.Vector3();
+  const offset = new THREE.Vector3();
   const half = new THREE.Vector3(w / 2, h / 2, d / 2);
   const inner = new THREE.Vector3(Math.max(0.001, half.x - radius), Math.max(0.001, half.y - radius), Math.max(0.001, half.z - radius));
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i);
+    if (bevel) {
+      // The inner rows sit at a third of the way in; move them to the edge of the flat.
+      for (const axis of ['x', 'y', 'z'] as const) {
+        if (Math.abs(v[axis]) < half[axis] * 0.99) v[axis] = Math.sign(v[axis]) * inner[axis];
+      }
+    }
     // Clamp to the inner box, then push back out by `radius` along the direction to the
     // original vertex — the standard rounded-box construction.
-    const clamped = new THREE.Vector3(
+    clamped.set(
       THREE.MathUtils.clamp(v.x, -inner.x, inner.x),
       THREE.MathUtils.clamp(v.y, -inner.y, inner.y),
       THREE.MathUtils.clamp(v.z, -inner.z, inner.z),
     );
-    const offset = v.clone().sub(clamped);
-    if (offset.lengthSq() > 1e-9) offset.normalize().multiplyScalar(radius);
-    pos.setXYZ(i, clamped.x + offset.x, clamped.y + offset.y, clamped.z + offset.z);
+    offset.subVectors(v, clamped);
+    // Every surface vertex lies outside the inner box along its own face's axis at least,
+    // so the offset is never zero.
+    offset.normalize();
+    pos.setXYZ(i, clamped.x + offset.x * radius, clamped.y + offset.y * radius, clamped.z + offset.z * radius);
+    nor.setXYZ(i, offset.x, offset.y, offset.z);
   }
-  geo.computeVertexNormals();
   const mesh = new THREE.Mesh(geo, material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -347,6 +444,14 @@ export class Character {
   /** Resting hip height, metres. The bob rides on top of this. */
   private readonly hipHeight = 0.79;
 
+  /**
+   * What the figure sits on while seated, metres above its feet: 0 for the ground, a bench's
+   * seat height on a bench. Set by whoever owns the figure's position — see `benchSeat`.
+   */
+  private seatHeight = 0;
+  /** 0 standing, 1 seated, blended like the profiles so sitting down is a movement. */
+  private sitAmount = 0;
+
   /** Drawn translucent — see {@link setFaded}. */
   private faded = false;
 
@@ -380,7 +485,10 @@ export class Character {
     // — Hips —————————————————————————————————————————————————
     this.hips = joint(0, this.hipHeight, 0);
     this.root.add(this.hips);
-    this.hips.add(roundedBox(0.35, 0.21, 0.25, 0.07, trousers));
+    // Deeper below the hip joints than above them: it is what a seated figure rests on, and
+    // at 2 cm under the joints the thighs, not the hips, touched the seat — so the figure
+    // either hovered over a bench with a gap under it or had its thighs sunk into the planks.
+    this.hips.add(at(roundedBox(0.35, 0.105 + SEAT_TO_HIPS, 0.25, 0.07, trousers), 0, (0.105 - SEAT_TO_HIPS) / 2, 0));
 
     // — Torso ————————————————————————————————————————————————
     // Two masses: a chest and a slightly narrower waist, so the figure has a shape rather
@@ -445,7 +553,7 @@ export class Character {
     this.detail.add(mouth);
 
     if (appearance.accessory % ACCESSORY_COUNT !== 0) {
-      this.detail.add(buildAccessory(appearance.accessory % ACCESSORY_COUNT, outer, locks));
+      this.detail.add(buildAccessory(appearance.accessory % ACCESSORY_COUNT, outer));
     }
 
     // — Arms —————————————————————————————————————————————————
@@ -475,15 +583,15 @@ export class Character {
 
     // — Legs —————————————————————————————————————————————————
     const buildLeg = (sx: number): { hip: THREE.Group; knee: THREE.Group } => {
-      const hip = joint(sx * 0.095, -0.085, 0);
+      const hip = joint(sx * 0.095, -HIP_DROP, 0);
       this.hips.add(hip);
-      hip.add(limbSegment(0.34, 0.078, 0.062, trousers));
+      hip.add(limbSegment(THIGH, 0.078, 0.062, trousers));
 
-      const knee = joint(0, -0.34, 0);
+      const knee = joint(0, -THIGH, 0);
       hip.add(knee);
-      knee.add(limbSegment(0.32, 0.062, 0.05, trousers));
+      knee.add(limbSegment(SHIN - 0.02, 0.062, 0.05, trousers));
       // Foot, projecting forward from the ankle.
-      knee.add(at(roundedBox(0.1, 0.075, 0.2, 0.032, shoe), 0, -0.34, 0.045));
+      knee.add(at(roundedBox(0.1, SHOE.height, SHOE.length, 0.032, shoe), 0, -SHIN, SHOE.forward));
       return { hip, knee };
     };
     const legLeft = buildLeg(-1);
@@ -524,6 +632,14 @@ export class Character {
   }
 
   /**
+   * Move the cycle to a phase, radians. For the render probe, which reviews poses as stills
+   * and has to photograph the same stride every time.
+   */
+  setPhase(phase: number): void {
+    this.phase = phase;
+  }
+
+  /**
    * Draw this figure translucent (a disconnected player inside their grace window) or
    * solid again.
    *
@@ -539,15 +655,33 @@ export class Character {
     this.applyFade(this.root);
   }
 
-  /** Point every mesh under `object` at the material the current fade calls for. */
+  /**
+   * Point every mesh under `object` at the material the current fade calls for, and show or
+   * hide its depth twin (see {@link ghostDepthMaterial}). The twins are made the first time
+   * a figure fades and kept, sharing the mesh's geometry; nobody who never disconnects pays
+   * for one.
+   */
   private applyFade(object: THREE.Object3D): void {
+    const meshes: THREE.Mesh[] = [];
     object.traverse((obj) => {
-      if (!(obj instanceof THREE.Mesh)) return;
+      if (obj instanceof THREE.Mesh && !obj.userData.ghostDepth) meshes.push(obj);
+    });
+    for (const mesh of meshes) {
       // The original is remembered on the mesh the first time it is swapped; a mesh built
       // while the figure was already faded is caught the same way.
-      const base = (obj.userData.baseMaterial ??= obj.material) as THREE.Material;
-      obj.material = this.faded ? fadedVariant(base) : base;
-    });
+      const base = (mesh.userData.baseMaterial ??= mesh.material) as THREE.Material;
+      mesh.material = this.faded ? fadedVariant(base) : base;
+      mesh.renderOrder = this.faded ? GHOST_FILL_ORDER : 0;
+      let twin = mesh.userData.ghostTwin as THREE.Mesh | undefined;
+      if (this.faded && !twin) {
+        twin = new THREE.Mesh(mesh.geometry, ghostDepthMaterial());
+        twin.userData.ghostDepth = true;
+        twin.renderOrder = GHOST_DEPTH_ORDER;
+        mesh.add(twin);
+        mesh.userData.ghostTwin = twin;
+      }
+      if (twin) twin.visible = this.faded;
+    }
   }
 
   /**
@@ -563,6 +697,14 @@ export class Character {
 
   get heldProp(): 'lantern' | null {
     return this.held;
+  }
+
+  /**
+   * How high above its feet the figure's seat is, metres, for the next time it sits — and
+   * while it sits. 0, the default, is the ground.
+   */
+  setSeatHeight(height: number): void {
+    this.seatHeight = Math.max(0, height);
   }
 
   /**
@@ -696,33 +838,49 @@ export class Character {
     this.blended.bob += (goal.bob - this.blended.bob) * k;
     this.blended.lean += (goal.lean - this.blended.lean) * k;
     this.blended.armRaise += (goal.armRaise - this.blended.armRaise) * k;
-    this.blended.hipFold += (goal.hipFold - this.blended.hipFold) * k;
+    // On the *state*, not the goal profile: waving from a bench is waving while seated, and
+    // an emote that took the legs with it stood the figure up inside the bench for two
+    // seconds and sat it back down.
+    this.sitAmount += ((this.state === AnimState.Sit ? 1 : 0) - this.sitAmount) * k;
 
     this.phase += dt * this.blended.rate;
 
     const swing = Math.sin(this.phase);
     const counter = -swing;
 
-    // Arms and legs are in opposition — the diagonal gait every biped uses.
-    this.shoulderL.rotation.x = swing * this.blended.armSwing - this.blended.armRaise;
-    this.shoulderR.rotation.x = counter * this.blended.armSwing - this.blended.armRaise;
-    this.hipL.rotation.x = counter * this.blended.legSwing - this.blended.hipFold;
-    this.hipR.rotation.x = swing * this.blended.legSwing - this.blended.hipFold;
+    // Arms and legs are in opposition — the diagonal gait every biped uses. The arms hang
+    // from the *world's* vertical rather than the torso's, less the lean: a bow used to swing
+    // them back behind the body with it, like a ski jumper's.
+    this.shoulderL.rotation.x = swing * this.blended.armSwing - this.blended.armRaise - this.blended.lean;
+    this.shoulderR.rotation.x = counter * this.blended.armSwing - this.blended.armRaise - this.blended.lean;
+    this.hipL.rotation.x = counter * this.blended.legSwing;
+    this.hipR.rotation.x = swing * this.blended.legSwing;
 
     // Elbows and knees bend on the *return* half of each stride only, and never the wrong
     // way. `max(0, …)` is doing real work here: an elbow that hyperextends is the single
     // most obvious tell that a rig is being driven by a raw sine.
     this.elbowL.rotation.x = -Math.max(0, counter) * this.blended.elbowBend - this.blended.elbowBend * 0.25;
     this.elbowR.rotation.x = -Math.max(0, swing) * this.blended.elbowBend - this.blended.elbowBend * 0.25;
-    this.kneeL.rotation.x = Math.max(0, swing) * this.blended.kneeBend + this.blended.hipFold;
-    this.kneeR.rotation.x = Math.max(0, counter) * this.blended.kneeBend + this.blended.hipFold;
+    this.kneeL.rotation.x = Math.max(0, swing) * this.blended.kneeBend;
+    this.kneeR.rotation.x = Math.max(0, counter) * this.blended.kneeBend;
 
     const pose = this.effectiveState;
     this.applyPoseOverrides(pose);
     if (this.held === 'lantern' && !TWO_HANDED.has(pose)) this.applyCarryPose();
 
-    // The body bobs at twice the limb rate: one rise per footfall, two per stride.
-    this.hips.position.y = this.hipHeight - this.blended.hipFold * 0.28 + Math.abs(swing) * this.blended.bob;
+    // Plant the stride: lower the body by however much the longer leg falls short of the
+    // ground. Without it the hips rode at a fixed height while the legs opened beneath them,
+    // and a walking figure floated 11 cm clear of the ground at the top of every step — 25 at
+    // a run. The dip this gives is a walk's own rise and fall, low where the legs are apart
+    // and high where they pass, so the bob on top of it can be small. Not in the air, where
+    // tucked legs are the point.
+    let hipsY = this.hipHeight + Math.abs(swing) * this.blended.bob;
+    if (!AIRBORNE.has(this.state)) {
+      const reach = Math.max(legReach(this.hipL.rotation.x, this.kneeL.rotation.x), legReach(this.hipR.rotation.x, this.kneeR.rotation.x));
+      hipsY -= REST_REACH - reach;
+    }
+    if (this.sitAmount > 0.001) hipsY = this.applySeat(hipsY);
+    this.hips.position.y = hipsY;
     this.torso.rotation.x = this.blended.lean;
     // A slight head counter-rotation keeps the gaze level while the body leans.
     this.head.rotation.x = -this.blended.lean * 0.55;
@@ -731,12 +889,55 @@ export class Character {
   }
 
   /**
+   * The lower body on whatever the figure is sitting on, blended over the standing legs by
+   * how far into sitting down it is. Returns the hips' height.
+   *
+   * Solved rather than posed, because the seat is not always the same height. The hips rest
+   * on the seat; the thighs run level off a chair-height seat and rise toward the knees on
+   * the ground, where there is nowhere for them to go but up; the shins then drop from the
+   * knee to wherever the shoe meets the ground. A seat too high for the shins to reach tips
+   * the thighs down instead, and one higher than the whole leg leaves the feet hanging.
+   *
+   * The old sitting pose was one fixed fold with the hips 0.38 m up whatever was under them:
+   * on the ground that was a figure perched on nothing with its shoes 12 cm into the earth,
+   * and at a bench it was a figure sitting inside the bench.
+   */
+  private applySeat(standingHipsY: number): number {
+    const t = this.sitAmount;
+    const hipsY = this.seatHeight + SEAT_TO_HIPS;
+    const joint = hipsY - HIP_DROP;
+    const shinReach = SHIN + SHOE.height / 2;
+    // Level on a seat at knee height, 10° above level on the ground.
+    let thigh = THREE.MathUtils.lerp(1.75, Math.PI / 2, THREE.MathUtils.clamp((joint - 0.045) / 0.3, 0, 1));
+    let knee = joint - THIGH * Math.cos(thigh);
+    if (knee > shinReach) {
+      thigh = Math.acos(THREE.MathUtils.clamp((joint - shinReach) / THIGH, 0, 1));
+      knee = shinReach;
+    }
+    // How far forward of the knee the shin swings to reach the ground — heel first, since a
+    // shin swung forward tips the shoe back onto it: the reach is L·cos φ + heel·sin φ, which
+    // is R·cos(φ − δ). Solved without the heel, the ground sit put it 4 cm into the ground.
+    const heel = SHOE.length / 2 - SHOE.forward;
+    const reach = Math.hypot(shinReach, heel);
+    const shin = Math.atan2(heel, shinReach) + Math.acos(THREE.MathUtils.clamp(knee / reach, 0, 1));
+    for (const [hip, kneeJoint] of [
+      [this.hipL, this.kneeL],
+      [this.hipR, this.kneeR],
+    ] as const) {
+      hip.rotation.x += (-thigh - hip.rotation.x) * t;
+      kneeJoint.rotation.x += (thigh - shin - kneeJoint.rotation.x) * t;
+    }
+    return standingHipsY + (hipsY - standingHipsY) * t;
+  }
+
+  /**
    * The left arm held forward at the waist, carrying the lantern pole ahead of the body.
    * Applied over locomotion, so the lantern goes up the shrine path held steady rather than
-   * swung like a handbag.
+   * swung like a handbag. Turned a little out from the body: turned in, the forearm ran 2 cm
+   * into the chest.
    */
   private applyCarryPose(): void {
-    this.shoulderL.rotation.set(-0.5, 0, 0.1);
+    this.shoulderL.rotation.set(-0.5, 0, -0.12);
     this.elbowL.rotation.set(-0.95, 0, 0);
   }
 
@@ -761,24 +962,38 @@ export class Character {
    *
    * Waving is one arm only — mirroring it reads as surrender, not greeting. Clapping
    * brings the hands together in front rather than swinging them past each other. Bowing
-   * drops the arms to the sides and holds them there. Fishing holds the rod out with both
-   * hands; cheering puts both arms up.
+   * drops the arms to hang in front of the thighs. Fishing holds the rod out; cheering puts
+   * both arms up; sitting rests the hands at the sides of the lap.
    *
    * Keyed on the *effective* state, not only on emotes: a remote angler is in the `Fish`
    * state rather than playing an emote, and still has to hold the rod like one.
+   *
+   * ### Which way is in
+   *
+   * A shoulder's `rotation.z` is applied before its pitch, so it swings the arm *sideways*
+   * from hanging: positive swings the right arm (+x) out from the body and the left arm in.
+   * Two of these poses had it backwards — the clap splayed the arms outward so the hands
+   * stopped half a metre apart, and the wave rolled the arm inward so the hand swept back
+   * and forth across the face. The angles below were solved for where the hand should be,
+   * with the elbow and forearm kept clear of the chest.
    */
   private applyPoseOverrides(pose: AnimState): void {
     if (pose === AnimState.Fish) {
-      // Right hand on the grip with the forearm level; the left further up the rod and a
-      // little inboard. Driven by the blended profile so the arms come up rather than
-      // snap, and with the breathing on the shoulders only, so the rod tip barely moves.
+      // Right hand on the grip with the forearm level. Driven by the blended profile so the
+      // arm comes up rather than snapping, and with the breathing on the shoulder only, so
+      // the rod tip barely moves.
+      //
+      // One hand, not two. The left used to be raised "further up the rod", but an arm this
+      // length cannot reach a rod held out at the right hip — it ended a hand's width short
+      // in the air — and every pose that could reach laid the forearm across the chest. A
+      // float rod is held in one hand anyway; the other hangs.
       const raise = this.blended.armRaise;
       const bend = this.blended.elbowBend;
       const breath = Math.sin(this.phase) * this.blended.armSwing;
       this.shoulderR.rotation.set(-raise + breath, 0, -0.1);
       this.elbowR.rotation.set(-bend, 0, 0);
-      this.shoulderL.rotation.set(-raise * 0.8 + breath, 0, 0.3);
-      this.elbowL.rotation.set(-bend * 1.9, 0, 0);
+      this.shoulderL.rotation.set(-0.15 - this.blended.lean + breath * 0.5, 0, -0.06);
+      this.elbowL.rotation.set(-0.3, 0, 0);
       return;
     }
 
@@ -796,35 +1011,53 @@ export class Character {
     const emote = this.emoteRemaining > 0 ? this.emoteState : null;
 
     if (emote === AnimState.Wave) {
-      this.shoulderL.rotation.set(0, 0, 0);
-      this.elbowL.rotation.x = -0.2;
-      this.shoulderR.rotation.x = -2.2;
-      this.shoulderR.rotation.z = -0.35;
-      this.elbowR.rotation.x = -0.5;
-      this.elbowR.rotation.z = Math.sin(this.phase) * 0.55;
+      // Upper arm out to the side and forward, forearm up, hand beside the head at its own
+      // height and a hand's width clear of it; the wave is the forearm rocking side to side.
+      this.shoulderL.rotation.set(-this.blended.lean, 0, 0);
+      this.elbowL.rotation.set(-0.2, 0, 0);
+      this.shoulderR.rotation.set(-2.075, 0, 0.675);
+      this.elbowR.rotation.set(-1.15, 0, Math.sin(this.phase) * 0.4);
       return;
     }
 
     if (emote === AnimState.Clap) {
-      const clap = Math.abs(Math.sin(this.phase)) * 0.3;
+      // Between hands a palm apart and hands meeting, a forearm's length out in front of the
+      // chest — as close in as the elbows can come without going into it.
+      const shut = Math.abs(Math.sin(this.phase));
       for (const [shoulder, elbow, sx] of [
         [this.shoulderL, this.elbowL, -1],
         [this.shoulderR, this.elbowR, 1],
       ] as const) {
-        shoulder.rotation.x = -1.05;
-        shoulder.rotation.z = sx * (0.52 - clap);
-        elbow.rotation.x = -1.25;
-        elbow.rotation.z = 0;
+        shoulder.rotation.set(-1.025 - 0.175 * shut, 0, -sx * (0.1 + 0.325 * shut));
+        elbow.rotation.set(-0.95 + 0.55 * shut, 0, 0);
       }
       return;
     }
 
     if (emote === AnimState.Bow) {
+      // Hanging plumb from the leaning shoulders and a little forward, so the hands come down
+      // the front of the thighs the way a bow is made.
       for (const shoulder of [this.shoulderL, this.shoulderR]) {
-        shoulder.rotation.set(0, 0, 0);
+        shoulder.rotation.set(-this.blended.lean * 1.15, 0, 0);
       }
       this.elbowL.rotation.set(-0.1, 0, 0);
       this.elbowR.rotation.set(-0.1, 0, 0);
+      return;
+    }
+
+    if (this.sitAmount > 0.001) {
+      // Hands down at the sides of the lap, forearms forward: on the bench beside the thighs,
+      // or on the ground beside them. An arm this length cannot reach the top of its own
+      // thigh without going through the waist on the way. On the blend rather than the state,
+      // so the arms come back as the figure stands instead of snapping.
+      const t = this.sitAmount;
+      for (const [shoulder, elbow] of [
+        [this.shoulderL, this.elbowL],
+        [this.shoulderR, this.elbowR],
+      ] as const) {
+        shoulder.rotation.set(shoulder.rotation.x + (-0.15 - this.blended.lean - shoulder.rotation.x) * t, 0, 0);
+        elbow.rotation.set(elbow.rotation.x + (-0.78 - elbow.rotation.x) * t, 0, 0);
+      }
       return;
     }
 
@@ -849,8 +1082,12 @@ export class Character {
  * Head accessories: a conical straw hat, a headband, a hood, a flat cap. Small silhouette
  * changes are what let you pick a friend out of a crowd at fifty metres, which matters far
  * more here than facial detail ever could.
+ *
+ * Each one is sized against the hair it sits over — the cap on the crown is ±0.14 m across
+ * and 0.31 m up, the fringe reaches 0.15 m forward — because a hat smaller than the hair is
+ * a hat with hair growing through it.
  */
-function buildAccessory(index: number, outer: THREE.Material, locks: THREE.Material): THREE.Object3D {
+function buildAccessory(index: number, outer: THREE.Material): THREE.Object3D {
   const straw = surface('straw', { color: 0xd8c08a, shadowColor: 0x9c8b6a, matId: 7, hatch: 0.5 });
   const group = new THREE.Group();
   group.name = 'accessory';
@@ -872,35 +1109,36 @@ function buildAccessory(index: number, outer: THREE.Material, locks: THREE.Mater
       break;
     }
     case 2: {
-      // Hachimaki — headband, with the knot at the back.
-      const band = roundedBox(0.28, 0.055, 0.27, 0.02, surface('band', { color: 0xc4503a, shadowColor: 0x8a3a2e, matId: 7, hatch: 0.4 }));
-      band.position.y = 0.2;
-      group.add(band);
-      const knot = roundedBox(0.06, 0.05, 0.07, 0.02, surface('band', { color: 0xc4503a, shadowColor: 0x8a3a2e, matId: 7, hatch: 0.4 }));
-      knot.position.set(0, 0.2, -0.15);
-      group.add(knot);
+      // Hachimaki — headband, with the knot at the back. Tied *over* the fringe: at the old
+      // size the fringe stood 1.5 cm proud of it, so from the front the band was hidden behind
+      // the hair it was meant to be holding back, and at the sides it was exactly as wide as
+      // the hair, the two surfaces fighting over the same pixels.
+      const band = surface('band', { color: 0xc4503a, shadowColor: 0x8a3a2e, matId: 7, hatch: 0.4 });
+      group.add(at(roundedBox(0.296, 0.045, 0.33, 0.018, band), 0, 0.2, -0.005));
+      group.add(at(roundedBox(0.06, 0.05, 0.07, 0.02, band), 0, 0.2, -0.19));
       break;
     }
     case 3: {
-      // Hood, drawn up over the head.
-      const hood = roundedBox(0.3, 0.28, 0.29, 0.12, outer);
-      hood.position.y = 0.16;
-      group.add(hood);
-      const drape = roundedBox(0.26, 0.14, 0.1, 0.05, outer);
-      drape.position.set(0, 0.03, -0.13);
-      group.add(drape);
+      // Hood, drawn up over the head — and open at the front. It used to be one box a size
+      // up from the head, which closed over the face: the figure looked out through a mask in
+      // its jacket's colour, with its eyes and the crown of its hair poking through the cloth.
+      // Now a crown, a fall down the back and a side to cover each ear, framing the face with
+      // the fringe showing under the brim.
+      group.add(at(roundedBox(0.32, 0.2, 0.3, 0.09, outer), 0, 0.26, -0.02));
+      group.add(at(roundedBox(0.3, 0.2, 0.1, 0.045, outer), 0, 0.09, -0.13));
+      for (const sx of [-1, 1] as const) {
+        group.add(at(roundedBox(0.03, 0.22, 0.24, 0.012, outer), sx * 0.148, 0.13, -0.01));
+      }
       break;
     }
     default: {
-      // Flat cap with a short peak.
-      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.145, 0.15, 0.07, 10), locks);
-      cap.position.y = 0.29;
-      cap.castShadow = true;
-      cap.customDepthMaterial = inkDepthMaterial();
-      group.add(cap);
-      const peak = roundedBox(0.19, 0.02, 0.11, 0.008, locks);
-      peak.position.set(0, 0.265, 0.1);
-      peak.rotation.x = -0.16;
+      // Flat cap with a short peak, in cloth. It was a disc in the hair's own material, which
+      // the contour pass could not tell from the hair under it: it read as a heap of hair.
+      const cloth = surface('cap', { color: 0x4f5968, shadowColor: 0x3a4250, matId: 7, hatch: 0.45 });
+      group.add(at(roundedBox(0.31, 0.1, 0.31, 0.045, cloth), 0, 0.29, -0.005));
+      const peak = roundedBox(0.2, 0.022, 0.11, 0.009, cloth);
+      peak.position.set(0, 0.25, 0.185);
+      peak.rotation.x = 0.12;
       group.add(peak);
       break;
     }

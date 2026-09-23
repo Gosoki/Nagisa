@@ -12,6 +12,8 @@
     ?time=0.42         normalised time of day, 0–1 (0.5 = noon)
     ?tier=high         quality tier
     ?ink=0             disable the contour pass, to compare against flat shading
+    ?eye=x,y,z&target=x,y,z&fov=n
+                       frame a close-up instead of the viewpoint's own camera
 
   It is a separate Vite entry point, so `vite build` emits it alongside index.html; that
   is deliberate — a probe that only works in dev is a probe that rots.

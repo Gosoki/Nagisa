@@ -22,6 +22,7 @@
  */
 
 import * as THREE from 'three';
+import { INTERACTABLES, LANDMARKS, heightAt, interactablePosition } from '@nagisa/shared';
 import { box, cyl, mergeByMaterial, mulberry32, numOpt, randRange } from './geometry.js';
 import { boulder, paperLantern } from './kit.js';
 import { cloth, glow, ground, metal, rockFace, shoji, stone, wood } from '../materials.js';
@@ -111,25 +112,110 @@ export function postLantern(opts?: Opts): THREE.Group {
 // ---------------------------------------------------------------------------
 
 /**
- * A bench: a plank seat on two stone blocks, with a red felt cover over it. The felt is
- * the detail that makes it read as a place to rest at a teahouse rather than as municipal
- * street furniture.
+ * Height of a bench's seat — the top of its felt — above the ground it stands on.
+ *
+ * Set by the islanders, not by furniture catalogues. Their legs are short for their height
+ * (see `character.ts`): a sole-to-knee of 0.38 m, so a seat any higher than about this
+ * cannot be sat on with the feet on the ground. The bench used to be 0.57 m to the felt,
+ * which would have left every seated figure's shoes dangling a hand's breadth in the air.
+ */
+export const BENCH_SEAT_HEIGHT = 0.32;
+
+/**
+ * A bench: a plank seat on two stone blocks, with a red felt cover over it and hanging a
+ * little way down both long edges. The felt is the detail that makes it read as a place to
+ * rest at a teahouse rather than as municipal street furniture.
  */
 export function bench(opts?: Opts): THREE.Group {
   const length = numOpt(opts, 'length', 2.2);
   const parts: THREE.Mesh[] = [];
   const timber = wood('light');
+  const felt = cloth(0xa8503f);
+  const plank = BENCH_SEAT_HEIGHT - 0.03;
 
   for (const sx of [-1, 1] as const) {
-    parts.push(box(0.34, 0.44, 0.6, stone(), sx * (length / 2 - 0.32), 0.22, 0));
+    parts.push(box(0.34, plank - 0.09, 0.6, stone(), sx * (length / 2 - 0.32), (plank - 0.09) / 2, 0));
   }
   // Two planks with a gap, rather than one slab.
   for (const sz of [-1, 1] as const) {
-    parts.push(box(length, 0.09, 0.28, timber, 0, 0.49, sz * 0.16));
+    parts.push(box(length, 0.09, 0.28, timber, 0, plank - 0.045, sz * 0.16));
   }
-  parts.push(box(length * 0.94, 0.03, 0.66, cloth(0xa8503f), 0, 0.55, 0));
+  parts.push(box(length * 0.94, 0.03, 0.66, felt, 0, BENCH_SEAT_HEIGHT - 0.015, 0));
+  for (const sz of [-1, 1] as const) {
+    parts.push(box(length * 0.94, 0.07, 0.02, felt, 0, BENCH_SEAT_HEIGHT - 0.035, sz * 0.335));
+  }
 
   return assemble('bench', parts);
+}
+
+/** A place on a bench to sit: where the sitter stands, which way they face, the seat's top. */
+export interface BenchSeat {
+  x: number;
+  z: number;
+  yaw: number;
+  /** World height of the seat's surface. */
+  y: number;
+}
+
+/** How far along a bench from its middle anyone sits, metres — clear of its ends. */
+const BENCH_SPAN = 0.7;
+
+/**
+ * How far in from a bench's centre line a sitter's hips go, toward the side they face: far
+ * enough back to sit on the felt, near enough the edge that the knees clear it.
+ */
+const BENCH_INSET = 0.14;
+
+/** A bench this close to a `sit` prompt is the one that prompt seats people on. */
+const PROMPT_TO_BENCH = 1.5;
+
+/**
+ * The spot on a bench nearest to (x, z), for sitting on — or null if no bench that has a
+ * `sit` prompt is within `reach`. Null is the ordinary answer at the teahouse, whose "mats"
+ * are ground: a figure sitting there sits on the ground.
+ *
+ * A bench has no back and two long sides; the seat is on whichever side (x, z) is, facing
+ * out from it, which is the side somebody walking up to it came from.
+ *
+ * Here rather than with the figure because it is a question about the bench: where it is,
+ * how its builder lays it out, and how `Island` stands it on the ground — at the highest of
+ * its footprint's corners, which is what `y` has to agree with.
+ */
+export function benchSeat(x: number, z: number, reach: number): BenchSeat | null {
+  let best: BenchSeat | null = null;
+  let bestDistance = reach;
+  for (const l of LANDMARKS) {
+    if (l.kind !== 'bench') continue;
+    const sittable = INTERACTABLES.some((it) => {
+      if (it.kind !== 'sit') return false;
+      const at = interactablePosition(it);
+      return Math.hypot(at.x - l.x, at.z - l.z) < PROMPT_TO_BENCH;
+    });
+    if (!sittable) continue;
+    // World to the bench's frame: the inverse of `rotation.y = rot`.
+    const cos = Math.cos(l.rot);
+    const sin = Math.sin(l.rot);
+    const lx = (x - l.x) * cos - (z - l.z) * sin;
+    const lz = (x - l.x) * sin + (z - l.z) * cos;
+    const along = THREE.MathUtils.clamp(lx, -BENCH_SPAN, BENCH_SPAN);
+    const distance = Math.hypot(lx - along, lz);
+    if (distance > bestDistance) continue;
+    // Its front is local −z, like every builder's; somebody exactly on the line gets that.
+    const side = lz > 0 ? 1 : -1;
+    const inset = side * BENCH_INSET;
+    let base = -Infinity;
+    for (const [ox, oz] of [[-0.68, -0.4], [0.68, -0.4], [-0.68, 0.4], [0.68, 0.4], [0, 0]] as const) {
+      base = Math.max(base, heightAt(l.x + ox * cos + oz * sin, l.z - ox * sin + oz * cos));
+    }
+    best = {
+      x: l.x + along * cos + inset * sin,
+      z: l.z - along * sin + inset * cos,
+      yaw: side > 0 ? l.rot : l.rot + Math.PI,
+      y: base + BENCH_SEAT_HEIGHT,
+    };
+    bestDistance = distance;
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------------------

@@ -201,17 +201,27 @@ export function bellTower(opts?: Opts): THREE.Group {
   for (const part of roofParts) part.position.y += height;
   parts.push(...roofParts);
 
-  // The bell: a flared bronze body with a crown loop, and the striking beam on ropes.
+  // The bell: a flared bronze body with a crown loop, and the striking beam on ropes — all
+  // hung from a beam run front to back over the middle, the way a bell is actually hung. The
+  // two tie beams run along the sides, so with nothing between them the bell floated with its
+  // crown a third of a metre clear of any timber, and the ropes hung from the air in front of
+  // the tower.
   const bellY = height - 1.5;
+  const beamUnder = height - 0.36;
+  parts.push(box(0.18, 0.22, width + 0.5, timber, 0, height - 0.25, 0));
   parts.push(cyl(0.42, 0.52, 1.1, 12, metal('bronze'), 0, bellY, 0));
   parts.push(cyl(0.52, 0.5, 0.12, 12, metal('bronze'), 0, bellY - 0.55, 0));
   parts.push(cyl(0.16, 0.16, 0.3, 8, metal('bronze'), 0, bellY + 0.65, 0));
-  parts.push(cyl(0.1, 0.1, 1.9, 8, wood('light'), 0, bellY + 0.1, -width * 0.55, Math.PI / 2, 0, 0));
-  for (const offset of [-0.5, 0.5] as const) {
+  parts.push(cyl(0.05, 0.05, beamUnder - (bellY + 0.8) + 0.04, 6, metal('bronze'), 0, (beamUnder + bellY + 0.8) / 2, 0));
+  // The striking log under the front of that beam, its end at the bell's lip — it used to run
+  // a hand's width into the bronze.
+  const logZ = 0.1 - width / 2;
+  parts.push(cyl(0.1, 0.1, 1.4, 8, wood('light'), 0, bellY + 0.1, logZ, Math.PI / 2, 0, 0));
+  for (const offset of [-0.3, 0.3] as const) {
     parts.push(
       ...rope(
-        new THREE.Vector3(0, height - 0.4, -width * 0.55 + offset * 0.7),
-        new THREE.Vector3(0, bellY + 0.1, -width * 0.55 + offset * 0.7),
+        new THREE.Vector3(0, beamUnder, logZ + offset),
+        new THREE.Vector3(0, bellY + 0.1, logZ + offset),
         0.03,
         cloth(0xcfc4a8),
         0.02,

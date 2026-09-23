@@ -107,8 +107,8 @@ in `sessionStorage` for the tab.
 `tickHz`, `mapId` (the client refuses to enter a world it did not load itself — see
 `ServerWelcome.mapId`), `rooms` (every public shard, plus your own room if it is private —
 somebody else's island is never listed), and `profile` (`ProfileView`: your stamps, fish
-book, badges, the badge you wear and today's omikuji; `persistent: false` when there was no
-usable visitor key).
+book, badges, the badge you wear, today's omikuji, treasures found, and today's tasks with
+the streak; `persistent: false` when there was no usable visitor key).
 
 ### Version mismatch
 

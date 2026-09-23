@@ -27,6 +27,7 @@ import {
   type ProfileView,
 } from '@nagisa/shared';
 import type { ProfileRecord } from '../persistence.js';
+import { dailyView } from './daily.js';
 
 /** How many profiles are kept across restarts. */
 export const PROFILE_LIMIT = 20_000;
@@ -43,6 +44,10 @@ export function newProfile(now = Date.now()): ProfileRecord {
     jankenWins: 0,
     quizWins: 0,
     treasures: 0,
+    daily: null,
+    dailyStreak: 0,
+    dailyLast: null,
+    dailyDays: 0,
     friends: [],
     lastSeen: now,
   };
@@ -74,6 +79,18 @@ function sanitise(raw: Partial<ProfileRecord> | null | undefined): ProfileRecord
     jankenWins: Number.isFinite(raw.jankenWins) ? Number(raw.jankenWins) : 0,
     quizWins: Number.isFinite(raw.quizWins) ? Number(raw.quizWins) : 0,
     treasures: Number.isFinite(raw.treasures) ? Number(raw.treasures) : 0,
+    daily:
+      raw.daily && typeof raw.daily.day === 'string' && Array.isArray(raw.daily.progress)
+        ? {
+            day: raw.daily.day,
+            progress: raw.daily.progress.map((n) => (Number.isFinite(n) ? Number(n) : 0)),
+            zones: Array.isArray(raw.daily.zones) ? raw.daily.zones.filter((z) => typeof z === 'string') : [],
+            done: raw.daily.done === true,
+          }
+        : null,
+    dailyStreak: Number.isFinite(raw.dailyStreak) ? Number(raw.dailyStreak) : 0,
+    dailyLast: typeof raw.dailyLast === 'string' ? raw.dailyLast : null,
+    dailyDays: Number.isFinite(raw.dailyDays) ? Number(raw.dailyDays) : 0,
     friends: Array.isArray(raw.friends)
       ? raw.friends
           .filter((f) => f && typeof f.hash === 'string' && typeof f.name === 'string')
@@ -147,6 +164,7 @@ export function profileView(rec: ProfileRecord, persistent: boolean): ProfileVie
     jankenWins: rec.jankenWins,
     quizWins: rec.quizWins,
     treasures: rec.treasures,
+    ...dailyView(rec),
     persistent,
   };
 }

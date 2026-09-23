@@ -40,6 +40,7 @@ export class Interactions {
     }
     this.bellRungAt.set(bell.id, now);
     this.room.emitEvent({ k: 'bell', id: bell.id, by: player.id });
+    this.room.daily(player, 'bell');
   }
 
   /**
@@ -58,6 +59,7 @@ export class Interactions {
     rec.omikuji = { day, ...slip };
     this.room.sendTo(player.id, { t: 'omikuji', ...slip, again: false });
     this.room.emitEvent({ k: 'omikuji', by: player.id, fortune: slip.fortune });
+    this.room.daily(player, 'omikuji');
     // Index 0 is 大吉.
     if (slip.fortune === 0 && awardBadge(rec, 'lucky')) this.room.celebrate(player, ['lucky']);
     else this.room.pushProfile(player);

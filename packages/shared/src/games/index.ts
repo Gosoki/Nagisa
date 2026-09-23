@@ -11,3 +11,4 @@ export * from './badges.js';
 export * from './quiz-bank.js';
 export * from './treasure.js';
 export * from './weather.js';
+export * from './daily.js';

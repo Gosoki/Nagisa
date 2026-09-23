@@ -56,6 +56,7 @@ export class Fireworks {
     }
     this.lastByPlayer.set(player.id, now);
     this.send(now, player.pos[0], player.pos[2], player.id, hue, pattern);
+    this.room.daily(player, 'firework');
   }
 
   /** The show, while a fireworks activity is live. Called every room tick. */

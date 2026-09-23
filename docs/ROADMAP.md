@@ -82,7 +82,8 @@ tests cover.
   take in.
 - A treasure hunt in the small hours: three things buried at random, hot-or-cold digging
   that everyone nearby can read, and a board of finds.
-- Dice, eight badges, and titles worn under your name.
+- Today's tasks: three a day, the same for everyone, with a streak and a badge at seven days.
+- Dice, nine badges, and titles worn under your name.
 
 ### Interface
 - Simplified Chinese, Japanese and English throughout, following the browser, switchable.
@@ -144,7 +145,7 @@ the line is now.
 |---|---|
 | **Voice** | Would dominate the atmosphere and require a media server, TURN infrastructure and a much larger moderation commitment. Designed in advance and deferred — see §4. |
 | **Accounts** | A random visitor key in the browser carries your profile and your private islands between visits, and the server keeps only its hash. Accounts would add a password reset flow, a privacy policy and a data-deletion obligation for what is, still, a place you visit. The cost is in §3. |
-| **Heavy progression** | Progression exists in a light form — a stamp card, a fish book, eight badges, one worn as a title. There is no inventory, no currency, no levels, and no leaderboard beyond the ones on a live derby or treasure hunt. A collection gives people something to point at; a scoreboard would change the register completely. |
+| **Heavy progression** | Progression exists in a light form — a stamp card, a fish book, a streak of days done, nine badges, one worn as a title. There is no inventory, no currency, no levels, and no leaderboard beyond the ones on a live derby or treasure hunt. A collection gives people something to point at; a scoreboard would change the register completely. |
 | **Chat history and a moderation queue** | Text chat exists now (a log, bubbles, whispers), because a group that has come together has to be able to talk. But the log is the client's own since you arrived; the server keeps no history, and whispers never enter one. Moderation is mute, kick and a personal block, from inside the world. |
 | **An admin dashboard** | Explicitly out of scope. Hosts run events from inside the world; admins schedule from a one-row control in the same host panel. |
 | **Fast travel** | The island is small enough to cross in well under a minute, and the crossing is the product. |

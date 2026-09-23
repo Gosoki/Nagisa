@@ -168,6 +168,7 @@ const dynamic = [
   ...shared.HANDS.map((h) => 'hand.' + h),
   ...['declined', 'timeout', 'left', 'busy', 'far', 'other'].map((r) => 'janken.cancel.' + r),
   ...['hot', 'warm', 'cool', 'cold'].map((h) => 'treasure.heat.' + h),
+  ...shared.DAILY_KINDS.map((k) => 'daily.task.' + k),
 ];
 check('every key built at runtime exists', dynamic.every((k) => k in GAMES.en), dynamic.filter((k) => !(k in GAMES.en)).join(', '));
 
@@ -593,6 +594,21 @@ tab(/Stamps/)?.click();
 stores.profile.set({ ...profile, stamps: [...shared.STAMP_ZONES] });
 await settle();
 check('a full card is an Island Walker', text('CollectionPanel').includes('Island Walker'));
+const daily = (progress, done, streak) => ({
+  ...profile,
+  daily: { day: '2026-09-25', done, tasks: [{ kind: 'bell', goal: 1, progress: progress[0] }, { kind: 'zones', goal: 4, progress: progress[1] }, { kind: 'chat', goal: 3, progress: progress[2] }] },
+  dailyStreak: streak,
+  dailyDays: streak,
+});
+stores.profile.set(daily([1, 2, 0], false, 0));
+await settle();
+for (const want of ['Today', 'Ring a bell', '1/1', 'Walk into 4 different places', '2/4', 'Say 3 things in chat', '0/3', 'the same tasks today']) {
+  check('today’s tasks show ' + JSON.stringify(want), text('CollectionPanel').includes(want), text('CollectionPanel').slice(0, 300));
+}
+check('a full task is ticked', box('CollectionPanel').querySelectorAll('.task.full').length === 1);
+stores.profile.set(daily([1, 4, 3], true, 3));
+await settle();
+check('a day done counts the streak', text('CollectionPanel').includes('3 days in a row'));
 
 // ---------------------------------------------------------------------------------------
 console.log('\\nIsland');

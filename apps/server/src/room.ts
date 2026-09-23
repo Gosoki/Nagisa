@@ -41,6 +41,7 @@
 
 import { randomUUID } from 'node:crypto';
 import {
+  type DailyKind,
   ActivityState,
   ErrorCode,
   PROTOCOL,
@@ -80,6 +81,7 @@ import { Janken } from './games/janken.js';
 import { QuizRunner } from './games/quiz.js';
 import { Fireworks } from './games/fireworks.js';
 import { TreasureHunt } from './games/treasure.js';
+import { recordDaily } from './games/daily.js';
 import { Interactions } from './games/interactions.js';
 import { Guestbook } from './games/guestbook.js';
 import { profileView } from './games/profiles.js';
@@ -583,6 +585,10 @@ export class Room implements GameRoom {
 
   persist(): void {
     this.persistFn();
+  }
+
+  daily(player: Player, kind: DailyKind, zone?: string): void {
+    recordDaily(this, player, kind, Date.now(), zone);
   }
 
   random(): number {

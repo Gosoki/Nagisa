@@ -87,6 +87,26 @@
 {#if !p}
   <p class="empty">{$t('collection.none')}</p>
 {:else}
+  <!-- Today's tasks sit above the tabs: they change every day, the rest of the book does not. -->
+  {#if p.daily}
+    <section class="today" aria-labelledby="today-title">
+      <h3 class="today-title" id="today-title">
+        {$t('daily.title')}{#if p.daily.done}<span class="today-done" aria-hidden="true"> ✓</span>{/if}
+      </h3>
+      <ul class="tasks">
+        {#each p.daily.tasks as task (task.kind)}
+          {@const full = task.progress >= task.goal}
+          <li class="task" class:full>
+            <span class="tick" aria-hidden="true">{full ? '✓' : '·'}</span>
+            <span class="what">{$t(`daily.task.${task.kind}`, { n: task.goal })}</span>
+            <span class="count">{Math.min(task.progress, task.goal)}/{task.goal}</span>
+          </li>
+        {/each}
+      </ul>
+      <p class="progress">{p.dailyStreak > 0 ? $t('daily.streak', { n: p.dailyStreak, total: p.dailyDays }) : $t('daily.same')}</p>
+    </section>
+  {/if}
+
   <div class="tabs" role="tablist" aria-label={$t('collection.sections')}>
     {#each TABS as id (id)}
       <button
@@ -235,6 +255,68 @@
     font-size: var(--fs-xs);
     color: var(--ui-ink-muted);
     margin-bottom: var(--sp-sm);
+  }
+
+  .today {
+    margin-bottom: var(--sp-md);
+    padding-bottom: var(--sp-sm);
+    border-bottom: 1px solid var(--ui-line);
+  }
+
+  .today-title {
+    margin: 0 0 var(--sp-xs);
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--ui-ink-muted);
+  }
+
+  .today-done {
+    color: var(--ui-live);
+  }
+
+  .tasks {
+    list-style: none;
+    margin: 0 0 var(--sp-xs);
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .task {
+    display: flex;
+    gap: var(--sp-sm);
+    align-items: baseline;
+    font-size: var(--fs-sm);
+    color: var(--ui-ink);
+  }
+
+  .task.full {
+    color: var(--ui-ink-muted);
+  }
+
+  .tick {
+    flex: none;
+    width: 1em;
+    text-align: center;
+    color: var(--ui-ink-faint);
+  }
+
+  .task.full .tick {
+    color: var(--ui-live);
+  }
+
+  .what {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .count {
+    flex: none;
+    font-size: var(--fs-xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--ui-ink-muted);
   }
 
   .faint {

@@ -179,6 +179,11 @@ export class Janken {
     // both exist, and a forfeited hand reads as the winner's alone.
     if (ha !== null && hb !== null) {
       this.room.emitEvent({ k: 'janken', a: duel.a, b: duel.b, ha, hb, winner });
+      // A game played to the end counts for both, whoever won.
+      for (const id of [duel.a, duel.b]) {
+        const p = this.room.getPlayer(id);
+        if (p) this.room.daily(p, 'janken');
+      }
     }
     this.end(duel);
     if (winner) {

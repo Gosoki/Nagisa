@@ -157,6 +157,7 @@ import type { ZoneId } from './world.js';
 import type { ActivityFeature } from './map/types.js';
 import type { BadgeId } from './games/badges.js';
 import type { DigHeat } from './games/treasure.js';
+import type { DailyTask } from './games/daily.js';
 
 /**
  * Authority a player holds. Ordered — a numerically higher role subsumes every
@@ -902,6 +903,11 @@ export interface ProfileView {
   quizWins: number;
   /** Treasures dug up, over every hunt. */
   treasures: number;
+  /** Today's tasks (Japanese calendar day) and how far along each is. */
+  daily: { day: string; tasks: Array<DailyTask & { progress: number }>; done: boolean };
+  /** Days in a row with every task done, up to the last one done; and days done in all. */
+  dailyStreak: number;
+  dailyDays: number;
   /**
    * Whether any of this outlives the session. False when the client sent no usable
    * visitor key — the card still fills in, and is gone when the tab is.

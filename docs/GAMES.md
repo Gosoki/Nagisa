@@ -217,6 +217,18 @@ that is refused with `cooldown`.
 per player per 30 s, not while muted. The board keeps the newest 60 per room, persisted.
 `guestbook_remove{id}` — your own line (same player id or visitor), or any line if admin.
 
+### Today's tasks (`packages/shared/src/games/daily.ts`, `server/src/games/daily.ts`)
+
+Three tasks a day, the same three for everyone: a hash of the Japanese calendar day picks
+them from nine (catch 3 fish, ring a bell, draw an omikuji, play janken, send up a firework,
+check in at an activity, say 3 things, emote 3 times, walk into 4 different places). The games
+report what just happened through `GameRoom.daily(player, kind)`; a task that is not full
+takes it (places count once each). The day the last one fills is a day done:
+`dailyStreak` grows if the day before was done too, `dailyDays` counts them all, and at
+`REGULAR_DAYS` (7) comes the Regular badge. Progress lives on the profile
+(`ProfileRecord.daily`) and is shown as `ProfileView.daily`; a streak whose last day is
+older than yesterday reads as 0.
+
 ### Weather (`packages/shared/src/games/weather.ts`)
 
 One sky for every island, worked out from the server clock alone, like the time of day:

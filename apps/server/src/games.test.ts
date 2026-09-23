@@ -25,6 +25,8 @@ import {
   WEATHER_BLOCK_MS,
   digHeat,
   weatherOfBlock,
+  dailyTasks,
+  dayBefore,
   getQuizQuestion,
   isWalkable,
   getZone,
@@ -50,6 +52,7 @@ import { PLAYER_COOLDOWN_MS, ROOM_BURST } from './games/fireworks.js';
 import { ProfileStore, hashVisitorKey, newProfile } from './games/profiles.js';
 import { materialiseProgramme } from './schedule.js';
 import { bury } from './games/treasure.js';
+import { dailyView, recordDaily } from './games/daily.js';
 import { migrate } from './persistence.js';
 
 class FakeSocket {
@@ -504,6 +507,53 @@ test('treasure: one hunt at a time, and a restart ends one that was running', as
 
   // Buried spots are reachable from the harbour for any seed.
   for (let seed = 1; seed <= 20; seed++) assert.equal(bury(TREASURE_COUNT, seeded(seed)).length, TREASURE_COUNT, `seed ${seed}`);
+});
+
+test('daily tasks: the same three for everyone, counted once full, a day done makes a streak and a Regular', () => {
+  const room = makeRoom();
+  const { player, socket } = join(room);
+  // Noon in Japan on a day whose tasks are ringing a bell, walking into four places, and chatting.
+  const now = Date.parse('2026-09-25T03:00:00Z');
+  const day = jstDay(now);
+  const tasks = dailyTasks(day);
+  assert.deepEqual(tasks.map((t) => t.kind), ['bell', 'zones', 'chat']);
+  assert.deepEqual(dailyTasks(day), tasks, 'the same list every time it is asked');
+
+  // Something not on today's list counts for nothing.
+  const today = () => player.profile.daily;
+  recordDaily(room, player, 'fish', now);
+  assert.equal(today(), null);
+
+  // Places count once each, however often a border is crossed.
+  recordDaily(room, player, 'zones', now, 'plaza');
+  recordDaily(room, player, 'zones', now, 'plaza');
+  recordDaily(room, player, 'zones', now, 'beach');
+  assert.equal(today()?.progress[1], 2);
+
+  // Yesterday was done too, and six days in all.
+  player.profile.dailyLast = dayBefore(day);
+  player.profile.dailyStreak = 4;
+  player.profile.dailyDays = 6;
+  recordDaily(room, player, 'bell', now);
+  recordDaily(room, player, 'zones', now, 'shrine');
+  recordDaily(room, player, 'zones', now, 'harbor');
+  for (let i = 0; i < 5; i++) recordDaily(room, player, 'chat', now);
+  assert.deepEqual(today()?.progress, [1, 4, 3], 'full tasks stop counting');
+  assert.equal(today()?.done, true);
+  assert.equal(player.profile.dailyStreak, 5);
+  assert.equal(player.profile.dailyDays, 7);
+  assert.ok(player.profile.badges.includes('regular'));
+
+  const view = dailyView(player.profile, now);
+  assert.equal(view.daily.done, true);
+  assert.deepEqual(view.daily.tasks.map((t) => t.progress), [1, 4, 3]);
+  assert.ok(lastOf(socket, 'profile'), 'the card is sent');
+
+  // Tomorrow starts from nothing, and a streak with a gap in it is over.
+  const later = dailyView(player.profile, now + 3 * 86_400_000);
+  assert.deepEqual(later.daily.tasks.map((t) => t.progress), [0, 0, 0]);
+  assert.equal(later.dailyStreak, 0);
+  assert.equal(later.dailyDays, 7);
 });
 
 test('bells ring for everyone, and rest between rings', () => {

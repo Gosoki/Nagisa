@@ -113,6 +113,12 @@ export interface ProfileRecord {
   quizWins: number;
   /** Treasures dug up, over every hunt. */
   treasures: number;
+  /** Today's tasks: the day, how far along each is, the places walked into. See games/daily.ts. */
+  daily: { day: string; progress: number[]; zones: string[]; done: boolean } | null;
+  /** Days in a row with every task done, the last such day, and how many in all. */
+  dailyStreak: number;
+  dailyLast: string | null;
+  dailyDays: number;
   /** Friends, by visitor hash, with the name each went by when last seen. See friends.ts. */
   friends: Array<{ hash: string; name: string; since: number }>;
   lastSeen: number;

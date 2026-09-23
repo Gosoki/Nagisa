@@ -279,9 +279,16 @@ export class WorldSync {
         this.onServerError(msg);
         break;
 
-      case 'profile':
+      case 'profile': {
+        const before = get(profile);
         profile.set(msg.profile);
+        // The day's last task, done just now (not a card that arrived already done).
+        const today = msg.profile.daily;
+        if (today?.done && before?.daily?.day === today.day && !before.daily.done) {
+          notify(tr('daily.done', { n: msg.profile.dailyStreak }), 'good', 6000);
+        }
         break;
+      }
 
       case 'fish':
         this.onFish(msg);

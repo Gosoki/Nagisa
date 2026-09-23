@@ -329,6 +329,7 @@ function handleMove(ctx: ConnState, msg: ClientMove): void {
   ctx.room.onMoved(ctx.player);
   if (ctx.player.zone !== prevZone) {
     ctx.room.markPlayerChanged(ctx.player.id, { zone: ctx.player.zone });
+    if (ctx.player.zone) ctx.room.daily(ctx.player, 'zones', ctx.player.zone);
   }
 }
 
@@ -343,6 +344,7 @@ function handleEmote(ctx: ConnState, msg: ClientEmote): void {
   }
   if (ctx.player.muted) return; // Silently dropped — see Player.muted.
   ctx.room.emote(ctx.player.id, msg.emote);
+  ctx.room.daily(ctx.player, 'emote');
 }
 
 function handleChat(ctx: ConnState, msg: ClientChat): void {
@@ -376,11 +378,13 @@ function handleChat(ctx: ConnState, msg: ClientChat): void {
     };
     ctx.room.sendTo(target.id, whisper);
     ctx.session.send(whisper);
+    ctx.room.daily(ctx.player, 'chat');
     return;
   }
 
   if (ctx.player.muted) return; // Silently dropped — see Player.muted.
   ctx.room.chat(ctx.player.id, text);
+  ctx.room.daily(ctx.player, 'chat');
 }
 
 // ---------------------------------------------------------------------------------
@@ -456,6 +460,7 @@ function checkIn(ctx: ConnState, activityId: string, deps: HandlerDeps): void {
     ctx.player.checkedIn = true;
     ctx.room.markPlayerChanged(ctx.player.id, { checkedIn: true });
     ctx.room.activities.notifyChanged(activity);
+    ctx.room.daily(ctx.player, 'checkin');
     deps.persist();
   } else if (result.reason === 'already' && !ctx.player.checkedIn) {
     // Checked in, left, and came back: the record stands, and so should the mark.

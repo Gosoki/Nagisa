@@ -641,6 +641,19 @@ async function main() {
   ken.send({ t: 'dig' });
   check('one dig at a time', !!(await ken.wait('error', (f) => f.key === 'cooldown', 3000)));
 
+  // -- Today's tasks ------------------------------------------------------
+  console.log('\nToday\'s tasks');
+  const busy = await arrive('Busy', { visitor: visitorFor('Busy') });
+  const tasks = shared.dailyTasks(shared.jstDay(Date.now()));
+  check('the card carries today\'s tasks', JSON.stringify(busy.welcome.profile.daily.tasks.map((t) => t.kind)) === JSON.stringify(tasks.map((t) => t.kind)), busy.welcome.profile.daily);
+  const easy = tasks.findIndex((t) => t.kind === 'chat' || t.kind === 'emote');
+  if (easy >= 0) {
+    busy.send(tasks[easy].kind === 'chat' ? { t: 'chat', text: 'good morning' } : { t: 'emote', emote: 'wave' });
+    const counted = await busy.wait('profile', (f) => f.profile.daily.tasks[easy].progress === 1, 3000);
+    check('doing one counts it', !!counted);
+  }
+  busy.close();
+
   // -- Friends ------------------------------------------------------------
   console.log('\nFriends');
   const hana = await arrive('Hana', { visitor: visitorFor('Hana') });

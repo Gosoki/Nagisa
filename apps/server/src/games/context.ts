@@ -11,6 +11,7 @@
 import type {
   AnnouncementView,
   BadgeId,
+  DailyKind,
   ErrorCode,
   PlayerId,
   QuizView,
@@ -52,6 +53,9 @@ export interface GameRoom {
   setQuiz(view: QuizView | null): void;
   /** An announcement from the island itself rather than a person. */
   announceSystem(text: string, scope: AnnouncementView['scope'], priority?: AnnouncementView['priority']): void;
+
+  /** Count something a player just did towards today's tasks (see `games/daily.ts`). */
+  daily(player: Player, kind: DailyKind, zone?: string): void;
 
   /** Ask for a save soon. */
   persist(): void;

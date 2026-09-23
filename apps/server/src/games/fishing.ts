@@ -176,6 +176,8 @@ export class Fishing {
     const record = fish.rarity !== 'junk' && sizeCm > prevRecord && bigEnough;
     if (sizeCm > prevRecord) this.records.set(fish.id, sizeCm);
 
+    this.room.daily(player, 'fish');
+
     // The book.
     const rec = player.profile;
     const entry = rec.fish[fish.id];

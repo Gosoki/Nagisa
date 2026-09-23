@@ -49,9 +49,10 @@ Files:
 | `world/materials.ts` | Named, cached materials — the palette applied |
 | `fx/materials.ts` | Materials for game effects (sparks, beams, ripples, lines) that must not disturb the contours |
 
-WebGL2 is required for MRT. If the context comes back WebGL1 the pipeline falls back to
-rendering straight to the canvas: flat shading, no contours, still playable. `hasInk` says
-which one is running.
+WebGL2 is required, and there is no WebGL1 fallback. three r170 creates only WebGL2
+contexts (WebGL1 support was dropped in r163), so on a browser without it the renderer cannot
+be created and the island does not start. The flat, contour-less path behind `hasInk` in
+`renderer.ts` is never reached.
 
 ---
 
@@ -125,8 +126,8 @@ identical ink.
 
 ### The depth encoding
 
-The info buffer is half-float, whose precision is **relative**: an ULP near 1.0 is 2⁻¹¹ ≈
-0.0005, while near 0.05 it is 2⁻¹⁶ ≈ 0.000015 — thirty times finer.
+The info buffer is half-float, whose precision is **relative**: an ULP just under 1.0 is
+2⁻¹¹ ≈ 0.0005, while near 0.05 it is 2⁻¹⁵ ≈ 0.00003 — sixteen times finer.
 
 An early version stored `1 − dist/far` with a 3.6 km far plane. That parks every value in
 the scene up near 1.0 and quantises depth into 1.8 m steps. The detector faithfully drew a
@@ -134,12 +135,12 @@ line at every step boundary and **the mountain rendered as a contour map**.
 
 Store `dist / uDepthScale` with a few-hundred-metre reference range instead — not inverted,
 and not scaled by the camera's far plane. Nearby geometry then lives in the fine end of the
-float, where a 20 m surface quantises at about 6 mm.
+float, where a 20 m surface quantises at about 15 mm.
 
 ### The quantisation noise floor
 
 Even with the encoding fixed, precision still degrades with distance: about 1.5 cm at 30 m
-and 15 cm at 300 m. A threshold in absolute metres sits below the quantisation almost
+and 24 cm at 300 m. A threshold in absolute metres sits below the quantisation almost
 everywhere, so the detector fires on rounding error across every flat surface.
 
 That does **not** look like noise. It looks like every building in the scene being *filled*
@@ -153,7 +154,8 @@ A genuinely flat surface scores exactly zero.
 ### The depth detector will draw the terrain grid
 
 Even correctly encoded and noise-floored, a threshold tuned by what it should *draw* is
-wrong. The terrain is a 1.6 m grid, so its facet-to-facet depth steps land around 0.002 in
+wrong. The terrain is a grid of about a metre on the high tier (340 vertices a side, coarser
+on the lower tiers), so its facet-to-facet depth steps land at or below about 0.002 in
 relative units at any distance — invisible to the eye, and far above the noise floor. A
 detector tuned tighter than that draws every one of them, and the hillside comes out ruled
 with horizontal lines at constant depth.
@@ -170,10 +172,10 @@ where all the lines that matter are.
 
 ### Terrain must be smooth-shaded
 
-`flatShading` on the terrain gives every one of its 320 000 triangles its own normal, which
-the contour pass dutifully detects — a pen line along every triangle edge, and the mountain
-is a topographic map again. The worker computes exact analytic normals per vertex, so smooth
-shading there is both correct and free.
+`flatShading` on the terrain gives every one of its ~230 000 triangles (high tier) its own
+normal, which the contour pass dutifully detects — a pen line along every triangle edge, and
+the mountain is a topographic map again. The worker computes a normal per vertex from
+`heightAt` by central differences, so smooth shading there is both correct and free.
 
 Flat shading is right for everything else. Faceted low-poly surfaces are what make the world
 read as crafted.
@@ -185,10 +187,13 @@ read as crafted.
 Three renders shadows for materials it knows about. Getting them for a `ShaderMaterial`
 takes three things, and missing any one of them fails quietly:
 
-1. **Include order.** `<shadowmask_pars_fragment>` calls `getShadow()` from
-   `<shadowmap_pars_fragment>`, and both read `receiveShadow` and the
-   `DirectionalLightShadow` struct declared in `<lights_pars_begin>`. All three, in that
-   order, plus `<shadowmap_pars_vertex>` and `<shadowmap_vertex>`.
+1. **Include order.** `<shadowmask_pars_fragment>` calls `getShadow()` and reads the
+   `DirectionalLightShadow` struct, both from `<shadowmap_pars_fragment>`, and
+   `receiveShadow`, declared in `<lights_pars_begin>`; `<shadowmap_pars_fragment>` unpacks
+   the shadow map with `unpackRGBAToDepth` from `<packing>`. So the fragment shader takes
+   `<common>`, `<packing>`, `<lights_pars_begin>`, `<shadowmap_pars_fragment>`,
+   `<shadowmask_pars_fragment>`, in that order, and the vertex shader
+   `<shadowmap_pars_vertex>` and `<shadowmap_vertex>`.
 2. **`lights: true`, and `UniformsLib.lights` merged in.** Nothing in the shader reads a
    light uniform directly, but three only wires the shadow map and shadow matrices into a
    ShaderMaterial's uniforms when that flag is on — and it writes into those slots
@@ -233,8 +238,9 @@ lighthouse. The projection divides by `d.y`, so the cloud deck has to be held we
 the horizon or a rounded shape overhead becomes a vertical smear reaching down to the sea.
 After dark the clouds take the sky's own colour, lifted a little, and their ink line softens:
 the daytime paper white in a night sky reads as a lamp, not a cloud. The weather
-(`Sky.setWeather`) closes the deck in past the fair-weather amount, and takes colour out of
-and dims the horizon, zenith and fill, and the sun, as it clouds over and rains; rain itself
+(`Sky.setWeather`) closes the deck in past the fair-weather amount, takes colour out of and
+dims the horizon and zenith, takes colour out of the fill, and turns the sun's intensity
+down, as it clouds over and rains; rain itself
 is `fx/rain.ts`, strokes in a box that travels with the camera.
 
 One thing to know about the sea geometry: it is a polar disc, and its winding must be
@@ -244,8 +250,8 @@ you see instead is the seabed and the underside of the sky dome.
 
 ### Effects
 
-Fireworks, the lighthouse beam, lantern halos, bell rings, the fishing line, the ○× circles:
-none of these is a surface, and none may change what the contour pass sees behind it. Every
+Fireworks, the lighthouse beam, lantern halos, bell rings, the fishing line, the quiz's
+countdown arcs: none of these is a surface, and none may change what the contour pass sees behind it. Every
 effect material comes from `fx/materials.ts`, which blends the colour target's alpha with
 factors (0, 1) so the **material id** underneath is kept exactly, and writes `vec4(0)` to the
 info target with a source-alpha–weighted blend so depth, normal and mask pass through
@@ -254,6 +260,11 @@ blends cover everything: `add` for light, `over` for marks laid on the drawing, 
 `unline`, drawn under a name plate or speech bubble, which clears the outline mask there so a
 roof's edge is not drawn through the text. A new effect built on an ordinary three.js
 transparent material will ring itself with ink — that is the symptom to look for.
+
+The ○× circles themselves are not effects. They are paint: ordinary ink material laid on the
+plaza (`createInkMaterial` in `fx/quiz-arena.ts`), outlined by the contour pass on purpose,
+the way someone drawing the plaza would draw them. Only the countdown arc around each uses
+`ringMaterial` from `fx/materials.ts`.
 
 ---
 
@@ -265,19 +276,20 @@ outlines inverted, the shadow tone reading as mud, or the ocean drawn over the i
 none of which a type checker or a unit test can see.
 
 ```
-node tools/shot.mjs                      # twelve viewpoints → PNG
+node tools/shot.mjs                      # fourteen viewpoints → PNG
 node tools/shot.mjs plaza --time 0.78    # one viewpoint at dusk
-node tools/shot.mjs quay --ink 0         # contours off, to compare
+node tools/shot.mjs quay --ink 0         # contours and paper off, to compare
 node tools/shot.mjs quay --inkdebug all  # detector contributions: depth/normal/id → r/g/b
 node tools/shot.mjs quay --debug ocean   # recolour the sea, to answer "is it there at all"
 node tools/pixel-probe.mjs quay          # live material uniforms
 node tools/app-smoke.mjs                 # the whole stack, two players, end to end
 ```
 
-`apps/client/probe.html` is the page they drive: the real island, the real materials and the
-real ink pass, with no interface, no netcode and no input. It uses the *production* modules
-deliberately — a probe that renders its own approximation of the island tells you nothing
-about the island.
+`apps/client/probe.html` is the page `shot.mjs` and `pixel-probe.mjs` drive: the real
+island, the real materials and the real ink pass, with no interface, no netcode and no
+input. It uses the *production* modules deliberately — a probe that renders its own
+approximation of the island tells you nothing about the island. `app-smoke.mjs` is the
+exception: it drives the full app, interface and server included.
 
 The tools run Chromium on SwiftShader, so they are a **correctness** check. The draw-call
 and triangle counts they print are real; the frame rate is not.
@@ -286,20 +298,21 @@ and triangle counts they print are real; the frame rate is not.
 
 ## 10. Budgets
 
-Measured at 1280 × 760, `high` tier, from the twelve probe viewpoints:
+Measured at 1280 × 760, `high` tier, from the fourteen probe viewpoints:
 
 | | Range |
 |---|---|
-| Draw calls | 386 (a single figure) – 1 365 (the harbour) |
-| Draw calls, `gameplay` framing | 879 |
-| Triangles | 1.43 M – 1.51 M |
+| Draw calls | 662 (`north`) – 1 921 (`island`) |
+| Draw calls, `gameplay` framing | 1 144 |
+| Triangles | 1.46 M – 1.58 M |
 | Shader programs | 10 |
-| Landmark geometry | ~62 000 triangles across 107 landmarks |
-| Scatter | 18 567 instances, 4 draw calls |
-| Terrain mesh build | ~1.1 s on SwiftShader, ~150 ms on real hardware |
+| Landmark geometry | ~62 500 triangles across 134 landmarks |
+| Scatter | 18 898 instances, 4 draw calls |
+| Terrain mesh build | ~0.5 s on the `high` tier — on a Worker, in plain CPU arithmetic, so it does not depend on the GPU |
 
 The draw-call count is dominated by the props, and the material cache is what keeps it
 there: every prop asks `materials.ts` for a shared instance by key, so a machiya built from
-ninety primitives across five materials arrives as five draw calls. A prop file that calls
-`new THREE.ShaderMaterial` directly would break batching for the entire island — which is
-why no file in `props/` does, and why they take their materials as arguments instead.
+ninety primitives across seven or eight materials arrives as seven or eight draw calls. A
+prop file that calls `new THREE.ShaderMaterial` directly would break batching for the entire
+island — which is why no file in `props/` does: the builders import their materials from
+`world/materials.ts`, and the kit's helpers take them as arguments.

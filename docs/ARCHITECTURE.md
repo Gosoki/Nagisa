@@ -146,7 +146,8 @@ Characters are built from primitives and animated procedurally — no rigged GLB
 pass per instance; procedural articulation costs zero bytes and blends between states by
 interpolating six numbers. The trade is that subtle motion is impossible, which suits an
 art direction that is readable at fifty metres and simple up close. A character can hold
-a prop in its hand — a rod, a paper lantern — which is how the games put things on people.
+a prop in its hand — a rod, a paper lantern, an umbrella in the rain — which is how the
+games put things on people.
 
 Level of detail is applied **by rank, not by distance**: the nearest *N* characters
 animate and the rest hold a pose. That keeps the cost of a crowd flat — an eighty-person
@@ -173,7 +174,8 @@ tier, where a player is, a player's rig, the server clock, and the sound bus), s
 imports the app.
 
 One module per thing the island does — `bells`, `fireworks`, `fishing`, `quiz-arena`,
-`emotes`, `lanterns`, `lighthouse`, `music` — over two shared ones:
+`emotes`, `lanterns`, `lighthouse`, `music`, `rain`, `fireflies`, `digs` — over two shared
+ones:
 
 - **`materials`** — how an effect is drawn through the ink pipeline without disturbing it.
   A spark, a beam and a halo are light, not surfaces; they must not be outlined and must
@@ -192,7 +194,8 @@ in the per-frame path, and nothing that flashes.
 for everything the games say — and a `t` store of the translate function, so a language
 change re-renders everything at once without a reload. A missing key falls back to English,
 then to the key itself, so a gap shows up as a readable word rather than a blank;
-`ui-games-smoke` fails when the three languages do not hold the same keys.
+`ui-games-smoke` fails when the three languages do not hold the same keys and placeholders,
+in `core.ts` and `games.ts` alike.
 
 World data is not duplicated there. Zone names and captions, activity titles, fish,
 badges, fortunes and quiz statements are authored in the shared package with their
@@ -238,9 +241,12 @@ directly and is not replayed.
 
 ### 3.2 Why transforms are packed
 
-At 120 players, a JSON array of transform objects is ~60 KB/s per client. The same data
-as six integers per player — index, x·100, y·100, z·100, yaw·1024, anim — is ~3 KB/s
-after `permessage-deflate`, a 20× reduction for about thirty lines of code.
+At 120 players, a JSON array of transform objects would be ~60 KB/s per client before
+compression. The same data goes as six integers per player — index, x·100, y·100, z·100,
+yaw·1024, anim — for about thirty lines of code, and runs of similar integers are what
+`permessage-deflate` compresses best. Measured (`npm run test:load`, OPERATIONS.md §6), a
+visitor in a full shard of 108 receives ~29 KB/s decoded and ~8.6 KB/s on the wire — and
+that is everything the server sends them, not the transforms alone.
 
 The index refers to a **roster** that is re-sent only when room membership changes, so
 quiet ticks carry integers and nothing else. Roster stability is therefore load-bearing
@@ -291,8 +297,8 @@ to buffer without bound.
 ### 3.6 The games layer
 
 The games live in `apps/server/src/games/` — `quiz.ts`, `fishing.ts` (with the derby),
-`janken.ts`, `fireworks.ts`, `interactions.ts` (bells, omikuji, stamps, dice),
-`guestbook.ts` and `profiles.ts`. Each is written against **`GameRoom`**
+`janken.ts`, `fireworks.ts`, `treasure.ts` (the treasure hunt), `interactions.ts` (bells,
+omikuji, stamps, dice), `guestbook.ts`, `profiles.ts` and `daily.ts` (today's tasks). Each is written against **`GameRoom`**
 (`games/context.ts`), not against `Room`: a dozen methods — find a player, send one of them
 a message, refuse in their language, emit a world event, patch a player's view, push or
 celebrate a profile, set the quiz view, announce as the island, ask for a save, and an
@@ -364,7 +370,8 @@ misleading things to resume players into. Rosters are not persisted either — s
 There are no accounts. A browser mints a random **visitor key** (`net/visitor.ts`,
 `localStorage`), sends it in `hello`, and the server keys a **profile** by its SHA-256 —
 the stamp card, the fish book, catches, badges and the badge being worn, today's omikuji,
-janken and quiz wins. The key itself is never stored. Two tabs with the same key share one
+janken and quiz wins, treasures dug up, today's tasks with the streak and the days done, and
+friends. The key itself is never stored. Two tabs with the same key share one
 record object, so they cannot disagree about the card. A visitor without a usable key still
 gets a profile for the session; only the keeping depends on the key.
 
@@ -379,7 +386,7 @@ random string in the browser rather than a login.
 
 | Failure | What happens |
 |---|---|
-| Client loses network | Backoff reconnect with jitter, forever, plus an immediate retry when `online` fires or the tab is foregrounded. Session resumes if within the grace window; otherwise the client returns to the same island (`hello.room`) and where it stood (`hello.at`). |
+| Client loses network | Backoff reconnect with jitter, forever — except after a 4002 close (the player was taken over by another tab), when the client stops and offers to continue here — plus an immediate retry when `online` fires or the tab is foregrounded. Session resumes if within the grace window; otherwise the client returns to the same island (`hello.room`) and where it stood (`hello.at`). |
 | Client misses a delta tick | Gap detected by tick number; client requests `resync` and is replayed from history or re-snapshotted. Debounced, because one gap usually means several. |
 | Client falls behind | Movement-only deltas are dropped past 256 KiB buffered; everything else is kept. |
 | Terrain worker unavailable or fails | Falls back to meshing on the main thread. Slower, still correct. Some embedded WebViews and strict CSP setups block module workers. |

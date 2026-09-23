@@ -31,6 +31,7 @@ interface ActivityView {
   templateId: string;       // which template it was made from
   feature: ActivityFeature | null;  // what the island does while it runs (§5)
   board?: Array<{ id: PlayerId; name: string; score: number }>;  // top few, if it keeps score
+  left?: number;            // treasure hunt: how many things are still buried
 }
 ```
 
@@ -45,7 +46,7 @@ Hosts do not fill in a form. Every activity comes from a template, and the templ
 the venue, the length, the shape and what the island does while it runs. This is the
 difference between a calm product and an events dashboard.
 
-The shipped island's eight (`ACTIVITY_TEMPLATES` in
+The shipped island's nine (`ACTIVITY_TEMPLATES` in
 [`maps/nagisa-island.ts`](../packages/shared/src/maps/nagisa-island.ts)):
 
 | Template | id | Venue | Duration | Capacity | Check-in | Feature |
@@ -145,10 +146,12 @@ scheduled ──▶ open ──▶ live ──▶ ended
 | `ended` | Finished. Check-ins are kept for the post-event summary. |
 | `cancelled` | Called off. Distinguished from `ended` so the interface can say so honestly. |
 
-Transitions are validated server-side by `canTransition`. `open → scheduled` is allowed
-(a host can close the doors again); everything else is one-way, and `ended` / `cancelled`
-are terminal. An illegal request returns `error { code: invalid_transition }` and changes
-nothing — which is what stops a host's double-tap from producing an impossible activity.
+Transitions are validated server-side by `canTransition`. Every transition is one-way:
+`open` goes only to `live` or `cancelled` — never back to `scheduled`, because the doors
+open by the clock five minutes before the start and the next sweep would simply open them
+again — and `ended` / `cancelled` are terminal. An illegal request returns
+`error { code: invalid_transition }` and changes nothing — which is what stops a host's
+double-tap from producing an impossible activity.
 
 ### What the island does by itself
 
@@ -171,9 +174,7 @@ nothing — which is what stops a host's double-tap from producing an impossible
   be owed `scheduled → open → live` at once; one step per tick would show a live event as
   "open" for a frame for no reason.
 
-A host can drive it by hand at any time within the graph. One consequence of the island
-running itself: closing the doors (`open → scheduled`) only sticks for an activity opened
-early by hand. Inside the five-minute window the next sweep opens it again.
+A host can drive it by hand at any time within the graph.
 
 Some features end their activity themselves: a quiz that has run its course ends it
 whatever the clock says, and a scheduled quiz that goes live while another quiz is running
@@ -345,9 +346,11 @@ something guessable. Keepers are unaffected.
 - **Kick** sends a fatal `kicked` error and removes the player. It is not a ban: they can
   come back as a new visitor (the client discards its resume token).
 - **Mute** silently drops the player's island chat, emotes and dice, and refuses their
-  whispers, fireworks and guestbook lines with `muted` — a whisper has no optimistic echo,
-  so a silent drop would read as a lost message. Mute lives on the player record: it follows
-  them to another island and ends with their session.
+  whispers, fireworks, guestbook lines and friend requests with `muted` — a whisper has no
+  optimistic echo, so a silent drop would read as a lost message. Mute lives on the player
+  record and ends with their session. A server (token) admin's mute follows the player to
+  every island; a keeper's holds on the keeper's island only — lifted when the player walks
+  to another, and back in force when they return.
 - **Grant host** keeps **one host per activity and one hosted activity per host**: whoever
   held either end before lets go of it, so no activity is left pointing at a host who hosts
   elsewhere. The new host is told with `role_changed` even when their role number did not

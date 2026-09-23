@@ -21,7 +21,8 @@
  * ### Adding your own
  *
  * Write a `MapPack` anywhere, call `registerMap(pack)` before connecting, and pass its id.
- * Nothing here needs editing — this file is the shipped set, not the allowed set.
+ * The check scripts (`npm run test:world`, `npm run audit:terrain`) resolve ids through
+ * this file, though, so a pack they are to check has to be registered here as well.
  */
 
 import { registerMap, setActiveMap, activeMapId } from '../map/registry.js';

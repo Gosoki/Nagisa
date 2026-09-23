@@ -66,8 +66,9 @@ Every zone carries its words in three languages. `name` is the English shown as 
 arrive and `nameJa` the Japanese beneath it; `nameZh` is the Chinese interface's name and
 falls back to `nameJa`, which shares its script. `caption` is the one observational sentence
 shown on first entry, with `captionZh` and `captionJa` beside it, each falling back to the
-English. The client picks the field (`apps/client/src/i18n/index.ts`); nothing is
-duplicated in the interface's dictionaries.
+English. The client picks the field (`apps/client/src/i18n/index.ts`); the interface's
+dictionaries do not repeat place names, with one exception — `firework.notHere` names the
+shipped island's firework shores, the beach and the south harbour, in its own words.
 
 ---
 
@@ -137,7 +138,8 @@ make a bigger harbour, it fills the bay in and leaves the piers standing on a be
 | Lighthouse Path | 35 m | 4 s | gravel | From the ring on the cape terrace out along the headland to the lighthouse |
 
 Lengths are surveyed arc lengths (`pathLength`); times are at the 9 m/s walk, on the flat.
-Every metre of all five is walkable; `world-smoke` checks it.
+Every metre of all five is walkable; `npm run audit:terrain` checks it, walking each
+centreline with the client's own step rule.
 
 ### Surveyed grades
 
@@ -193,7 +195,7 @@ no two distant samples on it are ever close together.
         omikuji stand, rod rack
 ```
 
-The last three kinds in that list — `stamp-stand`, `omikuji-stand`, `rod-rack` — are the
+The three game kinds in that list — `stamp-stand`, `omikuji-stand`, `rod-rack` — are the
 games' furniture (`props/games.ts`); §7 says how they are used.
 
 Roadside lanterns are **not** in that list: they are placed by arc length along the five
@@ -226,15 +228,18 @@ colourer patches two greens at a brushwork scale and why the massif has spurs. V
 slots back into `world/scatter.ts` without touching anything else.
 
 What is scattered: boulders on steep ground and along the shore, grass tufts on gentle
-ground, driftwood at the tide line — about 18 000 instances across 4 draw calls, placed by
-rejection sampling against the terrain field.
+ground, driftwood at the tide line — 18 898 instances on the high tier across 4 draw calls,
+placed by rejection sampling against the terrain field.
 
 ---
 
 ## 5. Movement, and the walkability contract
 
 The client predicts your movement and the server validates it. Both sides enforce the same
-rule, from [`packages/shared/src/movement.ts`](../packages/shared/src/movement.ts):
+rule, from [`packages/shared/src/movement.ts`](../packages/shared/src/movement.ts) (the
+speeds and the server's budget) and
+[`packages/shared/src/terrain.ts`](../packages/shared/src/terrain.ts) (`MAX_WADE_DEPTH`,
+`MAX_WALKABLE_SLOPE`):
 
 | | |
 |---|---|
@@ -244,7 +249,7 @@ rule, from [`packages/shared/src/movement.ts`](../packages/shared/src/movement.t
 | Max slope | 0.86 rad ≈ 49° |
 | Server budget | 20.5 m/s horizontal — the client's ceiling plus 2.5 m/s of headroom — and 16 m/s vertical |
 
-That file is not a preferences list. Any divergence between the two sides is not a subtle
+Those numbers are not a preferences list. Any divergence between the two sides is not a subtle
 physics discrepancy: it is **the player being teleported at random while running**, because
 every frame the client spends outside the server's rule earns a correction. Three versions of
 that bug shipped simultaneously, all from the two sides holding their own copies of these
@@ -252,10 +257,14 @@ numbers — the client waded deeper than the server allowed, let a player stand 
 server rejected, and applied its slide impulse after its speed clamp so sliding could exceed
 the server's budget.
 
-`world-smoke` now simulates the client's integrator against the server's validator, walking
-long lines out from every zone in every direction, and asserts that every position the client
-would commit to is one the server accepts. Against the old client rule it finds about 4 800
-violations in 110 000 steps.
+The two sides now call the same function — `canEnterFrom`, between the same two points —
+so they cannot disagree about a step. `world-smoke` keeps a coarser guard beside that: it walks
+long straight lines out from every zone in sixteen directions at a run, stepping wherever
+`isWalkable` allows or where the client's escape rule (a step that strictly lowers
+`illegality`) lets it, and asserts that every position it commits to is one `isWalkable`
+accepts. It does not use `canEnterFrom`, so the relaxations below are outside it; `npm run
+audit:terrain` is what walks the island with the client's full rule. Against the old client
+rule that guard found about 4 800 violations in 110 000 steps.
 
 ---
 
@@ -268,11 +277,11 @@ violations in 110 000 steps.
 | `node tools/flatness.mjs` | Ground variation under every building's footprint |
 | `npm run audit:terrain` | Walkability: pinholes, stranded pockets, snags on the lanes and terraces, reachability |
 | `npm run audit:placement` | Layout: symmetry, orientation, overlaps, buildings in the carriageway, doors turned away from the road, walls holding nothing back |
-| `npm run test:world` | The invariants: finite heights, pads at their authored level, every route walkable, every building level, the walkability contract |
-| `npm run shots` | Thirteen viewpoints rendered to PNG through the real pipeline |
-| `node tools/shot.mjs plans` | The same places again, but from directly overhead, through the real renderer |
+| `npm run test:world` | The invariants: finite heights, pads at their authored level, every building level, the walkability contract (routes are `audit:terrain`'s) |
+| `npm run shots` | Fourteen viewpoints rendered to PNG through the real pipeline |
+| `node tools/shot.mjs plans` | The whole island and each place but the east saddle and the notice board, from directly overhead, through the real renderer |
 | `node scripts/layout-solve.mjs --intent f.json` | Turns *station along a lane, offset, facing* into `x`, `z` and a yaw |
-| `SPOT='{"id":"…","near":[x,z]}' node scripts/find-spot.mjs` | Every position a landmark could stand that satisfies all four audits at once |
+| `SPOT='{"id":"…","near":[x,z]}' node scripts/find-spot.mjs` | Positions a landmark could stand that satisfy four placement rules at once — a ground drop of at most 0.3 m under it, off the carriageway, no overlap with other buildings, a door facing the road — nearest six first by default |
 | `npm run notes` | Placement notes written from inside the world — see below |
 
 The map is the one to reach for first when something looks wrong. The failure modes of a
@@ -291,7 +300,9 @@ That bank is what you meet as an invisible wall. `isWalkable` refuses ground ste
 reads as a plane of air on ground that looks like a hillside.
 
 So `outer` is now a *minimum*: the ring grows, per direction, to whatever width the drop on
-that side needs at a walkable grade, capped at three times the authored one. The growth is
+that side needs at a walkable grade, capped at three times the authored one. The one place it
+may be narrower is where the ring would run into a neighbouring terrace's flat: there it stops
+at that terrace's rim, down to 2.5 m. The growth is
 asymmetric by construction, so a harbour's seaward side keeps its authored ring and only the
 uphill approach becomes a ramp.
 
@@ -313,7 +324,10 @@ symmetric — ground too steep to climb is refused from above as firmly as from 
 clifftop used to be a fence: the ground past the edge was unwalkable, the step onto it was
 refused, and you could not jump off, fall off, or walk off. Steep ground may now be entered
 when it is *below* you. A player can always leave an edge and never climb one, which is
-validated from two coordinates, so the server checks it exactly.
+validated from two coordinates, so the server checks it exactly. Two more steps are let
+through: across a sliver (a one-metre crease just too steep, with walkable ground either side
+of it), and out of a building a player is somehow already inside — a step that is strictly
+less deep into the structure, never one further in.
 
 What remains is a band of steep ground round the mountain's foot, forty to fifty metres out
 from each harbour. That is a mountain, and the roads are how you get past it.
@@ -341,7 +355,7 @@ Author it in road coordinates and let `scripts/layout-solve.mjs` do the trigonom
 things go wrong every time they are typed by hand:
 
 - **The setback has to clear what the building *occupies*, not what its walls enclose.** Eaves
-  overhang by 0.6–1.5 m, a minka's veranda and steps reach 2.4 m past its front wall, a
+  overhang by 0.6–1.8 m, a minka's veranda and steps reach 2.4 m past its front wall, a
   funaya's slipway 4.3 m past its. A pass that measured wall lines once left nineteen
   buildings standing in a carriageway while believing none were.
 - **A yaw says which way a building is *turned*, not merely how it is squared up.** Every
@@ -397,8 +411,8 @@ that game.
 - **`quizArena`** — `{ zone, o: {x, z, r}, x: {x, z, r} }`: the two circles of the ○× quiz,
   on flat, walkable ground in a venue. The shipped arena is two 4.5 m discs across the middle
   of the plaza, clear of every building and prompt. `zone` is where the quiz gathers its
-  field — everyone standing in it when the lobby closes — so it should be the quiz
-  template's venue. The circles must not overlap (`quizSide` gives ○ a tie).
+  field — everyone standing in it when the lobby closes, along with anyone who joined the
+  quiz as a participant, wherever they stand — so it should be the quiz template's venue. The circles must not overlap (`quizSide` gives ○ a tie).
 - **`fireworks`** — `{ zones, sites }`: the shores a player may launch from (the shipped
   island: the beach and the south harbour), and the launch points out on the water as
   `[x, z]`. The server launches from the site nearest the player, jittered by up to 7 m.
@@ -408,7 +422,8 @@ that game.
 
 Activity templates carry their words the way zones do: `title` and `blurb` in English, with
 `titleZh`, `titleJa`, `blurbZh` and `blurbJa` beside them, each falling back to the English.
-A template's `feature` (`quiz`, `derby`, `fireworks`, `concert`, `lanterns`, `lamp`) says
+A template's `feature` (`quiz`, `derby`, `fireworks`, `concert`, `lanterns`, `lamp`,
+`treasure`) says
 what the island does while it is live.
 
 ### Adding a game spot
@@ -433,9 +448,10 @@ building, plus a prompt.
      ground. This is the check that catches a prompt left behind when its building moved;
      six of the island's first twelve were stranded when it was written.
    - `npm run test:world` — every landmark kind has a builder, every building stands on
-     ground level to within 0.45 m, every route and spawn is walkable.
+     ground level to within 0.45 m, every spawn is walkable.
+   - `npm run audit:terrain` — every route walkable end to end, every place reachable.
 
-   Neither looks at `quizArena` or the fireworks sites. Check the circles by standing in
+   None of them looks at `quizArena` or the fireworks sites. Check the circles by standing in
    them in the running client (`npm run dev`); the server's `games.test.ts` stands players at
    their centres and would fail on an arena the quiz cannot judge.
 

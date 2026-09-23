@@ -52,6 +52,14 @@ them. `normaliseRoomCode()` accepts what people actually type (`"ab c2d"`, `ab-c
   is closed with code **1008** (`invalid_frames`). The type is checked against the real
   message list before it is used for anything else. Only a frame the server understood
   resets the idle timer.
+- **Idle for 20 s** (`IDLE_TIMEOUT_MS`: no frame the server understood), and the socket is
+  closed with code **4000** (`idle_timeout`); the player enters the grace window like any
+  other disconnect.
+- **Taken over by another socket** — a resume token naming a player who is still connected
+  (§9) — and the old socket is closed with code **4002** (`replaced`). The client does not
+  reconnect after 4002.
+- **A fault while handling `hello`** closes the socket with code **1011**
+  (`internal_error`), after a fatal `internal` error frame (§11).
 
 ---
 
@@ -90,7 +98,7 @@ but no snapshot is in an undefined state and should wait, not render.
 |---|---|
 | `protocol` | Must equal the server's `VERSION`. |
 | `name`, `appearance` | Cleaned server-side (`apps/server/src/text.ts`): control characters, bidirectional overrides and isolates, zero-width characters (joiners included), LRM/RLM, the BOM and line separators removed, whitespace collapsed, cut to 20 code points; empty becomes `Visitor`. Appearance indices clamped. |
-| `resumeToken` | Resume a player the server is still holding in its grace window (§9). Invalid or expired tokens are ignored, not rejected. |
+| `resumeToken` | Resume a player the server is still holding — in its grace window, or still connected, in which case the old socket is closed with 4002 and this one takes over (§9). Invalid or expired tokens are ignored, not rejected. |
 | `at` | Where the client last stood. Used for a *new* player's spawn when it survives the walkability contract: finite, inside the map, and within 6 m of walkable ground after snapping. Otherwise the player lands at a harbour. See §9. |
 | `room` | A room id **or a private island's invite code**. A registered code the server is not currently holding re-opens that island. An unknown code, a full island or too many awake islands means the player is matchmade onto a public shard instead and then told why (`error` with `key` `room_not_found`, `full` or `islands_busy`). |
 | `visitor` | This browser's visitor key. The server hashes it (SHA-256) and keys a profile by the hash; the key itself is never stored. Absent or malformed means a profile that lasts only for this session. |
@@ -217,8 +225,11 @@ runs of similar integers extremely well.
 `Wave 7`, `Bow 8`, `Fish 9` (holding a rod over the water, so everyone sees the rod),
 `Cheer 10` and `Dance 11` (bon-odori at the concert: the arms move on a beat read off the server clock, so everyone dancing is in step and nothing but the state is sent).
 
-At 120 players this is ~720 integers per tick ≈ **3 KB/s** per client, against ~60 KB/s
-for the equivalent JSON objects.
+At 120 players this is ~720 integers per tick; the equivalent JSON objects would be ~60 KB/s
+per client before compression. Measured (`npm run test:load`, OPERATIONS.md §6), a visitor
+in a full shard of 108 receives **~29 KB/s decoded, ~8.6 KB/s on the wire** after
+`permessage-deflate` — and that is everything the server sends them, not the transforms
+alone.
 
 > **Roster stability is a correctness requirement.** If an index shifts under a client
 > mid-flight, one player's movement is attributed to another. The server keeps indices
@@ -344,8 +355,9 @@ client                                     server
 
 `ActivityView` carries, beyond its schedule and counts, `templateId` (the client's key for
 the localised title and the venue's effects), `feature` (`quiz`, `derby`, `fireworks`,
-`concert`, `lanterns`, `lamp`, or `null`) and an optional `board` — the top few
-`{ id, name, score }` for an activity that keeps score (the derby's biggest fish, in cm).
+`concert`, `lanterns`, `lamp`, `treasure`, or `null`), an optional `board` — the top few
+`{ id, name, score }` for an activity that keeps score (the derby's biggest fish, in cm) —
+and, for a treasure hunt, an optional `left`: how many things are still buried.
 
 Lifecycle, with transitions validated server-side by `canTransition`:
 
@@ -421,9 +433,15 @@ remain readable on the notice board until their TTL expires.
 
 Resume tokens are opaque, bound to a player id and a room, and HMAC-signed with
 `SESSION_SECRET`. A token older than 24 hours is refused outright. The client keeps its
-token **per tab**, in `sessionStorage`: it survives a reload and a dropped socket but is not
-shared with the tab next door, so two tabs of one browser cannot come back presenting each
-other's session. An invalid or expired
+token **per tab**, in `sessionStorage`: it survives a reload and a dropped socket and is not
+shared with a tab opened fresh. A *duplicated* tab, though, copies `sessionStorage`, and
+comes up presenting the original's token. The server resumes a player named by a valid token
+even while that player is still connected — the old socket may be a half-open one the server
+has not yet noticed dying — so the newer socket takes the player over and the old one is
+closed with **4002** (`replaced`). The tab that was replaced does not reconnect, since coming
+straight back would take the player back again and the two tabs would push each other off
+for ever; it says the island was opened in another tab and offers **Continue here**, which
+takes the player back on the person's say-so. An invalid or expired
 token is **ignored rather than rejected** — the client silently becomes a new visitor,
 which is a far better outcome than an error screen.
 
@@ -461,7 +479,7 @@ Semantics are in [GAMES.md](GAMES.md); these are the messages.
 | `guestbook_write { text }` | Sign the notice board, standing at it. |
 | `guestbook_remove { id }` | Take a line down: your own, or any if admin. |
 | `set_title { badge \| null }` | Wear a badge you hold under your name, or none. |
-| `dig` | Dig where you stand, while a treasure hunt is live. One per 1.5 s. |
+| `dig` | Dig where you stand, while a treasure hunt is live. One per 1.5 s per visitor key, and none in the first 5 s after arriving. |
 | `friend { action, target }` | `request` a player here (`target`: their id) to be friends; `accept` / `decline` an ask or `remove` a friend by its opaque id. Both sides need a visitor key. |
 | `chat { text, to? }` | With `to`, a whisper: delivered to both ends only, never in a delta, never bubbled. |
 
@@ -521,7 +539,7 @@ socket stays open. A rejected activity join must never cost you the world.
 | `invalid_transition` | no | Illegal activity lifecycle change. |
 | `kicked` | yes | Removed by an admin. The client discards its resume token. |
 | `server_shutdown` | yes | Graceful shutdown. Client *does* reconnect (with backoff). |
-| `internal` | no | Server-side fault; logged with the connection id. |
+| `internal` | usually no | Server-side fault; logged with the connection id. Fatal only when it happens while handling `hello`, and the socket is then closed with 1011. |
 
 ### `key` and `params`
 
@@ -556,7 +574,8 @@ back; the rate is what stops a script.
 Game-level cooldowns sit on top and say so when they refuse (`cooldown {seconds}`): one
 private island per connection per 30 s, one firework per player per 6 s and eight per room
 per 10 s, one guestbook line per 30 s, one die per 2 s, 3 s between rings of the same bell,
-one dig per 1.5 s, one friend request per 3 s (and a request turned down is not passed on
+one dig per visitor key per 1.5 s (and none in the first 5 s after arriving), one friend
+request per 3 s (and a request turned down is not passed on
 again for ten minutes).
 
 ### Text

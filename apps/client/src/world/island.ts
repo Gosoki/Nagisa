@@ -24,10 +24,11 @@
  * ### Culling
  *
  * Landmarks are grouped into **zone buckets**. Each bucket has a bounding sphere and is
- * shown or hidden as a unit based on distance to the camera. This is coarser than
- * per-object frustum culling but very much cheaper: one distance test hides the entire
- * south harbour when you are up at the lighthouse, rather than three.js testing forty
- * objects every frame. Three's own frustum culling still runs on whatever remains visible.
+ * shown or hidden as a unit based on distance to the camera: one distance test for a whole
+ * zone rather than three.js testing forty objects every frame. On this island, at the draw
+ * distances the tiers use, no bucket is ever far enough to be hidden — the island is small
+ * enough to be seen whole — so it is a provision for larger maps; here three's own frustum
+ * culling does the work.
  */
 
 import * as THREE from 'three';

@@ -39,7 +39,7 @@ with particular people, you make an island of your own and send them the link.
 | **The island's day** | Day and night turn every 90 real minutes, on one clock for everyone; the weather comes off the same clock in quarter-hour spells — fair, grey, now and then rain (the fish bite sooner in it). Every room runs the same programme on it: a treasure hunt in the small hours, the fishing derby at first light, a morning gathering, two quizzes, the harbour market at noon, the lamp lighting at dusk, the lantern walk, a concert on the sand, fireworks after dark. Things open and start by themselves; an admin can put one on at any time. |
 | **Private islands** | Make your own island and get a five-letter code; the link is `?island=CODE`. Whoever made it is its keeper — admin there, and only there — each time they come back from the same browser. An invite link keeps working after everyone has left, and after a restart when `PERSIST_PATH` is set. |
 | **Talking** | A chat log in the corner, a speech bubble over the speaker's head, whispers (`/w name …`) that reach one person only, and a notice board you can sign. |
-| **Friends** | Ask someone from their card; once they accept, each of you sees whether the other is on, which island they are on, and a button that takes you there — private islands included. A line tells you when a friend arrives. |
+| **Friends** | Ask someone from their card; once they accept, each of you sees whether the other is on, which island they are on, and a button that takes you there — private islands included. A line and a soft two-note chime tell you when a friend arrives (and when someone whispers to you); on the minimap, friends are the blue dots. |
 | **Multiplayer** | Server-authoritative rooms with real-time position and animation sync, presence, emotes, and shared time of day. Reconnection restores your identity, your role and your place in whatever you had joined; after a longer outage you come back where you were standing. |
 | **Activities** | Several things run concurrently in different zones — each with a lifecycle, an optional host, a participant roster, an audience, and optional check-in. Switching between them is walking somewhere. |
 | **Announcements** | Hosts announce to their activity or its zone; admins announce island-wide. An announcement interrupts only the people it is addressed to, as a quiet toast, and stays readable on the notice board. |
@@ -115,8 +115,12 @@ it does not end up in a screenshot or an invite link.
 
 ```bash
 npm run build        # shared → server → client, in that order
-npm start            # serves the API, the WebSocket and the built client on :8787
+STATIC_DIR="$PWD/apps/client/dist" npm start   # the API, the WebSocket and the built client on :8787
 ```
+
+`npm start` serves the built client only when `STATIC_DIR` points at it; without it the
+process answers the API and the WebSocket and nothing else. It runs inside `apps/server`, so
+give the path absolute.
 
 ### Docker
 
@@ -148,7 +152,8 @@ npm run map          # render the island to a shaded relief map
 `npm test` runs `test:world` and `test:ui` after the server's unit tests, and `test:ui` is
 itself two scripts: `ui-smoke.mjs` mounts the whole overlay through every app phase and
 panel, and `ui-games-smoke.mjs` mounts each game card and panel on its own, drives it through
-every state the server can put it in, and checks that the three languages hold the same keys.
+every state the server can put it in, and checks that the three languages hold the same keys
+and placeholders in both dictionaries, `core.ts` and `games.ts`.
 `test:e2e` runs against the built output, so `npm run build` first.
 
 `test`, `test:e2e` and the browser tests check different things and none of them subsumes
@@ -170,11 +175,12 @@ nagisa/
 ├── packages/shared/src/      # The contract. Imported by both sides.
 │   ├── protocol.ts           # Every WebSocket message + hot-path packing
 │   ├── terrain.ts            # The island's surface, as a pure function of (x, z)
-│   ├── movement.ts           # Speeds and slopes both sides enforce
+│   ├── movement.ts           # Speeds and the speed budget both sides enforce
 │   ├── world.ts              # Zones, landmarks, interactables, templates — of the active map
 │   ├── map/                  # What a map pack is (types) and the registry
 │   ├── maps/                 # The packs: nagisa-island (default), lantern-atoll
-│   ├── games/                # Fish, fortunes, badges, the quiz bank, the island clock
+│   ├── games/                # Fish, fortunes, badges, the quiz bank, the island clock,
+│   │                         # weather, treasure spots, today's tasks
 │   └── tokens.ts             # Palette, type scale, motion curves — UI *and* scene
 │
 ├── apps/server/src/
@@ -187,8 +193,11 @@ nagisa/
 │   ├── rooms.ts              # Public shards, private islands, matchmaking, sleep
 │   ├── activity.ts           # Lifecycle, rosters, check-in, the lifecycle sweep
 │   ├── schedule.ts           # Keeps the island's daily programme on every room's board
-│   ├── games/                # Quiz, fishing + derby, janken, fireworks, bells/omikuji/
-│   │                         # stamps/dice, guestbook, profiles — behind `GameRoom`
+│   ├── games/                # Quiz, fishing + derby, janken, fireworks, treasure hunt,
+│   │                         # bells/omikuji/stamps/dice, guestbook, profiles, today's
+│   │                         # tasks (daily) — behind `GameRoom`
+│   ├── friends.ts            # Friend lists, requests and presence across islands
+│   ├── text.ts               # Cleaning what players type (controls, bidi, invisibles)
 │   ├── permissions.ts        # Who may do what
 │   ├── handlers.ts           # One validated handler per client message
 │   ├── resume.ts             # Signed session resume tokens
@@ -205,7 +214,8 @@ nagisa/
 │   ├── world/                # Island assembly, terrain worker, sea, sky, scatter, props/
 │   ├── character/            # Procedural rig, local + remote players, name tags, bubbles
 │   ├── fx/                   # The games in the world: bells, fireworks, fishing, the quiz
-│   │                         # arena, lanterns, the lighthouse beam, the concert, emotes
+│   │                         # arena, lanterns, the lighthouse beam, the concert, emotes,
+│   │                         # rain, fireflies, treasure digs
 │   ├── net/
 │   │   ├── connection.ts     # Socket lifecycle, heartbeat, backoff, clock sync
 │   │   ├── world-sync.ts     # Snapshot/delta application, events, outbound throttling
@@ -221,8 +231,9 @@ nagisa/
 │                             #   Chat, EmoteWheel, Joystick, Entry, Loader, Panels;
 │                             #   panels: People, Activities, Settings, Host, Board,
 │                             #   Collection, Island, Notes (dev);
-│                             #   game cards: QuizHud, FishingHud, OmikujiCard,
-│                             #   JankenCard, PlayerCard
+│                             #   game cards: QuizHud, FishingHud, TreasureHud,
+│                             #   OmikujiCard, JankenCard, PlayerCard;
+│                             #   WelcomeCard (said once, to a first arrival)
 │
 ├── docs/                     # See below
 ├── archive/                  # world-v1/ and world-v2/: earlier world models, for reference
@@ -236,7 +247,7 @@ nagisa/
 │   ├── placement-audit.mjs   # Layout rules, including prompts that reach nothing
 │   ├── terrain-audit.mjs     # Walkability: pinholes, snags, reachability
 │   ├── world-map.mjs         # Renders the island to a PNG relief map
-│   ├── find-spot.mjs         # Every legal position for a landmark
+│   ├── find-spot.mjs         # Legal positions for a landmark, nearest first
 │   └── notes.mjs             # Prints placement notes written from inside the world
 ├── tools/
 │   ├── shot.mjs              # Viewpoints → PNG, through the real pipeline
@@ -245,6 +256,7 @@ nagisa/
 │   ├── island-smoke.mjs      # Private island → invite link → friend arrives → whisper
 │   ├── roam-smoke.mjs        # A long walk that must never earn a correction
 │   ├── reconnect-smoke.mjs   # Server dies under you; do you come back where you stood?
+│   ├── load-smoke.mjs        # A crowd of scripted visitors; tick time and bandwidth
 │   └── pixel-probe.mjs       # Live material uniforms from a running page
 ├── Dockerfile
 └── docker-compose.yml
@@ -255,7 +267,8 @@ nagisa/
 ## Runtime configuration
 
 All server configuration is environment variables, read once in `apps/server/src/config.ts`.
-Defaults are chosen so that `npm start` with no environment at all produces a working island.
+Defaults are chosen so that `npm start` with nothing but `STATIC_DIR` set produces a working
+island; with no environment at all it serves the API and the WebSocket without the client.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -274,6 +287,7 @@ Defaults are chosen so that `npm start` with no environment at all produces a wo
 | `ADMIN_TOKEN` | *(unset)* | Presented as `?admin=…` to receive `Role.Admin` on every island. Unset disables token admin entirely (a private island's keeper is still admin there). |
 | `SESSION_SECRET` | *(random)* | HMAC key for resume tokens; also accepted as `RESUME_SECRET`. Random at boot means restarts invalidate sessions — set it in production. |
 | `CORS_ORIGIN` | `*` | Allowed origin for the small REST surface. |
+| `DEV_NOTES_PATH` | *(unset)* | File for developer placement notes; set only in development, by `scripts/dev.mjs`. Unset means the `/dev/notes` endpoints do not exist. |
 
 The client needs no configuration: it always talks to `/ws` on its own origin, proxied to
 the server in development and served by it in production.

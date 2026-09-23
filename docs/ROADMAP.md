@@ -29,7 +29,8 @@ tests cover.
 ### Multiplayer
 - Server-authoritative rooms with 10 Hz snapshot/delta synchronisation, each delta encoded
   once and sent compressed.
-- Packed integer transforms: ~3 KB/s per client at 120 players.
+- Packed integer transforms: measured, a visitor in a full shard of 108 receives ~8.6 KB/s
+  on the wire (~29 KB/s decoded) — everything the server sends, not the transforms alone.
 - Client-predicted movement with server speed/walkability validation and hard corrections.
 - Remote-player interpolation at a 200 ms delay, with animation recovered from observed
   motion so legs never skate.
@@ -47,20 +48,24 @@ tests cover.
 ### Talking
 - A chat log with speech bubbles over the speaker; arrivals and departures as quiet lines.
 - Whispers (`/w`, reply with `/r`) delivered to both ends only.
-- Player cards: follow someone, challenge them to janken, whisper, block them on your own
-  screen; admins also mute, kick and make hosts.
+- Player cards: follow someone, challenge them to janken, whisper, add them as a friend,
+  block them on your own screen; admins also mute, kick and make hosts.
+- Friends: asked for on the player card and accepted while the ask stands; the people
+  panel shows whether each friend is on and which island they are on — a private one
+  included — and takes you there.
 - A notice board that can be signed: a line of up to 80 characters, kept across restarts.
 
 ### Activities and the island's day
-- Eight templates across six venues, each with a title and blurb in three languages.
-- A daily programme per room — derby at dawn, morning assembly, two quizzes, the market,
-  the lamp lighting, the lantern walk, the concert, fireworks — kept on every room's board
+- Nine templates across six venues, each with a title and blurb in three languages.
+- A daily programme per room — the treasure hunt in the small hours, derby at dawn, morning
+  assembly, two quizzes, the market, the lamp lighting, the lantern walk, the concert,
+  fireworks — kept on every room's board
   by the scheduler, without duplicates across restarts.
 - A lifecycle that runs itself: doors open five minutes early, things start on time unless a
   present host is holding them (for at most three minutes), anything that could not happen
   is cancelled, and finished things are cleared off.
 - Features that do something while live: the quiz, the derby, the fireworks show, the
-  concert, lanterns carried on the lantern walk, the lighthouse lamp.
+  concert, lanterns carried on the lantern walk, the lighthouse lamp, the treasure hunt.
 - Participant and audience modes, capacity enforcement, ring-based crowd placement.
 - Check-in with arrival ordinals, visible to everyone as `checkedIn`.
 - Announcements scoped to an activity, a zone or the island, gated by role, and toasted only
@@ -81,7 +86,7 @@ tests cover.
 - Four bells that everyone in earshot hears, spatialised; two viewpoints the camera turns to
   take in.
 - Weather off the island clock — fair, grey, rain — with umbrellas in the rain and fireflies at
-  the shrine on clear nights.
+  the shrine on nights without rain.
 - A treasure hunt in the small hours: three things buried at random, hot-or-cold digging
   that everyone nearby can read, and a board of finds.
 - Today's tasks: three a day, the same for everyone, with a streak and a badge at seven days.
@@ -89,9 +94,10 @@ tests cover.
 
 ### Interface
 - Simplified Chinese, Japanese and English throughout, following the browser, switchable.
-- Game cards (quiz, fishing line, omikuji slip, janken, player card) and panels (notice
-  board, collection, island) that stay small and fold away.
-- A photo button that saves the frame without the interface or the name plates.
+- Game cards (quiz, fishing line, treasure hunt, omikuji slip, janken, player card) and
+  panels (notice board, collection, island) that stay small and fold away.
+- A photo button that saves the frame without the interface or the name plates, with a small
+  paper label in the corner: the place, the date, the weather.
 
 ### Client engineering
 - Three quality tiers plus a settling adaptive-resolution controller.
@@ -361,9 +367,10 @@ things to get right:
   OPERATIONS.md's table** — that number, not a hunch, is what should decide when the two stop
   sharing a box.
 
-Bandwidth shares one monthly cap, and voice will dominate it: game traffic is ~3 KB/s per
-client, so a hundred players is ~2.4 Mbps against voice's ~10 Mbps. Roughly **80% of egress
-becomes voice** the day it ships. At this scale 2 vCPU / 4 GB carries nginx, the game server
+Bandwidth shares one monthly cap, and voice will take the larger part of it: game traffic
+measures ~8.6 KB/s per visitor on the wire in a full shard (OPERATIONS.md §6), so a hundred
+players is ~7 Mbps against voice's ~10 Mbps. Roughly **60% of egress becomes voice** the day
+it ships. At this scale 2 vCPU / 4 GB carries nginx, the game server
 and the SFU together; the binding constraint is the network, not the compute.
 
 **Things that will bite, noted while they are fresh:**
@@ -388,8 +395,8 @@ and the SFU together; the binding constraint is the network, not the compute.
   and a way to retire a code and issue a new one.
 
 ### Medium term — deepen the world
-- **Weather**, shared like the day cycle: rain on the sea, mist on the mountain. Uses the
-  same server-time mechanism, so it costs nothing in protocol terms.
+- **Mist on the mountain**, on the weather that is already shared like the day cycle. Uses
+  the same server-time mechanism, so it costs nothing in protocol terms.
 - **Interior spaces** — the shrine hall and the teahouse are currently solid. Making two of
   them enterable would add somewhere to be when it rains.
 - **A second island in play.** `lantern-atoll` exists as a map pack, but a server runs one

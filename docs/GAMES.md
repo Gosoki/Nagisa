@@ -12,7 +12,7 @@ sides hold to. Read with [PROTOCOL.md](PROTOCOL.md) (the transport) and
 |---|---|---|
 | **Private islands** | Make your own shard, get a five-letter code, send the link (`?island=CODE`). Whoever made it keeps it — as its admin — whenever they come back. | Server |
 | **Visitor key** | A random key the browser keeps so stamps, the fish book and badges survive between visits. No account; the server stores a hash. | Client mints, server hashes |
-| **The island's day** | Every room runs the same programme on the island clock (a day is 90 real minutes): the fishing derby at dawn, quizzes mid-morning and afternoon, the market at noon, the lamp at dusk, lanterns, the concert, fireworks after dark. | Server scheduler |
+| **The island's day** | Every room runs the same programme on the island clock (a day is 90 real minutes): the treasure hunt in the small hours, the fishing derby at dawn, the morning assembly, quizzes mid-morning and afternoon, the market at noon, the lamp at dusk, lanterns, the concert, fireworks after dark. | Server scheduler |
 | **○× quiz** | True/false statements; contestants *run* to the ○ or × circle on the plaza; wrong ones are out; last standing wins. | Server reads positions |
 | **Fishing** | Cast at a pier end or the beach, strike when the float goes under, land something from a table of 19 species. A derby scores the biggest fish during the dawn activity. | Server rolls every catch |
 | **Omikuji** | One fortune a day (JST) at the shrine; drawing again returns the same slip. | Server |
@@ -22,7 +22,7 @@ sides hold to. Read with [PROTOCOL.md](PROTOCOL.md) (the transport) and
 | **Bells** | The four bells ring, and everybody within earshot hears them. | Server (cooldown) |
 | **Guestbook** | Sign the notice board; it survives restarts. | Server |
 | **Whispers, dice** | `/w name …` reaches one person only; `/roll` rolls for everyone to see. | Server |
-| **Badges** | Seven, earned by doing the above; wear one under your name. | Server |
+| **Badges** | Nine, earned by doing the above; wear one under your name. | Server |
 | **Languages** | The interface speaks 中文, 日本語 and English. | Client |
 
 The protocol version is **2**. A v1 client is refused at the handshake with
@@ -75,6 +75,9 @@ ProfileView = {
   badges: BadgeId[]; title: BadgeId | null;
   omikuji: { day, fortune, item, direction } | null;   // today's, JST
   jankenWins: number; quizWins: number;
+  treasures: number;                                    // dug up, over every hunt
+  daily: { day, tasks: [{ kind, goal, progress }], done };   // today's tasks, JST
+  dailyStreak: number; dailyDays: number;
   persistent: boolean;   // false = no usable key: works, but forgotten with the session
 }
 ```
@@ -84,7 +87,8 @@ are capped (least recently seen evicted first) so the store cannot grow without 
 
 **Badges** (`games/badges.ts`): *walker* (every stamp), *angler* (10 catches),
 *master-angler* (every species but the boot), *quiz-champ* (win a quiz), *derby-champ* (win
-the derby), *lucky* (draw 大吉), *janken* (10 wins). Earning one broadcasts a `badge` event.
+the derby), *lucky* (draw 大吉), *janken* (10 wins), *treasure* (3 finds, over every hunt),
+*regular* (today's tasks done on 7 days). Earning one broadcasts a `badge` event.
 `set_title` wears one you have (or `null`); it appears as `PlayerView.title`.
 
 ---
@@ -141,7 +145,7 @@ ended at once rather than shown as live with nothing happening.
 ```
 client                         server
 fish{cast, spot}  ───────────► in reach of spot? not already fishing?
-                  ◄─────────── fish{waiting, spot}          (bite scheduled 2.5–9 s)
+                  ◄─────────── fish{waiting, spot}          (bite scheduled 2.5–9 s, ×0.7 in rain)
                   ◄─────────── fish{bite, window: 1200}     (at the scheduled moment)
 fish{hook}        ───────────► hooked within window (+350 ms slack)?
                   ◄─────────── fish{caught, fish, size, newSpecies, record, personalBest}
@@ -149,7 +153,8 @@ fish{hook}        ───────────► hooked within window (+35
 ```
 
 - `hook` before the bite → `escaped/early`; after the window → `escaped/late`. The bite
-  always comes 2.5–9 s after the cast, and a bite not struck in time escapes by itself.
+  comes 2.5–9 s after the cast (1.75–6.3 s in the rain), and a bite not struck in time
+  escapes by itself.
 - Moving more than `range + 1.5 m` from the spot, leaving the room or disconnecting reels in
   (`escaped/moved` or silently).
 - The catch is rolled from `fishFor(habitat, night)` weighted by rarity; size skews small.
@@ -189,11 +194,16 @@ sends up its own show every 1.2–3 s.
 
 ### Treasure hunt (`feature: 'treasure'`, template `treasure-hunt`, the whole island)
 
-When the hunt goes live the server buries `TREASURE_COUNT` (3) things: random walkable
-ground above the waterline, at least 30 m apart, 12 m clear of the arrival quay, and
-reachable from it on the routing graph. The spots never leave the server.
+When the hunt goes live the server buries `TREASURE_COUNT` (3) things, at least 30 m apart,
+each drawn from every place that will do: walkable ground above the waterline, 12 m clear of
+where people arrive, and reachable on foot from there — every cell of a one-metre grid that
+a walk from the arrival points reaches by steps the movement rules allow (`canEnterFrom`).
+That search takes a couple of seconds and is made once, at server boot. The spots never
+leave the server.
 
-`dig` from anyone, anywhere, at most once per `DIG_COOLDOWN_MS` (1.5 s). The server measures
+`dig` from anyone, anywhere, at most once per `DIG_COOLDOWN_MS` (1.5 s) per visitor key — a
+new connection is the same spade — and not in the first 5 s after arriving
+(`ARRIVAL_DIG_DELAY_MS`), so reconnecting round the island is no way to dig. The server measures
 from the digger's last validated position to the nearest thing still buried: within
 `TREASURE_FIND_RADIUS` (2.5 m) it comes up — `dig{result:'found'}` to the digger, a
 `treasure` event to everyone, a point on the activity's `board`, `profile.treasures + 1`,
@@ -221,7 +231,8 @@ per player per 30 s, not while muted. The board keeps the newest 60 per room, pe
 
 Three tasks a day, the same three for everyone: a hash of the Japanese calendar day picks
 them from nine (catch 3 fish, ring a bell, draw an omikuji, play janken, send up a firework,
-check in at an activity, say 3 things, emote 3 times, walk into 4 different places). The games
+check in at an activity, say 3 things, emote 3 times, walk into 4 different places), counting
+only those the active map supports — a map without a bell never asks for one to be rung. The games
 report what just happened through `GameRoom.daily(player, kind)`; a task that is not full
 takes it (places count once each). The day the last one fills is a day done:
 `dailyStreak` grows if the day before was done too, `dailyDays` counts them all, and at
@@ -259,7 +270,8 @@ anything that identifies the visitor elsewhere.
 
 A friend sees which island you are on, *including a private island's code* — a friendship
 is exactly as much consent as an invite link. The people panel lists friends with where they
-are and a "go to them" button; the card offers "add friend" and "accept request". Refusals:
+are and a "go to them" button; the card offers "add friend" and "accept request"; the minimap
+draws friends in blue, and a friend arriving (like a whisper) plays a soft two-note chime. Refusals:
 `friend_needs_key` · `friend_unavailable {name}` (they have no key) · `already_friends {name}` ·
 `friends_full {max}`.
 
@@ -288,7 +300,8 @@ language (`i18n/core.ts`, `error.<key>`):
 `too_long {max}` · `empty` · `no_hunt` · `islands_busy` (too many islands awake to make or
 wake another) · `schedule_full` (too many extra activities on the board) · `already_running`
 (a quiz or hunt is already live) · `too_fast` (a room switch, island or chat line over the rate
-limit) — `busy` is kept for a janken opponent who is in another duel
+limit) · `friend_needs_key` · `friend_unavailable {name}` · `already_friends {name}` ·
+`friends_full {max}` — `busy` is kept for a janken opponent who is in another duel
 
 ---
 

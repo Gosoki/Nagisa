@@ -12,8 +12,8 @@ crowd of dozens visible, over cellular data. Everything below exists to hit that
 | Max pixel ratio | 1.0 | 1.5 | 2.0 |
 | Min pixel ratio | 0.6 | 0.75 | 0.9 |
 | Shadows | off | 1024² | 2048² |
-| Terrain grid | 160² (~26 k verts) | 240² (~58 k) | 400² (~160 k) |
-| Scatter instances | ~3 200 | ~9 000 | ~18 500 |
+| Terrain grid | 160² (~26 k verts) | 240² (~58 k) | 340² (~116 k) |
+| Scatter instances | 2 999 | 8 496 | 18 898 |
 | Draw distance | 240 m | 400 m | 700 m |
 | Animated water | no | yes | yes |
 | Detailed characters | 12 | 28 | 60 |
@@ -58,15 +58,15 @@ than 500 ms are ignored as stalls rather than treated as slow rendering.
 
 ## 3. Draw calls
 
-The whole island is a few hundred draw calls. The techniques, in order of how much they
-buy:
+The whole island is ~660–1 900 draw calls at the `high` tier, depending on the view
+(RENDERING.md §10). The techniques, in order of how much they buy:
 
 | Technique | Where | Effect |
 |---|---|---|
-| **Instancing** | `scatter.ts` | 18 500 boulders, tufts and driftwood → 4 `InstancedMesh` calls. |
+| **Instancing** | `scatter.ts` | 18 898 boulders, tufts and driftwood (`high` tier) → 4 `InstancedMesh` calls. |
 | **Geometry merging** | `scatter.ts`, `props/geometry.ts` | Each prototype's meshes are flattened and merged per material before instancing; each building collapses to one mesh per material. |
 | **Shared materials** | `materials.ts` | Cached by key. Material *identity* is what makes merging possible at all. |
-| **Bucket culling** | `island.ts` | Landmarks grouped by zone with one bounding sphere each. One distance test hides the whole harbour from the lighthouse. |
+| **Bucket culling** | `island.ts` | Landmarks grouped by zone with one bounding sphere each, hidden by one distance test against the tier's draw distance. On this island it never actually hides anything, at any tier: no bucket is ever farther away than the shortest draw distance (240 m). |
 | **Single terrain mesh** | `island.ts` | One vertex-coloured mesh, one material, no textures. |
 
 `frustumCulled = false` is set deliberately on the terrain, the ocean and the scatter
@@ -95,7 +95,7 @@ Procedural rigs help twice over: no skinning cost per instance, and no download.
 
 | Measure | Effect |
 |---|---|
-| Packed transforms | 120 players: ~3 KB/s per client, against ~60 KB/s as JSON objects. |
+| Packed transforms | Six integers per moving player; as JSON objects the same 120 players would be ~60 KB/s per client before compression. Measured (`npm run test:load`, OPERATIONS.md §6), a visitor in a full shard of 108 receives ~29 KB/s decoded and ~8.6 KB/s on the wire — everything, not the transforms alone. |
 | Stable roster | `ids` re-sent only on membership change; quiet ticks carry integers only. |
 | Movement dead-band | No send below 2 cm / 0.6°. On a plaza where most people are watching, this removes ~⅔ of upstream traffic. |
 | Keep-alive | Every 2 s regardless, so late joiners learn about stationary players. |
@@ -112,15 +112,16 @@ and in a calm world a visible snap costs more than an invisible delay.
 
 | Phase | `high` tier |
 |---|---|
-| Terrain meshing (worker) | ~400–700 ms |
-| Landmarks (107 props) | ~300 ms, yielding every 8 props |
-| Roadside lanterns (67) | ~70 ms |
+| Terrain meshing (worker) | ~0.5 s |
+| Landmarks (134 props) | ~300 ms, yielding every 8 props |
+| Roadside lanterns (15; 13 on `low`) | ~70 ms |
 | Scatter placement + merge | ~350 ms |
 
 Two things keep this from feeling like a freeze:
 
-- **Terrain meshes in a Web Worker.** ~160 000 `heightAt` evaluations at the `high` tier
-  is comfortably enough to drop frames, and it happens exactly when the player is staring
+- **Terrain meshes in a Web Worker.** ~116 000 vertices at the `high` tier, each costing
+  five `heightAt` evaluations (the height, and four for its normal), is comfortably enough
+  to drop frames, and it happens exactly when the player is staring
   at a loading screen forming an opinion about whether this world is worth their time.
 - **Everything else yields.** Landmarks build in batches of eight with a frame between
   them, so the loader keeps animating instead of freezing at 60%.
@@ -150,11 +151,13 @@ There is no art to download.
 
 ## 8. Measuring
 
-The debug readout (toggled in settings) reports FPS, draw calls, triangles, the current
-adaptive pixel ratio and the scatter instance count. Boot logs a one-line build summary:
+There is no on-screen readout. The client keeps FPS, draw calls, triangles and the current
+adaptive pixel ratio in the `stats` store, and settings carry a `showStats` flag, but nothing
+in the interface shows either. For numbers, `tools/shot.mjs` prints draw calls and triangles
+for each viewpoint (RENDERING.md §10). Boot logs a one-line build summary:
 
 ```
-[nagisa] island built — terrain 148ms, 107 landmarks, 16765 scattered instances
+[nagisa] island built — terrain <ms>ms, <n> landmarks, <n> scattered instances
 ```
 
 Server-side, `GET /metrics` exposes Prometheus text: connections, messages in/out by type,
@@ -172,10 +175,10 @@ In rough order of return on effort:
    bad connections. It costs nothing and fixes most of it.
 2. **Lower `maxDetailedCharacters`.** Crowd animation is the largest per-frame CPU cost at
    high population.
-3. **Reduce `terrainResolution`.** Quadratic, and the flat shading hides a surprising
-   amount of tessellation loss.
-4. **Drop `scatterDensity`.** Cheap and visually costly — do this after the terrain.
+3. **Reduce `terrainResolution`.** Its cost is quadratic.
+4. **Lower the scatter budgets** (`BUDGETS` in `scatter.ts`; the tier's `scatterDensity` is
+   read by nothing). Cheap and visually costly — do this after the terrain.
 5. **Turn off shadows.** The single most expensive feature, but the island loses a lot of
    its form without them; prefer a smaller shadow map first.
-6. **Add room shards.** Anything above ~150 players per room is better solved by sharding
-   than by optimising.
+6. **Add room shards.** Rooms hold 120 players by default (`ROOM_CAPACITY`); anything above
+   that is better solved by sharding than by optimising.

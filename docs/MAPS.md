@@ -31,7 +31,7 @@ http://localhost:5173/?map=lantern-atoll
 # tools
 NAGISA_MAP=lantern-atoll npm run test:world
 NAGISA_MAP=lantern-atoll node scripts/world-map.mjs atoll.png
-node tools/shot.mjs --map lantern-atoll --views island
+node tools/shot.mjs --map lantern-atoll island
 ```
 
 An unknown id throws, listing what is registered. It never falls back to the default: the
@@ -90,16 +90,19 @@ and fails at import time.
 
 ## The contract a pack must satisfy
 
-`scripts/world-smoke.ts` runs 34 checks against *whichever pack is active*, with no map's
-numbers written into it. Both shipped maps pass all 34.
+`scripts/world-smoke.ts` runs 37 checks against *whichever pack is active*, with no map's
+numbers written into it. Both shipped maps pass all 37.
 
 - Every terrace's centre reaches its stated height.
-- Every route is walkable end to end, at a legal grade.
 - Every grounded landmark stands on ground level to within 0.45 m.
 - Every spawn point is walkable, they all land in the same zone, and they are spread rather
   than stacked.
 - The summit is the highest ground; the seabed does not run away downward.
 - Every zone anchor resolves to its own zone and is walkable.
+
+That every route is walkable end to end, at a legal grade, is not among them: that is
+`npm run audit:terrain` (`scripts/terrain-audit.ts`), which walks every lane centreline with
+the client's own step rule and fails on a single refused step.
 
 Assertions in that file must be written against `activeMap()`, never against a literal. The
 one that said `max > 30` was fine until the island's relief was halved, and the one that said
@@ -118,7 +121,12 @@ registerMap(MY_MAP);
 setActiveMap('my-map');
 ```
 
-`maps/index.ts` is the *shipped* set, not the allowed set — nothing there needs editing.
+That is enough for code that chooses its map itself, and for nothing else. The server
+(`NAGISA_MAP`), the client (`?map=`), `world-smoke` and `world-map` all resolve an id against
+the packs registered in `packages/shared/src/maps/index.ts`, so a new pack goes there before
+any of the checks below can load it. Route ids are not free either: `WorldPath.id` is a
+closed union in `map/types.ts` (`coast`, `shrine-ascent`, `south-approach`, `east-lane`,
+`lighthouse-ascent`), so a route with any other name needs its id added there first.
 
 Two things catch first-time authors, both now documented on the fields themselves:
 
@@ -128,5 +136,6 @@ Two things catch first-time authors, both now documented on the fields themselve
 - **Relief is absolute metres, not a ratio.** A pack whose summit is a tenth the height wants
   roughly a tenth of the island's `relief` values, or its noise will dwarf its landform.
 
-Then check it: `NAGISA_MAP=my-map npm run test:world`, and look at it with
+Then check it: `NAGISA_MAP=my-map npm run test:world` and
+`NAGISA_MAP=my-map npm run audit:terrain`, and look at it with
 `NAGISA_MAP=my-map node scripts/world-map.mjs my-map.png`.

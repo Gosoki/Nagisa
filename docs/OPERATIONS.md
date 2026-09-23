@@ -48,8 +48,9 @@ location / {
     proxy_set_header Connection "upgrade";
     proxy_set_header Host       $host;
     # The real client address, and only that. With TRUST_PROXY=1 the server reads the
-    # *first* X-Forwarded-For hop, so appending ($proxy_add_x_forwarded_for) would let a
-    # client put any address it likes in front and slip the per-address limit.
+    # *last* X-Forwarded-For hop, the one the proxy itself wrote. Overwriting with
+    # $remote_addr, rather than appending ($proxy_add_x_forwarded_for), leaves exactly one
+    # hop, so whatever a client put in the header is gone before the server sees it.
     proxy_set_header X-Forwarded-For $remote_addr;
 
     # Must exceed PING_INTERVAL_MS (5 s) with a wide margin, or the proxy will cut
@@ -80,8 +81,8 @@ thought:
 
 **`PERSIST_PATH`** — set it in any real deployment. It is not only the schedule: it holds
 the **private-island registry**, and without it a restart forgets every island, so every
-invite link anybody has sent stops working. It also holds every visitor's stamps, fish book
-and badges, each island's guestbook, and the audit log.
+invite link anybody has sent stops working. It also holds every visitor's stamps, fish book,
+badges, treasures, today's tasks and friends, each island's guestbook, and the audit log.
 
 **`SESSION_SECRET`** (also read as `RESUME_SECRET`) — HMAC key for resume tokens. If unset,
 a random one is generated at boot, which means every restart invalidates every session.
@@ -164,7 +165,7 @@ Prometheus reach that path.
 | Signal | Threshold | Why |
 |---|---|---|
 | Tick duration p99 | > 60 ms (of a 100 ms budget) | The process is running out of headroom. Every room ticks in one event loop, so this is the whole server, not one room. |
-| `nagisa_rooms_current` | approaching `ROOM_COUNT` + 200 | Private islands are near the awake cap; people will start to see `busy`. |
+| `nagisa_rooms_current` | approaching `ROOM_COUNT` + 200 | Private islands are near the awake cap; people will start to see `islands_busy`. |
 | Rooms at capacity | any public shard, sustained | Players are being crowded into one shard. |
 | Reconnect rate | sharp rise | Network trouble, a proxy timeout that is too short, or a crash loop. |
 | `nagisa_errors_total` | any rise in `handler` or `room_tick` | A genuine server-side fault; the logs carry the stack. |
@@ -201,7 +202,7 @@ There are no `debug`-level events at present, so `LOG_LEVEL=debug` logs the same
 |---|---|---|
 | `rooms` | Per room: activities with their check-in records and programme slot keys, announcements still within their TTL, the guestbook. Awake rooms are saved fresh; sleeping rooms as they were when they fell asleep. | Guestbook: 60 lines per room. Sleeping rooms: the 500 most recently saved. Awake rooms: always kept. |
 | `islands` | The private-island registry: code, the keeper's visitor-key hash and name, created and last-active times. | 2 000, most recently active first. |
-| `profiles` | Visitor progress, keyed by the SHA-256 of the visitor key: stamps, fish book, catches, badges, the badge worn, today's omikuji, janken and quiz wins, last seen. | 20 000, least recently seen evicted first. |
+| `profiles` | Visitor progress, keyed by the SHA-256 of the visitor key: stamps, fish book, catches, badges, the badge worn, today's omikuji, janken and quiz wins, treasures dug up, today's tasks (`daily`) with the streak, the last day done and the days in all (`dailyStreak`, `dailyLast`, `dailyDays`), friends (their visitor-key hashes and the names they went by), last seen. | 20 000, least recently seen evicted first. |
 | `audit` | The admin action log. | The newest 2 000. |
 
 Caps are applied when the state is saved. An island that falls out of the registry is gone:
@@ -272,7 +273,10 @@ Three layers.
   hold a socket open past the idle timeout.
 
 **Per message type, per connection** — a token bucket each, refilled at `rate` per second
-and holding `burst`. Exceeding one returns `rate_limited`, which the client does not show.
+and holding `burst`. Exceeding one returns `rate_limited`. Most carry no key and the client
+does not show them; a room switch, an island creation or a chat line over the limit carries
+`too_fast`, which it does — those are things a person does on purpose and would otherwise see
+nothing happen after.
 
 | Type | Rate / s | Burst |
 |---|---|---|
@@ -286,7 +290,8 @@ and holding `burst`. Exceeding one returns `rate_limited`, which the client does
 **Per game** — cooldowns the player is told about (`cooldown {seconds}`): one private island
 per connection per 30 s; one firework per player per 6 s and eight per room per 10 s (the
 show does not count); one guestbook line per player per 30 s; one die per 2 s; 3 s between
-rings of the same bell, whoever rings it.
+rings of the same bell, whoever rings it; one dig per visitor key per 1.5 s, and none in the first
+5 s after arriving; one friend request per 3 s.
 
 Inbound frames larger than 16 KiB are refused by the socket layer before they are parsed.
 
@@ -329,8 +334,10 @@ a crowd of scripted visitors over it — routed walks at walking pace, a chat li
 minute or so, an emote every twenty seconds — from several threads, so the harness keeps up
 and the numbers are the server's. `LOAD_BOTS` and `LOAD_SECONDS` set the size and length.
 
-On a laptop (Apple silicon, one Node process), 300 visitors spread by the matchmaker over
-three shards of 108 / 108 / 84:
+On a laptop (Apple silicon, one Node process), with `LOAD_BOTS=300` (the default is 150):
+300 visitors, which the matchmaker spreads over three shards of 108 / 108 / 84 — the harness
+runs the server with `ROOM_COUNT=1`, and at the default capacity of 120 a shard is filled to
+108 (10% headroom) before another opens:
 
 | | |
 |---|---|
@@ -436,7 +443,9 @@ engines. Every function in those files must be pure and integer-hashed.
 Connect with the admin token (or, on a private island, as its keeper), tap their name,
 and kick or mute. The action is written to the audit log with your stated reason. A kick
 is not a ban: they can return as a new visitor, and on a private island anyone with the
-link can. Mute lasts for the rest of their session.
+link can. Mute lasts for the rest of their session: a token admin's follows them to every
+island, a keeper's holds on the keeper's island only (lifted elsewhere, back when they
+return).
 
 ---
 
@@ -444,8 +453,9 @@ link can. Mute lasts for the rest of their session.
 
 The only stateful artefact is `PERSIST_PATH`, plus any `*.corrupt-*` files beside it. Copy
 it. It now carries more than a day's schedule: losing it loses every private island's
-code, every guestbook and every visitor's collection. It holds display names and guestbook
-text as people wrote them, and visitor keys only as hashes.
+code, every guestbook and every visitor's collection, task streak and friends list. It holds
+display names (friends' included) and guestbook text as people wrote them, and visitor keys
+only as hashes.
 
 Everything else — the island, the buildings, the vegetation, the fish and the quiz — is
 generated from code in version control and needs no backup at all.

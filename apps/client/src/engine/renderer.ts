@@ -29,10 +29,11 @@
  *
  * ### The WebGL2 requirement
  *
- * Multiple render targets need WebGL2. Every browser that can run this world has had it
- * for years, but if the context comes back WebGL1 the pipeline falls back to rendering the
- * scene straight to the canvas: flat shading, no contours, still playable. That is a
- * degradation, not a second art direction, and `hasInk` says which one is running.
+ * Multiple render targets need WebGL2, and three.js r170 creates nothing else: without it
+ * the renderer's constructor throws, and `main.ts` tells the player the browser cannot draw
+ * the island. The `isWebGL2` branch below is a guard for a three.js that could hand back a
+ * WebGL1 context (it would render straight to the canvas, with no contours); this one never
+ * does, and `hasInk` is always true.
  */
 
 import * as THREE from 'three';

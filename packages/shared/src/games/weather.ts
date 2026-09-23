@@ -55,20 +55,26 @@ const LEVELS: Record<Weather, { cloud: number; rain: number }> = {
   rain: { cloud: 1, rain: 1 },
 };
 
+export interface WeatherLevels {
+  weather: Weather;
+  cloud: number;
+  rain: number;
+}
+
 /**
  * The weather at `ms` as two continuous levels, 0–1 — how overcast, how hard it is raining —
- * eased from the previous spell over the first {@link WEATHER_BLEND_MS} of this one.
+ * eased from the previous spell over the first {@link WEATHER_BLEND_MS} of this one. Written
+ * into `out` when given (a frame loop asks every frame).
  */
-export function weatherLevels(ms: number): { weather: Weather; cloud: number; rain: number } {
+export function weatherLevels(ms: number, out: WeatherLevels = { weather: 'clear', cloud: 0, rain: 0 }): WeatherLevels {
   const index = Math.floor(ms / WEATHER_BLOCK_MS);
   const weather = weatherOfBlock(index);
   const now = LEVELS[weather];
   const before = LEVELS[weatherOfBlock(index - 1)];
   const x = Math.min(1, Math.max(0, (ms - index * WEATHER_BLOCK_MS) / WEATHER_BLEND_MS));
   const k = x * x * (3 - 2 * x);
-  return {
-    weather,
-    cloud: before.cloud + (now.cloud - before.cloud) * k,
-    rain: before.rain + (now.rain - before.rain) * k,
-  };
+  out.weather = weather;
+  out.cloud = before.cloud + (now.cloud - before.cloud) * k;
+  out.rain = before.rain + (now.rain - before.rain) * k;
+  return out;
 }

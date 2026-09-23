@@ -206,11 +206,15 @@ export class LocalPlayer {
    */
   setFishing(fishing: boolean): void {
     this.fishing = fishing;
+    // A line out is not a dance; nor does the dance come back by itself when the line is in.
+    if (fishing) this.dancing = false;
   }
 
   /** Dance on the spot (the beach concert's bon-odori), or stop. Walking off stops it too. */
   setDancing(dancing: boolean): void {
-    this.dancing = dancing;
+    // Not while sitting or fishing: those are shown instead, and the dance would start by
+    // itself the moment they end.
+    this.dancing = dancing && !this.seated && !this.fishing;
   }
 
   get isDancing(): boolean {
@@ -241,6 +245,7 @@ export class LocalPlayer {
    */
   setSeated(seated: boolean): void {
     this.seated = seated;
+    if (seated) this.dancing = false;
     if (seated) {
       this.velocity.set(0, 0, 0);
       this.finishWalk('cancelled');

@@ -749,7 +749,14 @@ export class Character {
   }
 
   private refreshUmbrella(): void {
-    if (this.umbrella) this.umbrella.visible = this.umbrellaShown;
+    if (!this.umbrella) return;
+    this.umbrella.visible = this.umbrellaShown;
+    // Held properly from the moment it goes up: a figure far enough away not to be animated
+    // is never updated, and would otherwise hold it as built — the canopy through its head.
+    if (this.umbrellaShown) {
+      this.applyUmbrellaPose();
+      this.standUmbrella();
+    }
   }
 
   get heldProp(): 'lantern' | null {
@@ -970,7 +977,13 @@ export class Character {
     this.head.rotation.x = -this.blended.lean * 0.55;
 
     if (this.held === 'lantern' && this.lantern) this.hangLantern();
-    if (this.umbrella && this.umbrellaShown) this.standUmbrella();
+    if (this.umbrella) {
+      // Lowered while the arm is busy with something else — a bow, a dance, a cheer — rather
+      // than held up at whatever height that pose leaves the hand, which is often the head.
+      const up = this.umbrellaShown && !ARM_BUSY.has(pose);
+      if (this.umbrella.visible !== up) this.umbrella.visible = up;
+      if (up) this.standUmbrella();
+    }
   }
 
   /**

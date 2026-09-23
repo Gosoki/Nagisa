@@ -9,13 +9,14 @@
    *
    * It is shown to everyone on the island while a hunt is live: unlike the quiz there is no
    * arena, the whole island is the field. The quiz and the hunt are never on the programme at
-   * the same time, so they can share the slot under the Next Up strip.
+   * the same time, so they share the slot under the Next Up strip — and if an admin puts both
+   * on at once, this card steps down under the quiz's.
    *
    * The button rests a little longer than the server's own interval between digs, so a
    * second press does not earn a refusal. F is ignored while typing, like every other game key.
    */
   import { DIG_COOLDOWN_MS } from '@nagisa/shared';
-  import { cmd, lastDig, self, treasureHunt } from '../state/stores.js';
+  import { cmd, lastDig, quiz, self, treasureHunt } from '../state/stores.js';
   import { t } from '../i18n/index.js';
 
   /** How long what the sand said stays on the card, ms. */
@@ -65,7 +66,8 @@
 <svelte:window onkeydown={onKey} />
 
 {#if hunt}
-  <section class="treasure" aria-label={$t('treasure.title')}>
+  <!-- A quiz on at the same time (an admin can put both on) has the slot; this goes under it. -->
+  <section class="treasure" class:below={$quiz !== null} aria-label={$t('treasure.title')}>
     <header class="head">
       <span class="label"><span aria-hidden="true">💎</span> {$t('treasure.title')}</span>
       <span class="left">{$t('treasure.left', { n: hunt.left ?? 0 })}</span>
@@ -119,6 +121,11 @@
     .treasure {
       top: calc(max(var(--sp-md), env(safe-area-inset-top)) + 92px);
     }
+  }
+
+  /* Clear of the quiz card, which is at most about this tall. */
+  .treasure.below {
+    margin-top: 250px;
   }
 
   @media (max-width: 420px) {

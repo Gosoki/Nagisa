@@ -597,6 +597,19 @@
     pointer-events: none;
   }
 
+  /* On a phone the minimap has the bottom-left corner (see Minimap.svelte, 112 px there): the
+     prompts keep to the width beside it and wrap, rather than being laid over the map when a
+     label is long — the Japanese and English ones are. */
+  @media (max-width: 640px) {
+    .bottom-center {
+      left: calc(var(--sp-md) + 112px + var(--sp-sm));
+      right: var(--sp-md);
+      transform: none;
+      width: auto;
+      max-width: none;
+    }
+  }
+
   .prompts {
     display: flex;
     flex-wrap: wrap;

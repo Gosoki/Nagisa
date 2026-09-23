@@ -91,6 +91,13 @@ export class Renderer {
     this.adaptive = new AdaptiveResolution(settings);
 
     this.canvas = document.createElement('canvas');
+    // Sized by CSS to its container, always. Every `setSize` below passes `updateStyle: false`
+    // and sets only the drawing buffer — viewport × pixel ratio — so without this the canvas is
+    // *displayed* at the buffer's size: on a Retina screen or a phone the world is shown twice
+    // as large with only its top-left quarter on screen, and when the adaptive resolution
+    // drops below 1 it shrinks into the corner.
+    this.canvas.style.width = '100%';
+    this.canvas.style.height = '100%';
     container.prepend(this.canvas);
 
     this.renderer = new THREE.WebGLRenderer({

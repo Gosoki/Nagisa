@@ -52,6 +52,7 @@ import {
   type PlayerId,
   type RoomView,
   type Weather,
+  type WeatherLevels,
   type ZoneId,
 } from '@nagisa/shared';
 import { inkLighting } from './engine/ink/ink-material.js';
@@ -216,6 +217,8 @@ export class App {
   /** The spell of weather last published to the interface; null before the first frame. */
   private weatherShown: Weather | null = null;
   private nightShown: boolean | null = null;
+  /** Scratch for the weather, asked every frame. */
+  private readonly weatherNow: WeatherLevels = { weather: 'clear', cloud: 0, rain: 0 };
   /** Whether the interface was last told you are dancing. */
   private danceShown = false;
 
@@ -630,7 +633,7 @@ export class App {
    * start biting sooner.
    */
   private updateWeather(serverTime: number): void {
-    const now = FORCED_WEATHER ?? weatherLevels(serverTime);
+    const now = FORCED_WEATHER ?? weatherLevels(serverTime, this.weatherNow);
     this.island.setWeather(now.cloud, now.rain);
     this.fx.setRain(now.rain);
     this.ambience.setRain(now.rain);
@@ -649,8 +652,9 @@ export class App {
   /** Start or stop dancing, and tell the interface. */
   private setDancing(on: boolean): void {
     this.local.setDancing(on);
-    this.danceShown = on;
-    dancing.set(on);
+    // The character decides (not while sitting or fishing); the button shows what it decided.
+    this.danceShown = this.local.isDancing;
+    dancing.set(this.danceShown);
   }
 
   /** Feed the name-tag layer with everyone it might want to label. */

@@ -40,7 +40,21 @@ console.info(`[nagisa] map: ${activeMap().name} (${activeMap().id})`);
 // building — otherwise the first two seconds are a blank page.
 const overlay = mountOverlay(container);
 
-const app = new App(container);
+/**
+ * Building the renderer is where a browser without WebGL2 fails — before `boot`, so its catch
+ * below never sees it, and the page would stay on a loading screen saying nothing. Say why.
+ */
+const app = ((): App => {
+  try {
+    return new App(container);
+  } catch (err) {
+    console.error('[nagisa] the island cannot be drawn here', err);
+    loadProgress.set({ value: 1, label: tr('app.noWebgl') });
+    appPhase.set('loading');
+    notify(tr('app.noWebgl'), 'warn', 120_000);
+    throw err;
+  }
+})();
 
 /**
  * WebGL context loss.
@@ -68,7 +82,7 @@ function installContextLossHandler(): void {
 
 app.boot().catch((err: unknown) => {
   console.error('[nagisa] boot failed', err);
-  loadProgress.set({ value: 1, label: 'The island could not be reached' });
+  loadProgress.set({ value: 1, label: tr('app.bootFailed') });
   appPhase.set('loading');
   notify(tr('app.bootFailed'), 'warn', 30_000);
 });

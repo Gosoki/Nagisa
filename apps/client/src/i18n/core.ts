@@ -109,6 +109,7 @@ export const CORE: Dictionaries = {
     'photo.saved': '照片已保存',
     'app.contextLost': '图形中断了——请刷新页面回到岛上',
     'app.bootFailed': '无法载入小岛，出了点问题',
+    'app.noWebgl': '这个浏览器画不出小岛（需要 WebGL2）。请换用较新的 Chrome、Edge、Safari 或 Firefox。',
     'photo.failed': '拍照失败',
 
     // The language picker.
@@ -380,6 +381,7 @@ export const CORE: Dictionaries = {
     'photo.saved': '写真を保存しました',
     'app.contextLost': '描画が中断されました — 再読み込みで島に戻れます',
     'app.bootFailed': '島を読み込めませんでした',
+    'app.noWebgl': 'このブラウザでは島を表示できません（WebGL2 が必要です）。新しい Chrome・Edge・Safari・Firefox でお試しください。',
     'photo.failed': '写真を撮れませんでした',
 
     'lang.label': '言語',
@@ -637,6 +639,7 @@ export const CORE: Dictionaries = {
     'photo.saved': 'Photo saved',
     'app.contextLost': 'Graphics interrupted — reload to return',
     'app.bootFailed': 'Something went wrong loading the island',
+    'app.noWebgl': 'This browser can’t draw the island (it needs WebGL2). Try a recent Chrome, Edge, Safari or Firefox.',
     'photo.failed': 'Could not take a photo',
 
     // The language picker. Each language's own name comes from `LANG_NAMES`, not from here.

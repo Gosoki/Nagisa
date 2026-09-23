@@ -26,24 +26,27 @@ import { metrics } from './metrics.js';
 const BACKPRESSURE_HIGH_WATERMARK = 256 * 1024;
 
 /**
- * Token bucket for one message type. Refilled continuously (not in discrete ticks) so
- * the limiter is independent of when it happens to be checked. Capacity equals the
- * configured per-second rate, which permits a one-second burst and then settles to the
- * steady-state rate — appropriate for bursty-but-bounded traffic like `move`.
+ * Token bucket for one message type. Refilled continuously (not in discrete ticks) so the
+ * limiter is independent of when it happens to be checked. Holds at most `burst` tokens and
+ * refills at `rate` per second: a short burst is absorbed (two quick lines of chat), and a
+ * sustained stream settles to the rate.
  */
 class TokenBucket {
   private tokens: number;
   private lastRefillMs: number;
 
-  constructor(private readonly ratePerSecond: number) {
-    this.tokens = ratePerSecond;
+  constructor(
+    private readonly ratePerSecond: number,
+    private readonly burst: number,
+  ) {
+    this.tokens = burst;
     this.lastRefillMs = Date.now();
   }
 
   /** Attempt to consume one token. Returns false (and consumes nothing) if empty. */
   tryTake(nowMs: number): boolean {
     const elapsedSec = Math.max(0, nowMs - this.lastRefillMs) / 1000;
-    this.tokens = Math.min(this.ratePerSecond, this.tokens + elapsedSec * this.ratePerSecond);
+    this.tokens = Math.min(this.burst, this.tokens + elapsedSec * this.ratePerSecond);
     this.lastRefillMs = nowMs;
     if (this.tokens < 1) return false;
     this.tokens -= 1;
@@ -109,14 +112,15 @@ export class Session {
    * Consume one rate-limit token for `type`. Returns false if the caller should be
    * rejected with `ErrorCode.RateLimited`. Each message type gets its own bucket sized
    * from {@link PROTOCOL.RATE_LIMIT}, falling back to `.default` for any type not
-   * explicitly listed there (currently everything except move/emote/chat).
+   * explicitly listed there (currently everything except move/emote/chat). A whisper is a
+   * `chat` frame and shares its bucket.
    */
   allow(type: ClientMessageType): boolean {
     let bucket = this.buckets.get(type);
     if (!bucket) {
-      const rate =
-        (PROTOCOL.RATE_LIMIT as Record<string, number>)[type] ?? PROTOCOL.RATE_LIMIT.default;
-      bucket = new TokenBucket(rate);
+      const limits = PROTOCOL.RATE_LIMIT as Record<string, { rate: number; burst: number }>;
+      const { rate, burst } = limits[type] ?? PROTOCOL.RATE_LIMIT.default;
+      bucket = new TokenBucket(rate, burst);
       this.buckets.set(type, bucket);
     }
     const ok = bucket.tryTake(Date.now());

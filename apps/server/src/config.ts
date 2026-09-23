@@ -12,6 +12,7 @@
  * `node dist/index.js` boots a single-room, single-shard island on localhost:8787.
  */
 
+import { randomBytes } from 'node:crypto';
 import { DEFAULT_MAP_ID, resolveMapId, PROTOCOL } from '@nagisa/shared';
 
 /** Parse an integer env var, falling back to `def` when unset or unparsable. */
@@ -60,6 +61,8 @@ export interface Config {
   readonly HOST: string;
   /** Maximum players per room shard before matchmaking opens a new one. Default 120. */
   readonly ROOM_CAPACITY: number;
+  /** Maximum players on one private island. Default 40 — a gathering of friends, not a festival. */
+  readonly PRIVATE_ROOM_CAPACITY: number;
   /** Number of room shards to pre-create at boot. Default 1. More are opened on demand. */
   readonly ROOM_COUNT: number;
   /** Simulation/broadcast tick rate, Hz. Sourced from the protocol, not independently configurable. */
@@ -105,7 +108,11 @@ export interface Config {
    * to keep the room listing private to one origin.
    */
   readonly CORS_ORIGIN: string;
-  /** Secret used to HMAC-sign resume tokens. See resume.ts. Generated if not supplied. */
+  /**
+   * Secret used to HMAC-sign resume tokens. See resume.ts. Read from `SESSION_SECRET` (the
+   * name the README, Dockerfile and compose file use) or `RESUME_SECRET`; generated if
+   * neither is set, in which case tokens do not survive a restart.
+   */
   readonly RESUME_SECRET: string;
   /**
    * Filesystem path for developer placement notes (see notes.ts). When unset — which is
@@ -119,6 +126,7 @@ function buildConfig(): Config {
   const PORT = envInt('PORT', 8787);
   const HOST = envStr('HOST', '0.0.0.0');
   const ROOM_CAPACITY = envInt('ROOM_CAPACITY', 120);
+  const PRIVATE_ROOM_CAPACITY = envInt('PRIVATE_ROOM_CAPACITY', 40);
   const ROOM_COUNT = envInt('ROOM_COUNT', 1);
   const LOG_LEVEL = envLogLevel('LOG_LEVEL', 'info');
   const MAP_ID = envStr('NAGISA_MAP', DEFAULT_MAP_ID);
@@ -130,11 +138,16 @@ function buildConfig(): Config {
   // A resume secret is required for HMAC signing. If the operator did not supply one,
   // generate a random per-process secret: resume tokens simply won't survive a restart,
   // which is a safe (if slightly less convenient) default rather than a fixed, guessable key.
+  // The documented name is SESSION_SECRET; RESUME_SECRET was the only one ever read, so every
+  // deployment that followed the README silently ran with a per-process secret. Both work now.
   const RESUME_SECRET =
-    envOptStr('RESUME_SECRET') ?? `ephemeral-${Math.random().toString(36).slice(2)}${Date.now()}`;
+    envOptStr('SESSION_SECRET') ??
+    envOptStr('RESUME_SECRET') ??
+    `ephemeral-${randomBytes(24).toString('hex')}`;
 
   if (PORT < 1 || PORT > 65535) throw new Error(`PORT out of range: ${PORT}`);
   if (ROOM_CAPACITY < 1) throw new Error(`ROOM_CAPACITY must be >= 1, got ${ROOM_CAPACITY}`);
+  if (PRIVATE_ROOM_CAPACITY < 1) throw new Error(`PRIVATE_ROOM_CAPACITY must be >= 1, got ${PRIVATE_ROOM_CAPACITY}`);
   if (ROOM_COUNT < 1) throw new Error(`ROOM_COUNT must be >= 1, got ${ROOM_COUNT}`);
   // Fail at boot, not at the first player's first step. resolveMapId throws with the list of
   // registered ids, which is the only thing an operator who mistyped one actually wants.
@@ -144,6 +157,7 @@ function buildConfig(): Config {
     PORT,
     HOST,
     ROOM_CAPACITY,
+    PRIVATE_ROOM_CAPACITY,
     ROOM_COUNT,
     TICK_HZ: PROTOCOL.TICK_HZ,
     LOG_LEVEL,

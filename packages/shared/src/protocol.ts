@@ -105,6 +105,9 @@ export const PROTOCOL = {
     move: { rate: 15, burst: 15 },
     emote: { rate: 2, burst: 3 },
     chat: { rate: 1, burst: 4 },
+    /** Moving between islands rebuilds your whole world; nobody needs to do it twice a second. */
+    room_switch: { rate: 0.2, burst: 3 },
+    room_create: { rate: 0.1, burst: 2 },
     default: { rate: 10, burst: 10 },
   },
 
@@ -441,9 +444,10 @@ export interface ClientHello {
   /**
    * Preferred room. Omit to be placed by the matchmaker.
    *
-   * May also be a private island's invite code (see {@link ROOM_CODE_PATTERN}). A code
-   * that names an island the server is not currently holding re-opens it — an invite link
-   * keeps working after everyone has left, and after a restart.
+   * May also be a private island's invite code (see {@link ROOM_CODE_PATTERN}). A registered
+   * code whose island the server is not currently holding re-opens it — an invite link keeps
+   * working after everyone has left, and (with persistence on) after a restart. An unknown
+   * code is refused with `room_not_found` and the player is matchmade instead.
    */
   room?: RoomId;
   /** Reported so the server can size deltas for weak devices. Advisory only. */

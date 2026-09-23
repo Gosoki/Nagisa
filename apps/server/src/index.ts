@@ -18,7 +18,6 @@
 import { randomUUID } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import {
-  ACTIVITY_TEMPLATES,
   decode,
   ErrorCode,
   type ClientHello,
@@ -28,21 +27,27 @@ import {
 import { CONFIG } from './config.js';
 import { createLogger } from './logger.js';
 import { metrics } from './metrics.js';
-import { Activity } from './activity.js';
 import { RoomManager } from './rooms.js';
-import type { Room } from './room.js';
 import { Session } from './session.js';
 import { AuditLog } from './audit.js';
-import { JsonFileStore, MemoryStore, type PersistedActivity, type PersistedState, type Store } from './persistence.js';
+import { JsonFileStore, MemoryStore, PERSIST_VERSION, type PersistedState, type Store } from './persistence.js';
 import { ConnState, HANDLERS, handleHello, type HandlerDeps } from './handlers.js';
 import { PermissionError } from './permissions.js';
 import { createServer, WS_PATH } from './http.js';
+import { ProfileStore } from './games/profiles.js';
+
+/** How often empty rooms are checked for putting to sleep. */
+const IDLE_SWEEP_MS = 60_000;
+
+/** Saves are gathered for this long before the state is built and handed to the store. */
+const PERSIST_COALESCE_MS = 1000;
 
 async function main(): Promise<void> {
   const log = createLogger({ level: CONFIG.LOG_LEVEL });
   log.info('boot_start', {
     port: CONFIG.PORT,
     roomCapacity: CONFIG.ROOM_CAPACITY,
+    privateRoomCapacity: CONFIG.PRIVATE_ROOM_CAPACITY,
     roomCount: CONFIG.ROOM_COUNT,
     tickHz: CONFIG.TICK_HZ,
     persist: CONFIG.PERSIST_PATH ?? '(memory only)',
@@ -57,48 +62,63 @@ async function main(): Promise<void> {
 
   const auditLog = new AuditLog(log.child({ component: 'audit' }));
   auditLog.restore(persisted.audit);
+  const profiles = new ProfileStore(persisted.profiles);
+
+  // `persist()` is called from all over — every check-in, every catch. Building the whole
+  // state each time would be wasteful, so calls within a second are gathered into one build,
+  // and the store debounces the write on top of that.
+  let persistTimer: ReturnType<typeof setTimeout> | null = null;
+  const persist = (): void => {
+    if (persistTimer) return;
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      void store.save(buildPersistedState());
+    }, PERSIST_COALESCE_MS);
+    persistTimer.unref?.();
+  };
 
   // --- Rooms ---------------------------------------------------------------------------
-  const rooms = new RoomManager(log.child({ component: 'rooms' }), CONFIG.ROOM_CAPACITY, CONFIG.ROOM_COUNT);
-  const firstRoom: Room = rooms.list()[0];
-
-  // Persisted activity/announcement state is not currently partitioned by room id (see
-  // persistence.ts) — on restart everything is consolidated back into the first shard.
-  // For the default single-room deployment this is exact; for a multi-shard deployment
-  // it means a restart re-homes every shard's schedule onto shard 1, which is a known,
-  // acceptable simplification rather than a correctness bug (nothing is lost, activities
-  // just aren't preserved on their original shard).
-  if (persisted.activities.length > 0) {
-    for (const pa of persisted.activities) restoreActivity(firstRoom, pa);
-    for (const ann of persisted.announcements) firstRoom.restoreAnnouncement(ann);
-    log.info('schedule_restored', { activities: persisted.activities.length, announcements: persisted.announcements.length });
-  } else {
-    seedDemoSchedule(firstRoom);
-    log.info('schedule_seeded', { templates: ACTIVITY_TEMPLATES.length });
-  }
+  // Each room restores its own schedule, announcements and guestbook as it wakes (see
+  // rooms.ts); private islands come back from the registry when their code is next used.
+  // Every room keeps the island's daily programme on its own board (schedule.ts), so there
+  // is no demo seeding: the day simply runs.
+  const rooms = new RoomManager({
+    log: log.child({ component: 'rooms' }),
+    roomCapacity: CONFIG.ROOM_CAPACITY,
+    privateCapacity: CONFIG.PRIVATE_ROOM_CAPACITY,
+    initialRoomCount: CONFIG.ROOM_COUNT,
+    persist,
+    persisted: { rooms: persisted.rooms, islands: persisted.islands },
+  });
+  log.info('rooms_ready', {
+    rooms: rooms.list().length,
+    sleeping: Object.keys(persisted.rooms).length,
+    islands: persisted.islands.length,
+    profiles: profiles.size,
+  });
 
   function buildPersistedState(): PersistedState {
-    const activities: PersistedActivity[] = [];
-    const announcements: PersistedState['announcements'] = [];
-    for (const room of rooms.list()) {
-      activities.push(...room.exportActivities());
-      announcements.push(...room.exportAnnouncements());
-    }
-    return { firstBootAt: persisted.firstBootAt, activities, announcements, audit: [...auditLog.all()] };
+    return {
+      version: PERSIST_VERSION,
+      firstBootAt: persisted.firstBootAt,
+      rooms: rooms.exportRooms(),
+      islands: rooms.exportIslands(),
+      profiles: profiles.export(),
+      audit: auditLog.all().slice(-AUDIT_LIMIT),
+    };
   }
 
-  const persist = (): void => {
-    void store.save(buildPersistedState());
-  };
-  // Belt-and-suspenders: handlers call `persist()` right after the mutations they know
-  // about, but the activity scheduler (scheduled→open, live→ended) also changes state
-  // on its own timeline inside the tick loop, with no handler in the loop to call
-  // `persist()`. A slow heartbeat catches those without persisting on every single tick.
+  // Belt-and-braces: handlers and games call `persist()` after the mutations they make, but
+  // the scheduler changes state on its own timeline inside the tick loop. A slow heartbeat
+  // catches those.
   const persistHeartbeat = setInterval(persist, 30_000);
   persistHeartbeat.unref?.();
 
+  const idleSweep = setInterval(() => rooms.sweepIdle(), IDLE_SWEEP_MS);
+  idleSweep.unref?.();
+
   // --- Transport -------------------------------------------------------------------
-  const deps: HandlerDeps = { rooms, audit: auditLog, log, config: CONFIG, persist };
+  const deps: HandlerDeps = { rooms, audit: auditLog, log, config: CONFIG, profiles, persist };
   const wss = new WebSocketServer({ noServer: true });
   let ready = false;
 
@@ -196,13 +216,13 @@ async function main(): Promise<void> {
   // Idle-connection sweep: a socket with no inbound frame for IDLE_TIMEOUT_MS is
   // considered dead (browser tab frozen, radio silently dropped) and closed — its
   // player then enters the same grace-window path as any other disconnect.
-  const idleSweep = setInterval(() => {
+  const connectionSweep = setInterval(() => {
     const now = Date.now();
     for (const session of activeSessions) {
       if (session.isIdle(now)) session.close(4000, 'idle_timeout');
     }
   }, 5_000);
-  idleSweep.unref?.();
+  connectionSweep.unref?.();
 
   await new Promise<void>((resolve) => httpServer.listen(CONFIG.PORT, CONFIG.HOST, resolve));
   ready = true;
@@ -216,7 +236,9 @@ async function main(): Promise<void> {
     log.info('shutdown_start', { signal });
     ready = false; // /readyz starts failing immediately so a load balancer stops routing here.
     clearInterval(idleSweep);
+    clearInterval(connectionSweep);
     clearInterval(persistHeartbeat);
+    if (persistTimer) clearTimeout(persistTimer);
 
     httpServer.close(); // Stop accepting new connections/upgrades.
 
@@ -227,7 +249,7 @@ async function main(): Promise<void> {
     rooms.stopAll();
 
     try {
-      persist();
+      await store.save(buildPersistedState());
       await store.flush();
     } catch (err) {
       log.error('shutdown_flush_failed', { err });
@@ -246,42 +268,8 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => void shutdown('SIGINT'));
 }
 
-/** Reconstruct an `Activity` from persisted state, bypassing lifecycle transition checks (this is a restore, not a live transition). */
-function restoreActivity(room: Room, pa: PersistedActivity): void {
-  const activity = new Activity({
-    id: pa.id,
-    templateId: pa.templateId,
-    title: pa.title,
-    blurb: pa.blurb,
-    zone: pa.zone,
-    startsAt: pa.startsAt,
-    endsAt: pa.endsAt,
-    capacity: pa.capacity,
-    checkinEnabled: pa.checkinEnabled,
-  });
-  activity.state = pa.state;
-  activity.hostId = pa.hostId;
-  activity.hostName = pa.hostName;
-  for (const id of pa.participants) activity.participants.add(id);
-  for (const id of pa.audience) activity.audience.add(id);
-  activity.restoreCheckins(pa.checkins);
-  room.activities.add(activity);
-}
-
-/**
- * Seed a fresh island with one instance of every activity template, staggered across
- * the next couple of hours so "Next Up" is never empty and not everything opens at
- * once. Only called on a genuinely first boot (no persisted activities at all) — see
- * the caller in `main()`.
- */
-function seedDemoSchedule(room: Room): void {
-  const now = Date.now();
-  const FIRST_STARTS_IN_MS = 10 * 60_000; // first activity opens for check-in shortly.
-  const SPACING_MS = 20 * 60_000; // 20 minutes apart -> 6 templates span 2 hours.
-  ACTIVITY_TEMPLATES.forEach((template, i) => {
-    room.activities.createFromTemplate(template.id, now + FIRST_STARTS_IN_MS + i * SPACING_MS);
-  });
-}
+/** How many audit entries are kept across restarts. */
+const AUDIT_LIMIT = 2000;
 
 main().catch((err) => {
   // eslint-disable-next-line no-console -- logger may not exist yet if boot failed before createLogger.

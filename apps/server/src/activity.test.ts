@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ActivityState } from '@nagisa/shared';
-import { Activity, ActivityManager } from './activity.js';
+import { Activity, ActivityManager, CLEAR_AFTER_MS, HOST_START_GRACE_MS } from './activity.js';
 
 function makeActivity(overrides: Partial<{ capacity: number; checkinEnabled: boolean }> = {}): Activity {
   return new Activity({
@@ -136,10 +136,10 @@ test('check-in is rejected when the activity does not have check-in enabled', ()
   assert.deepEqual(activity.checkin('p1', Date.now()), { ok: false, reason: 'not_live' });
 });
 
-test('ActivityManager.sweep advances scheduled->open 5 minutes before start, and live->ended at endsAt', () => {
+test('ActivityManager.sweep: opens 5 minutes early, starts itself at startsAt when nobody hosts it, ends at endsAt', () => {
   const manager = new ActivityManager();
-  const changed: string[] = [];
-  manager.on('changed', (a) => changed.push(a.state));
+  const transitions: string[] = [];
+  manager.on('transition', (_a, from, to) => transitions.push(`${from}->${to}`));
 
   const now = Date.now();
   const startsAt = now + 10 * 60_000; // starts in 10 minutes
@@ -150,20 +150,72 @@ test('ActivityManager.sweep advances scheduled->open 5 minutes before start, and
   manager.sweep(now);
   assert.equal(activity.state, ActivityState.Scheduled);
 
-  // At exactly startsAt - 5min, it should open.
+  // At exactly startsAt - 5min, it opens.
   manager.sweep(startsAt - 5 * 60_000);
   assert.equal(activity.state, ActivityState.Open);
 
-  // open -> live is a host decision, not automatic — sweep alone must never do it.
-  manager.sweep(startsAt + 60_000);
+  // Not yet time.
+  manager.sweep(startsAt - 1);
   assert.equal(activity.state, ActivityState.Open);
 
-  activity.transitionTo(ActivityState.Live);
-  assert.ok(activity.endsAt);
+  // Nobody hosts it: the island starts it on time rather than leaving it open forever.
+  manager.sweep(startsAt);
+  assert.equal(activity.state, ActivityState.Live);
+
   manager.sweep(activity.endsAt! - 1);
   assert.equal(activity.state, ActivityState.Live, 'must still be live one ms before endsAt');
   manager.sweep(activity.endsAt!);
   assert.equal(activity.state, ActivityState.Ended);
+  assert.deepEqual(transitions, ['scheduled->open', 'open->live', 'live->ended']);
+});
+
+test('ActivityManager.sweep: a present host gets a grace period to start it; an absent one does not', () => {
+  const manager = new ActivityManager();
+  const startsAt = Date.now() + 60_000;
+  const hosted = manager.createFromTemplate('morning-assembly', startsAt);
+  hosted.setHost('host-1', 'Hana');
+  const absent = manager.createFromTemplate('morning-assembly', startsAt);
+  absent.setHost('host-2', 'Kai');
+  const present = (id: string): boolean => id === 'host-1';
+
+  manager.sweep(startsAt, present);
+  assert.equal(hosted.state, ActivityState.Open, 'a host who is here decides when it starts');
+  assert.equal(absent.state, ActivityState.Live, 'a host who is not here does not hold everyone up');
+
+  manager.sweep(startsAt + HOST_START_GRACE_MS - 1, present);
+  assert.equal(hosted.state, ActivityState.Open);
+  manager.sweep(startsAt + HOST_START_GRACE_MS, present);
+  assert.equal(hosted.state, ActivityState.Live, 'after the grace period the island starts it anyway');
+});
+
+test('ActivityManager.sweep: anything still not started at its end time is cancelled, and cleared off later', () => {
+  const manager = new ActivityManager();
+  const removed: string[] = [];
+  manager.on('removed', (id) => removed.push(id));
+  const startsAt = Date.now() - 60 * 60_000; // an hour ago — the server was down through it
+  const missed = manager.createFromTemplate('morning-assembly', startsAt);
+  manager.sweep(Date.now());
+  assert.equal(missed.state, ActivityState.Cancelled);
+  assert.ok(missed.closedAt !== null);
+
+  manager.sweep(missed.closedAt! + CLEAR_AFTER_MS - 1);
+  assert.equal(removed.length, 0, 'kept on the board for a while');
+  manager.sweep(missed.closedAt! + CLEAR_AFTER_MS);
+  assert.deepEqual(removed, [missed.id]);
+  assert.equal(manager.get(missed.id), undefined);
+});
+
+test('ActivityManager.sweep: an activity that ended early is kept until its scheduled end, so its slot is not refilled', () => {
+  const manager = new ActivityManager();
+  const now = Date.now();
+  const a = manager.createFromTemplate('harbor-market', now, 'harbor-market@1'); // 25 minutes long
+  manager.transition(a, ActivityState.Open, now);
+  manager.transition(a, ActivityState.Cancelled, now);
+  manager.sweep(now + CLEAR_AFTER_MS);
+  assert.ok(manager.get(a.id), 'still there: its slot runs another ten minutes');
+  assert.equal(manager.hasSlot('harbor-market@1'), true);
+  manager.sweep(a.endsAt!);
+  assert.equal(manager.get(a.id), undefined);
 });
 
 test('host assignment', () => {

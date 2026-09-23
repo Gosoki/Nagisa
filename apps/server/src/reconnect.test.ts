@@ -33,6 +33,7 @@ import { AuditLog } from './audit.js';
 import { Session } from './session.js';
 import { createLogger } from './logger.js';
 import { issueResumeToken } from './resume.js';
+import { ProfileStore } from './games/profiles.js';
 
 class FakeSocket {
   readonly OPEN = 1;
@@ -52,10 +53,11 @@ const SECRET = 'test-secret-for-resume-tokens';
 
 function makeDeps(): HandlerDeps {
   return {
-    rooms: new RoomManager(log, 40, 1),
+    rooms: new RoomManager({ log, roomCapacity: 40, privateCapacity: 20, initialRoomCount: 1, persist: () => {}, autostart: false }),
     audit: new AuditLog(log),
     log,
     config: { RESUME_SECRET: SECRET } as HandlerDeps['config'],
+    profiles: new ProfileStore(),
     persist: () => {},
   };
 }

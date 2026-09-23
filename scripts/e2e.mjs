@@ -16,12 +16,16 @@
  */
 
 import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { WebSocket } from 'ws';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+// The same world the server simulates, so the test can stand players exactly at a fishing
+// spot or a stamp stand (via `hello.at`) instead of walking them there.
+const shared = createRequire(import.meta.url)(resolve(root, 'packages/shared/dist/index.js'));
 const PORT = Number(process.env.E2E_PORT ?? 8899);
 const BASE = `http://127.0.0.1:${PORT}`;
 const WS = `ws://127.0.0.1:${PORT}/ws`;
@@ -96,12 +100,33 @@ class Client {
   }
 }
 
-const hello = (name) => ({
+const hello = (name, extra = {}) => ({
   t: 'hello',
-  protocol: 1,
+  protocol: 2,
   name,
   appearance: { outfit: 1, skin: 2, accessory: 0 },
+  ...extra,
 });
+
+/** A valid visitor key, unique per test player. */
+const visitorFor = (name) => `e2e-visitor-${name.toLowerCase().padEnd(8, 'x')}`.slice(0, 40);
+
+/** Where an interactable is, as a `hello.at` claim. */
+function atInteractable(id) {
+  const it = shared.getInteractable(id);
+  const p = shared.interactablePosition(it);
+  return { pos: [p.x, p.y, p.z], yaw: 0 };
+}
+
+/** Open a client, say hello, wait for the welcome and snapshot. */
+async function arrive(name, extra = {}) {
+  const c = new Client(name);
+  await c.ready;
+  c.send(hello(name, extra));
+  c.welcome = await c.wait('welcome', () => true, 4000);
+  c.snapshot = await c.wait('snapshot', () => true, 4000);
+  return c;
+}
 
 // ---------------------------------------------------------------------------
 
@@ -249,11 +274,15 @@ async function main() {
 
   // -- Activities ---------------------------------------------------------
   console.log('\nActivities');
-  const activity = aliceSnap.activities[0];
+  // The island runs its own programme, so the board is never empty — but which of its
+  // activities are scheduled, open or live depends on the island's hour. The early checks
+  // hold for any of them; the full lifecycle below uses one the admin puts on, so its
+  // starting state is known.
+  const activity = aliceSnap.activities.find((a) => a.state === 'scheduled') ?? aliceSnap.activities[0];
+  check('every activity names its template', aliceSnap.activities.every((a) => typeof a.templateId === 'string'));
 
-  // A freshly seeded activity is `scheduled`, and joining one is legitimately refused —
-  // the doors are not open yet. Assert that first, because it is the guard that stops a
-  // crowd assembling for something that has not been announced.
+  // A scheduled activity is not open yet, and joining one is refused — the guard that stops
+  // a crowd assembling for something that has not been announced.
   alice.send({ t: 'activity_join', activity: activity.id, mode: 'participant' });
   const earlyJoinRefused = await alice.wait(
     'error',
@@ -266,17 +295,17 @@ async function main() {
     { state: activity.state, error: earlyJoinRefused },
   );
 
-  // Check-in before the activity is live must also be refused.
+  // Check-in without attending must be refused.
   alice.send({ t: 'checkin', activity: activity.id });
   const earlyAck = await alice.wait('checkin_ack', () => true, 3000);
-  check('check-in refused before the activity is live', earlyAck?.ok === false, earlyAck);
+  check('check-in refused when not attending a live activity', earlyAck?.ok === false, earlyAck);
 
   // A guest may not announce island-wide.
   alice.send({ t: 'host_announce', text: 'hello island', scope: { kind: 'island' } });
   const forbidden = await alice.wait('error', (f) => f.code === 'forbidden', 3000);
   check('guest cannot announce island-wide', !!forbidden, forbidden);
 
-  // An illegal lifecycle transition must be refused.
+  // A guest may not drive an activity's lifecycle.
   alice.send({ t: 'host_activity_state', activity: activity.id, state: 'ended' });
   const badTransition = await alice.wait(
     'error',
@@ -285,11 +314,13 @@ async function main() {
   );
   check('non-host cannot drive activity lifecycle', !!badTransition, badTransition);
 
+  // A guest may not put things on the programme.
+  alice.send({ t: 'host_schedule', template: 'island-quiz', inMin: 0 });
+  const scheduleForbidden = await alice.wait('error', (f) => f.code === 'forbidden' && f.message.includes('host_schedule'), 3000);
+  check('guest cannot schedule', !!scheduleForbidden, scheduleForbidden);
+
   // -- Admin --------------------------------------------------------------
   console.log('\nAdmin');
-  const admin = new Client('Keeper');
-  await admin.ready;
-  admin.socket.close();
   const adminSocket = new WebSocket(`${WS}?admin=e2e-admin`);
   await new Promise((res, rej) => {
     adminSocket.once('open', res);
@@ -301,6 +332,8 @@ async function main() {
   await sleep(600);
   const adminWelcome = adminFrames.find((f) => f.t === 'welcome');
   check('admin token connects', !!adminWelcome, adminWelcome);
+  const adminSelf = adminFrames.find((f) => f.t === 'snapshot')?.players?.find((p) => p.id === adminWelcome?.self);
+  check('admin token grants the admin role', adminSelf?.role === 3, adminSelf);
 
   adminSocket.send(
     JSON.stringify({ t: 'host_announce', text: 'The lamp is lit.', scope: { kind: 'island' } }),
@@ -315,54 +348,64 @@ async function main() {
   // -- Full activity lifecycle, driven by the admin ------------------------
   console.log('\nActivity lifecycle');
   const waitDelta = (client, predicate, ms = 4000) => client.wait('delta', predicate, ms);
+  const known = new Set(aliceSnap.activities.map((a) => a.id));
 
-  adminSocket.send(JSON.stringify({ t: 'host_activity_state', activity: activity.id, state: 'open' }));
+  adminSocket.send(JSON.stringify({ t: 'host_schedule', template: 'lantern-walk', inMin: 60 }));
+  const scheduled = await waitDelta(alice, (f) =>
+    f.activities?.some((a) => !known.has(a.id) && a.templateId === 'lantern-walk' && a.state === 'scheduled'),
+  );
+  check('admin can put an activity on the programme', !!scheduled, scheduled?.activities);
+  const lifecycle = scheduled?.activities?.find((a) => !known.has(a.id) && a.templateId === 'lantern-walk') ?? activity;
+
+  adminSocket.send(JSON.stringify({ t: 'host_activity_state', activity: lifecycle.id, state: 'open' }));
   const opened = await waitDelta(alice, (f) =>
-    f.activities?.some((a) => a.id === activity.id && a.state === 'open'),
+    f.activities?.some((a) => a.id === lifecycle.id && a.state === 'open'),
   );
   check('admin can open a scheduled activity', !!opened, opened?.activities);
 
-  alice.send({ t: 'activity_join', activity: activity.id, mode: 'participant' });
+  alice.send({ t: 'activity_join', activity: lifecycle.id, mode: 'participant' });
   const joined = await waitDelta(alice, (f) =>
-    f.players?.some((p) => p.id === aliceWelcome.self && p.activity === activity.id),
+    f.players?.some((p) => p.id === aliceWelcome.self && p.activity === lifecycle.id),
   );
   check('joining an open activity attaches the player', !!joined, joined?.players);
 
   const counted = await waitDelta(alice, (f) =>
-    f.activities?.some((a) => a.id === activity.id && a.participantCount >= 1),
+    f.activities?.some((a) => a.id === lifecycle.id && a.participantCount >= 1),
   );
   check('participant count is maintained server-side', !!counted, counted?.activities);
 
-  adminSocket.send(JSON.stringify({ t: 'host_activity_state', activity: activity.id, state: 'live' }));
+  adminSocket.send(JSON.stringify({ t: 'host_activity_state', activity: lifecycle.id, state: 'live' }));
   const live = await waitDelta(alice, (f) =>
-    f.activities?.some((a) => a.id === activity.id && a.state === 'live'),
+    f.activities?.some((a) => a.id === lifecycle.id && a.state === 'live'),
   );
   check('admin can start the activity', !!live, live?.activities);
 
   const acksBefore = alice.all('checkin_ack').length;
-  alice.send({ t: 'checkin', activity: activity.id });
+  alice.send({ t: 'checkin', activity: lifecycle.id });
   await sleep(500);
   const liveAck = alice.all('checkin_ack')[acksBefore];
   check('check-in accepted while live', liveAck?.ok === true, liveAck);
   check('check-in returns an arrival ordinal', liveAck?.ordinal === 1, liveAck);
+  const checkedInPatch = alice.all('delta').some((f) => f.players?.some((p) => p.id === aliceWelcome.self && p.checkedIn === true));
+  check('the check-in is visible on the player', checkedInPatch);
 
-  alice.send({ t: 'checkin', activity: activity.id });
+  alice.send({ t: 'checkin', activity: lifecycle.id });
   await sleep(500);
   const secondAck = alice.all('checkin_ack')[acksBefore + 1];
   check('a second check-in is refused', secondAck?.ok === false, secondAck);
 
-  adminSocket.send(JSON.stringify({ t: 'host_activity_state', activity: activity.id, state: 'ended' }));
+  adminSocket.send(JSON.stringify({ t: 'host_activity_state', activity: lifecycle.id, state: 'ended' }));
   const ended = await waitDelta(alice, (f) =>
-    f.activities?.some((a) => a.id === activity.id && a.state === 'ended'),
+    f.activities?.some((a) => a.id === lifecycle.id && a.state === 'ended'),
   );
   check('admin can end the activity', !!ended, ended?.activities);
 
   // `ended` is terminal — nothing may revive it.
-  adminSocket.send(JSON.stringify({ t: 'host_activity_state', activity: activity.id, state: 'live' }));
+  adminSocket.send(JSON.stringify({ t: 'host_activity_state', activity: lifecycle.id, state: 'live' }));
   await sleep(500);
   const revived = alice
     .all('delta')
-    .some((f) => f.activities?.some((a) => a.id === activity.id && a.state === 'live' && f.tick > ended.tick));
+    .some((f) => f.activities?.some((a) => a.id === lifecycle.id && a.state === 'live' && f.tick > ended.tick));
   check('an ended activity cannot be restarted', !revived);
 
   // -- Emotes -------------------------------------------------------------
@@ -422,6 +465,146 @@ async function main() {
     alice.all('snapshot').length > snapsBeforeFar,
     { before: snapsBeforeFar, after: alice.all('snapshot').length, snapsAtStart: snapsBefore },
   );
+
+  // -- Private islands ----------------------------------------------------
+  console.log('\nPrivate islands');
+  const carol = await arrive('Carol', { visitor: visitorFor('Carol') });
+  check('welcome carries a profile', !!carol.welcome?.profile && carol.welcome.profile.persistent === true, carol.welcome?.profile);
+  carol.send({ t: 'room_create' });
+  const made = await carol.wait('room_changed', () => true, 4000);
+  const code = made?.room?.code;
+  check('room_create moves you to a private island with a code', made?.room?.kind === 'private' && /^[2-9A-HJKMNP-Z]{5}$/.test(code ?? ''), made);
+  check('the maker keeps it (admin there)', made?.role === 3, made?.role);
+  check('room_changed carries a fresh resume token', typeof made?.resumeToken === 'string' && made.resumeToken !== carol.welcome.resumeToken);
+  const carolIslandSnap = await carol.wait('snapshot', (f) => f.room === made?.room?.id, 4000);
+  check('the new island has the programme on its board', (carolIslandSnap?.activities?.length ?? 0) > 0);
+
+  const dave = await arrive('Dave', { room: code?.toLowerCase(), visitor: visitorFor('Dave') });
+  check('an invite code in hello lands you on that island', dave.welcome?.room?.id === made?.room?.id, dave.welcome?.room);
+  check('a guest on somebody else\'s island is a guest', dave.snapshot?.players?.find((p) => p.id === dave.welcome.self)?.role === 0);
+  const daveSeesCarol = dave.snapshot?.players?.some((p) => p.id === carol.welcome.self);
+  check('friends on the same island see each other', !!daveSeesCarol);
+  check('your own island is listed to you, and no one else\'s', dave.welcome?.rooms?.some((r) => r.code === code));
+  check('private islands are not listed to strangers', !alice.last('welcome')?.rooms?.some?.((r) => r.kind === 'private'));
+
+  const eve = await arrive('Eve', { room: code === 'ZZZZZ' ? 'YYYYY' : 'ZZZZZ' });
+  check('an unknown code falls back to a public island', eve.welcome?.room?.kind === 'public', eve.welcome?.room);
+  const unknownCode = await eve.wait('error', (f) => f.key === 'room_not_found', 2000);
+  check('…and says the island was not found', !!unknownCode, unknownCode);
+
+  // -- Whispers and dice --------------------------------------------------
+  console.log('\nWhispers and dice');
+  carol.send({ t: 'chat', text: 'psst', to: dave.welcome.self });
+  const daveWhisper = await dave.wait('whisper', (f) => f.text === 'psst', 3000);
+  const carolReceipt = await carol.wait('whisper', (f) => f.text === 'psst', 3000);
+  check('a whisper reaches its target', daveWhisper?.from === carol.welcome.self, daveWhisper);
+  check('the sender gets the receipt', !!carolReceipt);
+  await sleep(300);
+  check('nobody else hears it', !eve.all('whisper').length && !dave.all('delta').some((d) => d.chats?.some((c) => c.text === 'psst')));
+
+  dave.send({ t: 'roll', sides: 6 });
+  const dice = await carol.wait('delta', (f) => f.events?.some((e) => e.k === 'dice' && e.by === dave.welcome.self), 3000);
+  const roll = dice?.events?.find((e) => e.k === 'dice');
+  check('a die roll is seen by the island', !!roll && roll.value >= 1 && roll.value <= 6, roll);
+
+  // -- Omikuji and stamps -------------------------------------------------
+  console.log('\nOmikuji and stamps');
+  const pilgrim = await arrive('Pilgrim', { at: atInteractable('omikuji'), visitor: visitorFor('Pilgrim') });
+  pilgrim.send({ t: 'interact', target: 'omikuji', kind: 'use' });
+  const slip = await pilgrim.wait('omikuji', () => true, 3000);
+  check('drawing the omikuji gives a slip', !!slip && slip.again === false, slip);
+  pilgrim.send({ t: 'interact', target: 'omikuji', kind: 'use' });
+  const again = await pilgrim.wait('omikuji', (f) => f.again === true, 3000);
+  check('a second draw the same day is the same slip', again?.fortune === slip?.fortune, again);
+
+  pilgrim.send({ t: 'interact', target: 'stamp-south-harbor', kind: 'use' });
+  const tooFar = await pilgrim.wait('error', (f) => f.key === 'too_far', 3000);
+  check('a stamp must be taken at its stand', !!tooFar, tooFar);
+
+  // Walk over to the shrine's stamp stand the quick way: come back there as a new player
+  // with the same visitor key — which also shows the profile outliving the player.
+  pilgrim.close();
+  await sleep(300);
+  const pilgrim2 = await arrive('Pilgrim', { at: atInteractable('stamp-shrine'), visitor: visitorFor('Pilgrim') });
+  check('progress comes back with the visitor key', pilgrim2.welcome?.profile?.omikuji?.fortune === slip?.fortune, pilgrim2.welcome?.profile);
+  pilgrim2.send({ t: 'interact', target: 'stamp-shrine', kind: 'use' });
+  const stamped = await pilgrim2.wait('profile', (f) => f.profile.stamps.includes('shrine'), 3000);
+  check('stamping puts the place on your card', !!stamped, stamped?.profile);
+  pilgrim2.send({ t: 'interact', target: 'stamp-shrine', kind: 'use' });
+  const twice = await pilgrim2.wait('error', (f) => f.key === 'already_stamped', 3000);
+  check('the same stamp twice is refused', !!twice);
+  const pilgrimAgain = pilgrim2;
+
+  // -- Fishing ------------------------------------------------------------
+  console.log('\nFishing');
+  const angler = await arrive('Angler', { at: atInteractable('fish-south-main'), visitor: visitorFor('Angler') });
+  angler.send({ t: 'fish', action: 'cast', spot: 'fish-south-main' });
+  const waiting = await angler.wait('fish', (f) => f.phase === 'waiting', 3000);
+  check('casting puts a line out', !!waiting, waiting);
+  const bite = await angler.wait('fish', (f) => f.phase === 'bite', 11_000);
+  check('a bite comes', !!bite, bite);
+  angler.send({ t: 'fish', action: 'hook' });
+  const caught = await angler.wait('fish', (f) => f.phase === 'caught', 3000);
+  check('striking in time lands a fish', !!caught && typeof caught.fish === 'string' && caught.size > 0, caught);
+  const catchEvent = await alice.wait('delta', (f) => f.events?.some((e) => e.k === 'catch' && e.by === angler.welcome.self), 3000);
+  check('the catch is an event for the island', !!catchEvent);
+  const book = await angler.wait('profile', (f) => f.profile.catches === 1, 3000);
+  check('the catch goes in the book', !!book, book?.profile);
+
+  // -- Guestbook ----------------------------------------------------------
+  console.log('\nGuestbook');
+  const signer = await arrive('Signer', { at: atInteractable('notice-board') });
+  signer.send({ t: 'guestbook_write', text: 'was here' });
+  const signed = await alice.wait('delta', (f) => f.guestbook?.some((g) => g.text === 'was here'), 3000);
+  check('signing the board reaches everyone', !!signed, signed?.guestbook);
+  signer.send({ t: 'guestbook_write', text: 'and again' });
+  const tooSoon = await signer.wait('error', (f) => f.key === 'cooldown', 3000);
+  check('one line per half minute', !!tooSoon);
+  const entry = signed?.guestbook?.find((g) => g.text === 'was here');
+  alice.send({ t: 'guestbook_remove', id: entry?.id });
+  const notYours = await alice.wait('error', (f) => f.key === 'forbidden', 3000);
+  check('nobody else can take your line down', !!notYours);
+  signer.send({ t: 'guestbook_remove', id: entry?.id });
+  const taken = await alice.wait('delta', (f) => f.guestbookRemoved?.includes(entry?.id), 3000);
+  check('the author can', !!taken);
+
+  // -- Janken -------------------------------------------------------------
+  console.log('\nJanken');
+  const plaza = shared.getZone('plaza');
+  const jan = await arrive('Jan', { at: { pos: [plaza.x, 0, plaza.z], yaw: 0 } });
+  const ken = await arrive('Ken', { at: { pos: [plaza.x + 2, 0, plaza.z], yaw: 0 } });
+  jan.send({ t: 'janken', action: 'challenge', target: ken.welcome.self });
+  const invite = await ken.wait('janken', (f) => f.kind === 'invited', 3000);
+  check('a challenge reaches its target', !!invite, invite);
+  ken.send({ t: 'janken', action: 'respond', duel: invite?.duel, accept: true });
+  const start = await jan.wait('janken', (f) => f.kind === 'start', 3000);
+  check('accepting starts a round for both', !!start && !!(await ken.wait('janken', (f) => f.kind === 'start', 3000)));
+  jan.send({ t: 'janken', action: 'throw', duel: invite?.duel, hand: 'rock' });
+  ken.send({ t: 'janken', action: 'throw', duel: invite?.duel, hand: 'scissors' });
+  const result = await jan.wait('janken', (f) => f.kind === 'result', 3000);
+  check('rock beats scissors', result?.winner === jan.welcome.self && result?.final === true, result);
+  const jEvent = await alice.wait('delta', (f) => f.events?.some((e) => e.k === 'janken'), 3000);
+  check('the result is an event for the island', !!jEvent);
+
+  // -- Fireworks ----------------------------------------------------------
+  console.log('\nFireworks');
+  const beach = shared.getZone('beach');
+  const sparky = await arrive('Sparky', { at: { pos: [beach.x, 0, beach.z], yaw: 0 } });
+  sparky.send({ t: 'firework' });
+  const fw = await alice.wait('delta', (f) => f.events?.some((e) => e.k === 'firework' && e.by === sparky.welcome.self), 3000);
+  check('a firework from the shore goes up for everyone', !!fw);
+  jan.send({ t: 'firework' });
+  const notShore = await jan.wait('error', (f) => f.key === 'not_here', 3000);
+  check('…but not from the plaza', !!notShore);
+
+  // -- Quiz ---------------------------------------------------------------
+  console.log('\nQuiz');
+  adminSocket.send(JSON.stringify({ t: 'host_schedule', template: 'island-quiz', inMin: 0 }));
+  const lobby = await jan.wait('delta', (f) => f.quiz?.phase === 'lobby', 4000);
+  check('a quiz put on now opens its lobby', !!lobby, lobby?.quiz);
+  check('the lobby counts down on the server clock', !!lobby && lobby.quiz.endsAt > Date.now() - 2000);
+
+  for (const c of [carol, dave, eve, pilgrimAgain, angler, signer, jan, ken, sparky]) c.close();
 
   // -- Protocol version ---------------------------------------------------
   console.log('\nVersioning');

@@ -28,7 +28,14 @@ export class AuditLog {
    * log is only flushed to durable storage periodically/debounced, but an admin action
    * showing up in the live log stream right away is valuable for on-call debugging.
    */
-  record(entry: { actorId: string; actorName: string; action: string; targetId: string | null; reason: string | null }): AuditEntry {
+  record(entry: {
+    actorId: string;
+    actorName: string;
+    action: string;
+    targetId: string | null;
+    reason: string | null;
+    room?: string;
+  }): AuditEntry {
     const full: AuditEntry = { ...entry, at: Date.now() };
     this.entries.push(full);
     this.log.info('audit_action', { ...full });

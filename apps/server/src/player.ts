@@ -8,6 +8,8 @@
  * intentionally has zero knowledge of WebSockets — see `session.ts` for that half.
  */
 
+import type { ProfileRecord } from './persistence.js';
+import { newProfile } from './games/profiles.js';
 import {
   AnimState,
   MAX_SERVER_SPEED,
@@ -20,6 +22,7 @@ import {
   type Appearance,
   type ActivityId,
   type AttendanceMode,
+  type BadgeId,
   type PlayerId,
   type PlayerView,
   type ServerCorrection,
@@ -109,6 +112,34 @@ export class Player {
   /** True while muted by a host/admin: chat and emotes are silently dropped. */
   muted = false;
 
+  /** Checked in to the attached activity. Cleared whenever the attachment changes. */
+  checkedIn = false;
+
+  /**
+   * Admin by the server's token, presented on this connection's upgrade URL. Distinct from
+   * `role`, which is recomputed per room: a private island's keeper is admin only there, a
+   * token holder is admin everywhere. See `roleFor` in rooms.ts.
+   */
+  globalAdmin = false;
+
+  /** Hash of the visitor key this player arrived with, or null. See `games/profiles.ts`. */
+  visitorHash: string | null = null;
+
+  /**
+   * Stamps, fish book, badges. Shared with any other tab presenting the same visitor key;
+   * a fresh session-only record when there is no key (`profilePersistent` false).
+   */
+  profile: ProfileRecord = newProfile();
+  profilePersistent = false;
+
+  /** The badge worn under the name. Mirrors `profile.title`; kept here for `toView`. */
+  get title(): BadgeId | null {
+    return this.profile.title;
+  }
+
+  /** The seat (a `sit` interactable id) this player holds, if any. See Room.sit. */
+  seat: string | null = null;
+
   /** True while the session is disconnected but still inside its grace window. */
   away = false;
 
@@ -146,6 +177,8 @@ export class Player {
       activity: this.activity,
       mode: this.mode,
       away: this.away || undefined,
+      checkedIn: this.checkedIn || undefined,
+      title: this.title,
     };
   }
 

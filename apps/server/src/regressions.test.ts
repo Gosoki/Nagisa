@@ -321,11 +321,18 @@ test('a line written and taken down in the same tick is sent as removed', () => 
 // The tick
 // ---------------------------------------------------------------------------------------------
 
-test('a game that throws in a tick costs nobody their join, and the tick sequence stays whole', () => {
+test('a game that throws in a tick costs nobody their join, and the tick sequence stays whole', (t) => {
   const room = bareRoom();
   const watcher = joinBare(room);
   room.forceTick();
   const before = of(watcher.socket, 'delta').at(-1)!.tick;
+
+  // The failures below are logged as errors, on purpose; keep them out of the test output.
+  const loud = console.error;
+  console.error = () => {};
+  t.after(() => {
+    console.error = loud;
+  });
 
   // A bug in a game, in the same tick someone arrives.
   const fishing = room.fishing as unknown as { tick(now: number): void };

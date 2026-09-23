@@ -102,6 +102,8 @@ import {
   vista,
   weather,
   islandNight,
+  dancing,
+  onDanceFloor,
   type SelfState,
   type WorldCommands,
 } from './state/stores.js';
@@ -214,6 +216,8 @@ export class App {
   /** The spell of weather last published to the interface; null before the first frame. */
   private weatherShown: Weather | null = null;
   private nightShown: boolean | null = null;
+  /** Whether the interface was last told you are dancing. */
+  private danceShown = false;
 
   /** Zone the player was in last frame, for change detection. */
   private lastZone: ZoneId | null = null;
@@ -277,6 +281,10 @@ export class App {
     // This is the only per-pointer-event value that crosses into the interface.
     this.input.onStickChange = (state) => stickState.set(state);
     this.input.onTap = (x, y) => this.pickPlayerAt(x, y);
+    // The music stopping, or leaving the beach, ends the dance.
+    onDanceFloor.subscribe((floor) => {
+      if (!floor && this.danceShown) this.setDancing(false);
+    });
     remotePose.at = (id) => this.remote.positionOf(id);
 
     this.registerCommands();
@@ -469,6 +477,8 @@ export class App {
       const serverTime = this.connection?.serverNow() ?? Date.now();
       this.updateFollow();
       this.updateWeather(serverTime);
+      // Walking off ends a dance in the character; the button hears about it here.
+      if (this.danceShown && !this.local.isDancing) this.setDancing(false);
       this.island.update(this.elapsed, serverTime, this.local.position, dt);
       this.renderer.setBloomStrength(this.island.sky.bloomStrength());
 
@@ -634,6 +644,13 @@ export class App {
     this.weatherShown = now.weather;
     weather.set(now.weather);
     if (!first && now.weather === 'rain' && this.entered) notify(tr('weather.rainStarts'), 'neutral', 5000);
+  }
+
+  /** Start or stop dancing, and tell the interface. */
+  private setDancing(on: boolean): void {
+    this.local.setDancing(on);
+    this.danceShown = on;
+    dancing.set(on);
   }
 
   /** Feed the name-tag layer with everyone it might want to label. */
@@ -985,6 +1002,8 @@ export class App {
       },
 
       friend: (action, target) => this.sync?.send({ t: 'friend', action, target }),
+
+      dance: (on) => this.setDancing(on),
 
       dig: () => {
         this.sync?.send({ t: 'dig' });

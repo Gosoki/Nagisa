@@ -56,6 +56,8 @@
     self,
     fishing,
     onFireworkShore,
+    onDanceFloor,
+    dancing,
     togglePanel,
     cmd,
   } from '../state/stores.js';
@@ -303,7 +305,7 @@
 </div>
 
 <div class="bottom-center">
-  {#if ($interactPrompt || $onFireworkShore) && !lineOut}
+  {#if ($interactPrompt || $onFireworkShore || $onDanceFloor) && !lineOut}
     <div class="prompts">
       {#if $interactPrompt}
         <button type="button" class="prompt" onclick={() => cmd().interact()}>
@@ -323,6 +325,13 @@
             />
           </svg>
           <span>{$t('hud.firework')}</span>
+        </button>
+      {/if}
+      {#if $onDanceFloor}
+        <!-- Bon-odori at the concert: on the spot, on everyone's beat, until you walk off. -->
+        <button type="button" class="prompt" class:active={$dancing} aria-pressed={$dancing} onclick={() => cmd().dance(!$dancing)}>
+          <span aria-hidden="true">🏮</span>
+          <span>{$dancing ? $t('hud.stopDance') : $t('hud.dance')}</span>
         </button>
       {/if}
     </div>
@@ -615,6 +624,11 @@
   .prompt:focus-visible {
     outline: 2px solid var(--ui-accent);
     outline-offset: 2px;
+  }
+
+  .prompt.active {
+    background: var(--ui-surface-raised);
+    color: var(--ui-accent);
   }
 
   .firework svg {

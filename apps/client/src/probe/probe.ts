@@ -187,6 +187,7 @@ const LINEUP: LineupFigure[] = [
   { state: AnimState.Bow, emote: true, accessory: 4 },
   { state: AnimState.Fish, accessory: 0 },
   { state: AnimState.Cheer, phase: HALF_PI, accessory: 1 },
+  { state: AnimState.Dance, accessory: 2 },
   { state: AnimState.Walk, phase: HALF_PI, accessory: 3, lantern: true },
   { state: AnimState.Idle, accessory: 3, faded: true },
   // `plaza-bench`'s prompt, 0.45 m off the bench's centre; 2.4 m out in front of it; behind.

@@ -133,6 +133,8 @@ export class LocalPlayer {
   private seatWalk: { x: number; z: number; elapsed: number } | null = null;
   /** Holding a rod out while the line is in the water. See `setFishing`. */
   private fishing = false;
+  /** Dancing at the concert, until the player moves. See `setDancing`. */
+  private dancing = false;
 
   /** Set while a scripted move is running (walking to an activity slot). */
   private autoWalkTarget: THREE.Vector3 | null = null;
@@ -204,6 +206,15 @@ export class LocalPlayer {
    */
   setFishing(fishing: boolean): void {
     this.fishing = fishing;
+  }
+
+  /** Dance on the spot (the beach concert's bon-odori), or stop. Walking off stops it too. */
+  setDancing(dancing: boolean): void {
+    this.dancing = dancing;
+  }
+
+  get isDancing(): boolean {
+    return this.dancing;
   }
 
   get isFishing(): boolean {
@@ -616,7 +627,9 @@ export class LocalPlayer {
       return;
     }
     const speed = this.speed;
-    if (speed < 0.35) this.character.setAnim(this.fishing ? AnimState.Fish : AnimState.Idle);
+    // Moving off is leaving the dance: nobody dances their way down the beach.
+    if (this.dancing && speed >= 0.35) this.dancing = false;
+    if (speed < 0.35) this.character.setAnim(this.fishing ? AnimState.Fish : this.dancing ? AnimState.Dance : AnimState.Idle);
     else if (speed < WALK_SPEED * 1.15 || wading) this.character.setAnim(AnimState.Walk);
     else this.character.setAnim(AnimState.Run);
   }

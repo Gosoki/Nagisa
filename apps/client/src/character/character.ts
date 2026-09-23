@@ -60,6 +60,7 @@
 
 import * as THREE from 'three';
 import { AnimState } from '@nagisa/shared';
+import { serverNow } from '../state/stores.js';
 import { createInkMaterial, inkDepthMaterial } from '../engine/ink/ink-material.js';
 import { cloth, hair as hairMaterial, outfit as outfitMaterial, shoji, skin as skinMaterial, surface, wood } from '../world/materials.js';
 import { paperLantern } from '../world/props/kit.js';
@@ -142,7 +143,19 @@ const PROFILES: Record<AnimState, AnimProfile> = {
   // Both arms up in a V and a small bounce on the knees. The rate is half what a jump for
   // joy would be: this is someone pleased with a fish, not a goal celebration.
   [AnimState.Cheer]: { armSwing: 0.1, legSwing: 0, elbowBend: 0.3, kneeBend: 0.2, rate: 5.5, bob: 0.03, lean: -0.08, armRaise: 2.75 },
+  // Bon-odori: the arms are placed by `applyPoseOverrides` on the island's beat, not on this
+  // figure's own phase; the rate only keeps a small bounce going in the knees.
+  [AnimState.Dance]: { armSwing: 0, legSwing: 0, elbowBend: 0.7, kneeBend: 0.18, rate: 3.1, bob: 0.02, lean: 0, armRaise: 1.25 },
 };
+
+/**
+ * The dance's beat, radians: one figure — raise to the right, raise to the left — every two
+ * seconds, read off the server's clock. Everyone dancing is on the same beat because they are
+ * all reading the same clock; nothing about the dance is sent but the fact of it.
+ */
+function danceBeat(): number {
+  return (serverNow() / 1000) * Math.PI;
+}
 
 /**
  * Leg geometry, metres: the thigh and shin bones, and the shoe hanging off the shin. The rig
@@ -179,7 +192,7 @@ const SEAT_TO_HIPS = 0.13;
 const HIP_DROP = 0.085;
 
 /** States whose pose override takes over the left arm, so a carried lantern goes with it. */
-const TWO_HANDED: ReadonlySet<AnimState> = new Set([AnimState.Clap, AnimState.Bow, AnimState.Fish, AnimState.Cheer]);
+const TWO_HANDED: ReadonlySet<AnimState> = new Set([AnimState.Clap, AnimState.Bow, AnimState.Fish, AnimState.Cheer, AnimState.Dance]);
 
 /**
  * How the rod sits in the hand, as a pitch about the forearm's own x axis.
@@ -215,7 +228,7 @@ const UMBRELLA_DEPTH = 0.2;
 const UMBRELLA_COLORS = [0xb4412f, 0x2f4a6b, 0xc58a3a, 0x5e7d4f] as const;
 
 /** Poses that need the left arm for themselves; an umbrella is held up through anything else. */
-const ARM_BUSY: ReadonlySet<AnimState> = new Set([AnimState.Clap, AnimState.Bow, AnimState.Cheer]);
+const ARM_BUSY: ReadonlySet<AnimState> = new Set([AnimState.Clap, AnimState.Bow, AnimState.Cheer, AnimState.Dance]);
 
 /**
  * How opaque a disconnected ("away") player is drawn. Enough to be clearly there — they
@@ -1084,6 +1097,19 @@ export class Character {
       this.elbowR.rotation.set(-bend, 0, 0);
       this.shoulderL.rotation.set(-0.15 - this.blended.lean + breath * 0.5, 0, -0.06);
       this.elbowL.rotation.set(-0.3, 0, 0);
+      return;
+    }
+
+    if (pose === AnimState.Dance) {
+      // Both arms raised to the side and forward, one higher and then the other, the hands
+      // opening outward on the high side — bon-odori's gesture, drawn with two joints.
+      // Outward is +z for the right arm and −z for the left (see "Which way is in").
+      const s = Math.sin(danceBeat());
+      const raise = this.blended.armRaise;
+      this.shoulderR.rotation.set(-raise * (0.55 + 0.45 * s), 0, 0.5 + 0.25 * s);
+      this.shoulderL.rotation.set(-raise * (0.55 - 0.45 * s), 0, -0.5 + 0.25 * s);
+      this.elbowR.rotation.set(-this.blended.elbowBend, 0, 0);
+      this.elbowL.rotation.set(-this.blended.elbowBend, 0, 0);
       return;
     }
 

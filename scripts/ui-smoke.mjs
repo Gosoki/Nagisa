@@ -352,6 +352,26 @@ stores.self.update(s => ({ ...s, zone: 'plaza' }));
 await sleep(80);
 check('and gone again on leaving it', !byText(/firework/i));
 
+console.log('\\nDance');
+let danced = null;
+stores.commands.update(c => ({ ...c, dance: (on) => { danced = on; } }));
+let before = [];
+stores.activities.subscribe(v => (before = v))();
+stores.activities.set([...before, { id: 'c1', title: 'Beach Concert', blurb: '', zone: 'beach', state: 'live', startsAt: Date.now(), endsAt: null, hostId: null, hostName: null, participantCount: 0, audienceCount: 0, capacity: 0, checkinEnabled: false, checkinCount: 0, templateId: 'beach-concert', feature: 'concert' }]);
+await sleep(60);
+check('no dance away from the concert', !byText(/Join the dance/));
+stores.self.update(s => ({ ...s, zone: 'beach' }));
+await sleep(60);
+byText(/Join the dance/)?.click();
+check('at the concert, a dance to join', danced === true);
+stores.dancing.set(true);
+await sleep(60);
+check('and to stop', !!byText(/Stop dancing/));
+stores.dancing.set(false);
+stores.activities.set(before);
+stores.self.update(s => ({ ...s, zone: 'plaza' }));
+await sleep(40);
+
 console.log('\\nConnection closed');
 let reconnects = 0;
 stores.commands.update(c => ({ ...c, reconnect: () => { reconnects++; } }));

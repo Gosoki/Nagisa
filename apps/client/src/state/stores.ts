@@ -626,6 +626,14 @@ export const onFireworkShore: Readable<boolean> = derived(self, ($self) =>
   Boolean(FIREWORKS?.zones.includes($self.zone)),
 );
 
+/** Standing where a concert is on: the dance button is offered. */
+export const onDanceFloor: Readable<boolean> = derived([self, activities], ([$self, $activities]) =>
+  $activities.some((a) => a.feature === 'concert' && a.state === ActivityState.Live && a.zone === $self.zone),
+);
+
+/** Whether you are dancing (written by the app from the character, which stops when you walk off). */
+export const dancing: Writable<boolean> = writable(false);
+
 /** The badge you are wearing, straight from the profile. */
 export const myTitle: Readable<BadgeId | null> = derived(profile, ($p) => $p?.title ?? null);
 
@@ -731,6 +739,8 @@ export interface WorldCommands {
   reconnect(): void;
   /** Dig where you stand, during a treasure hunt. */
   dig(): void;
+  /** Dance on the spot at the concert, or stop. */
+  dance(on: boolean): void;
   /** Ask a player here to be friends; accept, decline or end one by its id. */
   friend(action: 'request' | 'accept' | 'decline' | 'remove', target: string): void;
 }
@@ -775,6 +785,7 @@ export const commands: Writable<WorldCommands> = writable({
   reconnect: noop,
   dig: noop,
   friend: noop,
+  dance: noop,
 });
 
 /** Convenience for components: `cmd().joinActivity(...)`. */

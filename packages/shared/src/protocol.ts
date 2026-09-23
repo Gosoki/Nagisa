@@ -232,6 +232,8 @@ export enum AnimState {
   Fish = 9,
   /** Arms up. Winners, and the first sight of a fish worth keeping. */
   Cheer = 10,
+  /** Bon-odori at the beach concert: everyone dancing it moves on the same beat. */
+  Dance = 11,
 }
 
 /** Emotes a player can broadcast. Deliberately small — see the UI's emote wheel. */

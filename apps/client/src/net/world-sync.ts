@@ -122,6 +122,7 @@ export class WorldSync {
 
   private lastSentPos = new THREE.Vector3(NaN, NaN, NaN);
   private lastSentYaw = NaN;
+  private lastSentAnim: AnimState | null = null;
   private lastSentAt = 0;
   private moveAccumulator = 0;
 
@@ -797,6 +798,7 @@ export class WorldSync {
     // The seat goes with the connection too (the server frees it on a drop and on a room
     // switch). Left sitting, every movement key would be swallowed at the new harbour.
     this.local.setSeated(false);
+    this.local.setDancing(false);
     self.update((s) => (s.seated ? { ...s, seated: false } : s));
   }
 
@@ -865,8 +867,12 @@ export class WorldSync {
     const yaw = this.local.yaw;
     const now = performance.now();
 
+    const anim = this.local.character.animState;
+    // A change of pose on the spot — sitting down on the ground, starting to dance — is a
+    // change worth sending, though nothing moved.
     const moved =
       !Number.isFinite(this.lastSentYaw) ||
+      anim !== this.lastSentAnim ||
       pos.distanceToSquared(this.lastSentPos) > POSITION_DEADBAND * POSITION_DEADBAND ||
       Math.abs(yaw - this.lastSentYaw) > YAW_DEADBAND;
 
@@ -874,6 +880,7 @@ export class WorldSync {
 
     this.lastSentPos.copy(pos);
     this.lastSentYaw = yaw;
+    this.lastSentAnim = anim;
     this.lastSentAt = now;
 
     const reported: Vec3 = [pos.x, pos.y, pos.z];
@@ -887,7 +894,7 @@ export class WorldSync {
       t: 'move',
       pos: reported,
       yaw,
-      anim: this.local.character.animState,
+      anim,
       seq: ++this.seq,
     });
   }

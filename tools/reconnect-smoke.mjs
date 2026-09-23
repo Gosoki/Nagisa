@@ -37,6 +37,8 @@
  *    same player id, same activity attachment, `resumed: true`. A "fix" that reconnects
  *    you to the right coordinates as a *different player* every time has broken more than
  *    it repaired.
+ * 3. **A duplicated tab.** It carries this tab's resume token and takes the player over;
+ *    the original must stay down and offer to continue, not fight the copy for the player.
  */
 
 import { dirname, resolve } from 'node:path';
@@ -259,6 +261,48 @@ try {
     afterBlip,
     blipMoved: Number(blipMoved.toFixed(2)),
   });
+
+  // --- 3. A duplicated tab takes the player over, and the old tab stays down ------------
+  //
+  // Duplicating a tab copies its sessionStorage, resume token and all, so the copy resumes
+  // *this* player and the server lets the older socket go (close code 4002). If the old tab
+  // then did what it does after any drop — reconnect with its token — it would take the
+  // player back, the copy would do the same, and the two would push each other off for
+  // ever. It must stop and offer the choice instead.
+  const token = await page.evaluate(() => sessionStorage.getItem('nagisa.resume'));
+  check('a resume token is kept for the tab', typeof token === 'string' && token.length > 0);
+  const copy = await browser.newPage({ viewport: { width: 520, height: 340 } });
+  copy.on('pageerror', (err) => problems.push(`pageerror (copy): ${err.message}`));
+  await copy.addInitScript((t) => {
+    if (!sessionStorage.getItem('nagisa.resume')) sessionStorage.setItem('nagisa.resume', t);
+  }, token);
+  await copy.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded', timeout: 180_000 });
+  await copy.waitForSelector('input', { timeout: 240_000 });
+  await copy.fill('input', 'Kaede');
+  await copy.getByRole('button', { name: /ashore|enter|go/i }).first().click();
+  const copyIn = await until(async () => (await connState(copy)) === 'connected', 60_000);
+  check('the copy connects', copyIn !== null, { state: await connState(copy) });
+  const originalId = await selfId(page);
+  check('the copy is the same player', (await selfId(copy)) === originalId, { copy: await selfId(copy), originalId });
+
+  const originalDown = await until(async () => (await connState(page)) === 'closed', 15_000);
+  check('the original tab is let go', originalDown !== null, { state: await connState(page) });
+  // Long enough for the reconnect backoff to have fired a few times, were it armed.
+  await delay(6000);
+  check('and stays down rather than taking the player back', (await connState(page)) === 'closed', { state: await connState(page) });
+  check('the copy is still connected', (await connState(copy)) === 'connected', { state: await connState(copy) });
+  const banner = page.locator('.closed[role="alert"]');
+  check('the original tab says why and offers to continue', (await banner.count()) === 1);
+
+  await banner.getByRole('button').click();
+  const backHere = await until(async () => (await connState(page)) === 'connected', 30_000);
+  check('continuing here takes the player back', backHere !== null && (await selfId(page)) === originalId, {
+    state: await connState(page),
+    self: await selfId(page),
+  });
+  const copyDown = await until(async () => (await connState(copy)) === 'closed', 15_000);
+  check('and it is the copy that is let go now', copyDown !== null, { state: await connState(copy) });
+  await copy.close();
 
   check('no page errors', problems.length === 0, problems);
 } catch (err) {

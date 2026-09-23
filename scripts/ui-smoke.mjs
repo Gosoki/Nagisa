@@ -295,6 +295,23 @@ stores.self.update(s => ({ ...s, zone: 'plaza' }));
 await sleep(80);
 check('and gone again on leaving it', !byText(/firework/i));
 
+console.log('\\nConnection closed');
+let reconnects = 0;
+stores.commands.update(c => ({ ...c, reconnect: () => { reconnects++; } }));
+stores.replacedElsewhere.set(true);
+stores.connectionState.set('closed');
+await sleep(80);
+check('taken over by another tab: says so', text().includes('opened in another tab'), text().slice(0, 300));
+check('and does not claim to be reconnecting', !text().includes('Reconnecting'));
+byText(/^Continue here$/)?.click();
+check('continue here asks to take the player back', reconnects === 1);
+stores.replacedElsewhere.set(false);
+await sleep(80);
+check('closed for another reason: offers a reload', !!byText(/^Reload$/) && text().includes('Disconnected'));
+stores.connectionState.set('connected');
+await sleep(80);
+check('and the card goes once connected', !text().includes('Disconnected') && !byText(/^Continue here$|^Reload$/));
+
 console.log('\\nWhispers and commands');
 const sent = [];
 stores.commands.update(c => ({

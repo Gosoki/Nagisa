@@ -323,6 +323,10 @@ export class Connection {
   private onClose = (event: CloseEvent): void => {
     this.stopHeartbeat();
     this.socket = null;
+    // Another tab took this player over (a duplicated tab carries this one's resume token).
+    // Coming straight back would take it back again, and the two tabs would push each other
+    // off for ever; the person chooses which one to keep.
+    if (event.code === 4002) this.shouldReconnect = false;
 
     if (!this.shouldReconnect) {
       this.setState('closed', event.reason || undefined);

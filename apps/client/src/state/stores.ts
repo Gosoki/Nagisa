@@ -64,6 +64,9 @@ export const loadProgress: Writable<{ value: number; label: string }> = writable
 
 export const connectionState: Writable<ConnectionState> = writable('idle');
 
+/** The connection was closed because another tab took this player over (see `net/connection.ts`). */
+export const replacedElsewhere: Writable<boolean> = writable(false);
+
 /** Round-trip latency, ms. Shown only when it is bad enough to matter. */
 export const latency: Writable<number> = writable(0);
 
@@ -682,6 +685,8 @@ export interface WorldCommands {
   endVista(): void;
   /** Save a picture of the island as it is on screen, without the interface. */
   takePhoto(): void;
+  /** After the connection closed for good: take the island back from another tab, or reload. */
+  reconnect(): void;
 }
 
 /** No-op implementations, replaced at boot. Keeps components safe before wiring. */
@@ -721,6 +726,7 @@ export const commands: Writable<WorldCommands> = writable({
   admin: noop,
   endVista: noop,
   takePhoto: noop,
+  reconnect: noop,
 });
 
 /** Convenience for components: `cmd().joinActivity(...)`. */

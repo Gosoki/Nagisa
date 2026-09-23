@@ -25,6 +25,10 @@ export const CORE: Dictionaries = {
     'net.connected': '已连接',
     'net.welcomeBack': '欢迎回来',
     'net.reconnecting': '重新连接中…',
+    'net.closed': '连接已断开',
+    'net.replaced': '这座岛在另一个标签页里打开了，这里已断开',
+    'net.useHere': '在这里继续',
+    'net.reload': '重新载入',
     'net.mapMismatch': '这个房间用的是「{map}」地图——请带上 ?map={map} 重新打开',
 
     // Following, walking.
@@ -270,6 +274,10 @@ export const CORE: Dictionaries = {
     'net.connected': '接続しました',
     'net.welcomeBack': 'おかえりなさい',
     'net.reconnecting': '再接続中…',
+    'net.closed': '接続が切れました',
+    'net.replaced': '別のタブでこの島が開かれたため、こちらは切断されました',
+    'net.useHere': 'こちらで続ける',
+    'net.reload': '再読み込み',
     'net.mapMismatch': 'この部屋は「{map}」のマップです — ?map={map} を付けて開き直してください',
 
     'follow.following': '{name} についていきます',
@@ -496,6 +504,10 @@ export const CORE: Dictionaries = {
     'net.connected': 'Connected',
     'net.welcomeBack': 'Welcome back',
     'net.reconnecting': 'Reconnecting…',
+    'net.closed': 'Disconnected',
+    'net.replaced': 'The island was opened in another tab, so this one was disconnected',
+    'net.useHere': 'Continue here',
+    'net.reload': 'Reload',
     'net.mapMismatch': 'This room is on "{map}" — reload with ?map={map}',
 
     'follow.following': 'Following {name}',

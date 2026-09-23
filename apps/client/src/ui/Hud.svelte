@@ -47,7 +47,9 @@
     openPanel,
     interactPrompt,
     emoteOpen,
+    connectionState,
     connectionTroubled,
+    replacedElsewhere,
     devMode,
     settings,
     self,
@@ -137,7 +139,13 @@
   </div>
 {/if}
 
-{#if $connectionTroubled}
+{#if $connectionState === 'closed'}
+  <!-- Not retrying, so saying "reconnecting" would be a promise nothing keeps. -->
+  <div class="closed" role="alert">
+    <span>{$t($replacedElsewhere ? 'net.replaced' : 'net.closed')}</span>
+    <button type="button" onclick={() => cmd().reconnect()}>{$t($replacedElsewhere ? 'net.useHere' : 'net.reload')}</button>
+  </div>
+{:else if $connectionTroubled}
   <p class="reconnecting" role="status">{$t('net.reconnecting')}</p>
 {/if}
 
@@ -393,6 +401,40 @@
     letter-spacing: 0.04em;
     color: var(--ui-warn);
     pointer-events: none;
+  }
+
+  /* In the middle, not in the top strip: the world has stopped, this is the one thing to do,
+     and on a phone the strip is already full of the headcount and its buttons. */
+  .closed {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: var(--z-hud);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-sm);
+    width: max-content;
+    max-width: min(320px, calc(100vw - 2 * var(--sp-md)));
+    padding: var(--sp-md);
+    border-radius: var(--r-lg);
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow);
+    font-size: var(--fs-sm);
+    text-align: center;
+    color: var(--ui-ink);
+  }
+
+  .closed button {
+    flex: none;
+    border: none;
+    border-radius: 999px;
+    padding: 6px 12px;
+    background: var(--ui-accent);
+    color: var(--ui-surface-raised);
+    font: inherit;
+    cursor: pointer;
   }
 
   .top-right {

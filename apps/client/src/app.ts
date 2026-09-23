@@ -22,12 +22,14 @@
  */
 
 import * as THREE from 'three';
+import { get } from 'svelte/store';
 import {
   ACTIVITY_TEMPLATES,
   ActivityState,
   INTERACTABLES,
   ISLAND_EXTENT,
   PROTOCOL,
+  QUIZ_ARENA,
   Role,
   activeMap,
   activeMapId,
@@ -39,6 +41,7 @@ import {
   crowdSlot,
   zoneAt,
   type ActivityId,
+  type ActivityView,
   type AnnouncementView,
   type Emote,
   type Interactable,
@@ -86,7 +89,9 @@ import {
   atBoard,
   fishing,
   openPanel,
+  replacedElsewhere,
   room,
+  selectedPlayer,
   setServerClock,
   vista,
   type SelfState,
@@ -113,6 +118,15 @@ const FOLLOW_STOP_DISTANCE = 2.6;
  * in place, because the target jitters by centimetres between network samples.
  */
 const FOLLOW_REPATH_SQ = 1.6 * 1.6;
+
+/**
+ * How far from a person's middle, in CSS pixels, a tap still picks them. About a fingertip:
+ * a figure in the crowd is only a few dozen pixels tall, and a tap has to land somewhere.
+ */
+const PICK_RADIUS_PX = 34;
+
+/** Scratch for projecting people onto the screen when a tap picks one. */
+const pickPoint = new THREE.Vector3();
 
 /**
  * The running application.
@@ -218,6 +232,7 @@ export class App {
     // Feed the touch stick's screen-space state to the overlay so it can draw the ring.
     // This is the only per-pointer-event value that crosses into the interface.
     this.input.onStickChange = (state) => stickState.set(state);
+    this.input.onTap = (x, y) => this.pickPlayerAt(x, y);
 
     this.registerCommands();
     this.subscribeSettings();
@@ -340,8 +355,9 @@ export class App {
     const connection = this.connection;
     setServerClock(() => connection.serverNow());
 
-    this.connection.on('state', (state) => {
+    this.connection.on('state', (state, detail) => {
       connectionState.set(state);
+      replacedElsewhere.set(state === 'closed' && detail === 'replaced');
       if (state === 'connected') notify(tr('net.connected'), 'good', 1800);
     });
 
@@ -465,7 +481,7 @@ export class App {
     if (this.followAnchor && !this.local.autoWalking && distance > FOLLOW_STOP_DISTANCE) {
       followTarget.set(null);
       this.followAnchor = null;
-      notify('Stopped following', 'neutral', 1800);
+      notify(tr('follow.stopped'), 'neutral', 1800);
       return;
     }
 
@@ -479,6 +495,68 @@ export class App {
       );
       this.followAnchor = (this.followAnchor ?? new THREE.Vector3()).copy(position);
     }
+  }
+
+  /**
+   * Where joining an activity walks you. Mostly a place in its crowd; but a quiz is played
+   * *between* its two rings — standing in one when the first question lands would answer it
+   * — and a derby is fished from the jetties, not from the middle of the harbour.
+   */
+  private activityWalkTarget(activity: ActivityView, mode: 'participant' | 'audience'): { x: number; z: number } | null {
+    if (mode === 'participant' && activity.feature === 'quiz' && QUIZ_ARENA) {
+      const { o, x } = QUIZ_ARENA;
+      // Spread the players along the line between the rings rather than stacking them.
+      const len = Math.hypot(x.x - o.x, x.z - o.z) || 1;
+      const offset = ((activity.participantCount % 7) - 3) * 1.2;
+      return {
+        x: (o.x + x.x) / 2 - ((x.z - o.z) / len) * offset,
+        z: (o.z + x.z) / 2 + ((x.x - o.x) / len) * offset,
+      };
+    }
+    if (mode === 'participant' && activity.feature === 'derby') {
+      const here = this.local.position;
+      let best: { x: number; z: number } | null = null;
+      let bestD = Infinity;
+      for (const it of INTERACTABLES) {
+        if (it.effect !== 'fish') continue;
+        const p = interactablePosition(it);
+        const d = Math.hypot(p.x - here.x, p.z - here.z);
+        if (d < bestD) {
+          bestD = d;
+          best = { x: p.x, z: p.z };
+        }
+      }
+      if (best) return best;
+    }
+    const zone = getZone(activity.zone);
+    const index = mode === 'participant' ? activity.participantCount : activity.audienceCount + 8;
+    return crowdSlot(activity.zone, index) ?? (zone ? { x: zone.x, z: zone.z } : null);
+  }
+
+  /**
+   * A tap on someone opens their card: whoever's middle is nearest the finger on screen,
+   * within {@link PICK_RADIUS_PX}. Projecting a point per person is cheaper and kinder to a
+   * fingertip than a raycast against limbs a few pixels wide.
+   */
+  private pickPlayerAt(clientX: number, clientY: number): void {
+    if (!this.sync) return;
+    const rect = this.renderer.renderer.domElement.getBoundingClientRect();
+    let best: PlayerId | null = null;
+    let bestD = PICK_RADIUS_PX;
+    for (const view of this.remote.views()) {
+      const position = this.remote.positionOf(view.id);
+      if (!position) continue;
+      pickPoint.set(position.x, position.y + 0.8, position.z).project(this.renderer.camera);
+      if (pickPoint.z > 1) continue; // Behind the camera.
+      const sx = rect.left + ((pickPoint.x + 1) / 2) * rect.width;
+      const sy = rect.top + ((1 - pickPoint.y) / 2) * rect.height;
+      const d = Math.hypot(sx - clientX, sy - clientY);
+      if (d < bestD) {
+        bestD = d;
+        best = view.id;
+      }
+    }
+    if (best) selectedPlayer.set(best);
   }
 
   /** Feed the name-tag layer with everyone it might want to label. */
@@ -672,10 +750,7 @@ export class App {
         // the attachment; the walk starts immediately because it is only movement.
         const activity = getActivitySnapshot(id);
         if (activity) {
-          const zone = getZone(activity.zone);
-          const index = mode === 'participant' ? activity.participantCount : activity.audienceCount + 8;
-          const slot = crowdSlot(activity.zone, index);
-          const target = slot ?? (zone ? { x: zone.x, z: zone.z } : null);
+          const target = this.activityWalkTarget(activity, mode);
           if (target) void this.local.walkTo(target.x, target.z);
         }
       },
@@ -815,6 +890,14 @@ export class App {
           setTimeout(() => URL.revokeObjectURL(url), 10_000);
           notify(tr('photo.saved'), 'good', 2200);
         });
+      },
+
+      reconnect: () => {
+        // Taken over by another tab: take the player back (that tab is told the same way).
+        // Anything else that closes a connection for good — a kick, a new server version — is
+        // best met with a fresh page.
+        if (get(replacedElsewhere)) this.connection?.connect();
+        else location.reload();
       },
     };
 

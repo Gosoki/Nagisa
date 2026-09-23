@@ -48,7 +48,7 @@ export interface CheckinRecord {
 }
 
 /** Outcome of a join attempt. */
-export type JoinResult = { ok: true } | { ok: false; reason: 'full' | 'not_open' | 'wrong_zone' };
+export type JoinResult = { ok: true } | { ok: false; reason: 'full' | 'not_open' };
 
 /** Outcome of a check-in attempt. */
 export type CheckinResult = { ok: true; ordinal: number } | { ok: false; reason: 'not_live' | 'already' | 'not_attending' };

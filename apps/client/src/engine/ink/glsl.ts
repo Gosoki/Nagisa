@@ -51,12 +51,12 @@ vec3 decodeNormalSpheremap(vec2 enc) {
  * lantern beside you would vanish on a lighthouse across the bay.
  *
  * **Not inverted, and not scaled by the far plane.** The info buffer is half-float, whose
- * precision is *relative*: an ULP near 1.0 is 2⁻¹¹ ≈ 0.0005, while near 0.05 it is 2⁻¹⁶ ≈
- * 0.000015 — thirty times finer. An earlier version stored `1 − dist/far` with a 3.6 km far
+ * precision is *relative*: an ULP just under 1.0 is 2⁻¹¹ ≈ 0.0005, while near 0.05 it is
+ * 2⁻¹⁵ ≈ 0.00003 — sixteen times finer. An earlier version stored `1 − dist/far` with a 3.6 km far
  * plane, which parked every value in the scene up near 1.0 and quantised depth into 1.8 m
  * steps. The detector faithfully drew a line at every step boundary, and the mountain came
  * out looking like a contour map. Storing `dist/500` instead puts nearby geometry down in
- * the fine end of the float, where a 20 m surface quantises at about 6 mm.
+ * the fine end of the float, where a 20 m surface quantises at about 15 mm.
  *
  * Anything beyond `uDepthScale` clamps to 1. That is harmless: interior contours are faded
  * out well before then (see `InkPassSettings.fadeFar`), so the only thing living in the

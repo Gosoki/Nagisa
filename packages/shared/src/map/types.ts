@@ -24,11 +24,12 @@
  *
  * ### The contract a pack must satisfy
  *
- * `scripts/world-smoke.ts` enforces it for whichever pack is active, so a new map is
- * checked by exactly the checks the shipped one is:
+ * `scripts/world-smoke.ts` enforces it for whichever pack is active (the routes are
+ * `scripts/terrain-audit.ts`'s, `npm run audit:terrain`), so a new map is checked by exactly
+ * the checks the shipped one is:
  *
  * - every terrace's centre reaches its stated height;
- * - every route is walkable end to end, at a legal grade;
+ * - every route is walkable end to end, at a legal grade (audit:terrain);
  * - every grounded landmark stands on ground level to within 0.45 m;
  * - every spawn point is walkable, and every zone anchor sits on its terrace.
  *

@@ -91,7 +91,7 @@ export const DEFAULT_INK_SETTINGS: InkPassSettings = {
   // Relative units: see the composite shader.
   //
   // These are set by what has to be *rejected*, not by what has to be drawn. The terrain
-  // is a 1.6 m grid, so at any distance its facet-to-facet depth steps land around 0.002
+  // is a grid of 1–2 m (by tier), so at any distance its facet-to-facet depth steps land at or below about 0.002
   // in relative units — well above the half-float noise floor and completely invisible to
   // the eye, but a detector tuned any tighter than this draws every one of them. The
   // result is a hillside ruled with horizontal lines at constant depth, which reads as a
@@ -206,7 +206,7 @@ void main() {
   // judge at any distance.
   //
   // **Noise floor.** The info buffer is half-float, whose precision is relative: depth at
-  // 30 m quantises to about 1.5 cm and at 300 m to about 15 cm. A fixed threshold in
+  // 30 m quantises to about 1.5 cm and at 300 m to about 24 cm. A fixed threshold in
   // metres is therefore below the quantisation almost everywhere, and the detector fires
   // on rounding error across every flat surface in the scene — which does not look like
   // noise, it looks like every building being *filled* with solid ink. Subtracting an

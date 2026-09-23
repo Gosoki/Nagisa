@@ -231,11 +231,11 @@ export function rockFace(): THREE.ShaderMaterial {
  *
  * ### Two settings here are not stylistic preferences
  *
- * `flatShading: false` is **required**, not a look. The terrain is a 400 × 400 grid, and
- * flat shading gives every one of its 320 000 triangles its own normal — which the
+ * `flatShading: false` is **required**, not a look. The terrain is up to a 340 × 340 grid, and
+ * flat shading gives every one of its ~230 000 triangles its own normal — which the
  * contour pass then dutifully detects, drawing a pen line along every triangle edge and
- * turning the mountain into a topographic map. The worker already computes exact analytic
- * normals per vertex, so smooth shading here is both correct and free.
+ * turning the mountain into a topographic map. The worker already computes a smooth normal
+ * per vertex (central differences of the height field), so smooth shading here is free.
  *
  * Hatching is turned down relative to architecture for the same reason in a softer form:
  * hatching an entire hillside makes the ground compete with the buildings on it.

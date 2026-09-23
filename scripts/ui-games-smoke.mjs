@@ -22,7 +22,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scratchDir } from './lib/bundle-run.mjs';
@@ -59,6 +59,20 @@ for (const name of COMPONENTS) {
   }
 }
 
+/**
+ * Every refusal the server can send, read from its source: `refuse(…, 'key')` and
+ * `key: 'key'`. Each needs an `error.<key>` string, or a player is shown a raw key.
+ */
+const serverKeys = new Set();
+for (const dir of ['apps/server/src', 'apps/server/src/games']) {
+  for (const file of readdirSync(join(root, dir))) {
+    if (!file.endsWith('.ts') || file.endsWith('.test.ts')) continue;
+    const src = readFileSync(join(root, dir, file), 'utf8');
+    for (const m of src.matchAll(/refuse\([^,()]+,\s*'([a-z_]+)'/g)) serverKeys.add(m[1]);
+    for (const m of src.matchAll(/\bkey: '([a-z_]+)'/g)) serverKeys.add(m[1]);
+  }
+}
+
 let status = 1;
 
 try {
@@ -69,10 +83,11 @@ try {
     import { mount, unmount, flushSync } from 'svelte';
     import * as stores from '${slash(join(root, 'apps/client/src/state/stores.ts'))}';
     import { GAMES } from '${slash(join(root, 'apps/client/src/i18n/games.ts'))}';
+    import { CORE } from '${slash(join(root, 'apps/client/src/i18n/core.ts'))}';
     import * as shared from '@nagisa/shared';
     ${COMPONENTS.map((c) => `import ${c} from '${slash(join(root, 'apps/client/src/ui', `${c}.svelte`))}';`).join('\n    ')}
     globalThis.__games = {
-      mount, unmount, flushSync, stores, GAMES, shared,
+      mount, unmount, flushSync, stores, GAMES, CORE, shared,
       components: { ${COMPONENTS.join(', ')} },
     };
     `,
@@ -126,7 +141,8 @@ Object.defineProperty(globalThis, 'document', { value: dom.window.document, conf
 if (!globalThis.matchMedia) globalThis.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
 
 await import('${slash(join(outDir, 'games.mjs'))}');
-const { mount, unmount, flushSync, stores, GAMES, shared, components } = globalThis.__games;
+const { mount, unmount, flushSync, stores, GAMES, CORE, shared, components } = globalThis.__games;
+const SERVER_KEYS = ${JSON.stringify([...serverKeys].sort())};
 const doc = dom.window.document;
 
 let failures = 0, checks = 0;
@@ -149,18 +165,23 @@ async function type(input, value) {
 
 // ---------------------------------------------------------------------------------------
 console.log('\\nDictionary');
-const keysOf = (l) => new Set(Object.keys(GAMES[l]));
-for (const l of ['zh', 'ja']) {
-  const missing = [...keysOf('en')].filter((k) => !keysOf(l).has(k));
-  const extra = [...keysOf(l)].filter((k) => !keysOf('en').has(k));
-  check(l + ' has every English key and no others', missing.length === 0 && extra.length === 0, 'missing ' + missing.join(', ') + ' / extra ' + extra.join(', '));
-}
 const placeholders = (s) => [...s.matchAll(/\\{(\\w+)\\}/g)].map((m) => m[1]).sort().join(',');
-const badPlaceholders = [];
-for (const k of Object.keys(GAMES.en)) {
-  for (const l of ['zh', 'ja']) if (GAMES[l][k] !== undefined && placeholders(GAMES[l][k]) !== placeholders(GAMES.en[k])) badPlaceholders.push(l + ':' + k);
+// Both dictionaries: the game strings and the core ones (HUD, panels, errors, weather).
+for (const [name, dict] of [['games.ts', GAMES], ['core.ts', CORE]]) {
+  const keysOf = (l) => new Set(Object.keys(dict[l]));
+  for (const l of ['zh', 'ja']) {
+    const missing = [...keysOf('en')].filter((k) => !keysOf(l).has(k));
+    const extra = [...keysOf(l)].filter((k) => !keysOf('en').has(k));
+    check(name + ': ' + l + ' has every English key and no others', missing.length === 0 && extra.length === 0, 'missing ' + missing.join(', ') + ' / extra ' + extra.join(', '));
+  }
+  const badPlaceholders = [];
+  for (const k of Object.keys(dict.en)) {
+    for (const l of ['zh', 'ja']) if (dict[l][k] !== undefined && placeholders(dict[l][k]) !== placeholders(dict.en[k])) badPlaceholders.push(l + ':' + k);
+  }
+  check(name + ': every translation keeps the same placeholders', badPlaceholders.length === 0, badPlaceholders.join(', '));
 }
-check('every translation keeps the same placeholders', badPlaceholders.length === 0, badPlaceholders.join(', '));
+const missingErrors = SERVER_KEYS.filter((k) => !('error.' + k in CORE.en));
+check('every refusal the server can send has words (' + SERVER_KEYS.length + ' keys)', SERVER_KEYS.length > 10 && missingErrors.length === 0, missingErrors.join(', '));
 const unknown = USED_KEYS.filter((k) => !(k in GAMES.en));
 check('every key the components ask for exists', unknown.length === 0, unknown.join(', '));
 const dynamic = [
@@ -300,7 +321,7 @@ check('striking hooks', called('fishHook'));
 
 stores.fishing.set(line('caught', { spot: null, caught: { fish: 'madai', size: 62.5, newSpecies: true, record: true, personalBest: true } }));
 await settle();
-for (const want of ['Caught!', 'Red sea bream', '62.5 cm', 'Epic', 'New to your book', 'Personal best', 'Biggest on the island today']) {
+for (const want of ['Caught!', 'Red sea bream', '62.5 cm', 'Epic', 'New to your book', 'Personal best', 'Biggest of its kind today']) {
   check('the catch card shows ' + JSON.stringify(want), text('FishingHud').includes(want), text('FishingHud'));
 }
 stores.fishing.set(line('caught', { spot: null, caught: { fish: 'aji', size: 18, newSpecies: false, record: false, personalBest: false } }));

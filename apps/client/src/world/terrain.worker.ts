@@ -5,9 +5,9 @@
  * Turns the analytic height field in `@nagisa/shared/terrain` into a vertex-coloured
  * mesh, off the main thread.
  *
- * This runs in a worker for one concrete reason: a `high` tier island is a 400 × 400 grid,
+ * This runs in a worker for one concrete reason: a `high` tier island is a 340 × 340 grid,
  * and every vertex costs a `heightAt` call that evaluates fbm noise, resolves the nearest
- * path through a spatial index and blends ten terraces. That is ~160 000 evaluations,
+ * path through a spatial index and blends ten terraces. That is ~116 000 evaluations,
  * which is comfortably enough to drop frames — and it happens exactly when the player is
  * staring at the loading screen forming an opinion about whether this world is worth their
  * time.

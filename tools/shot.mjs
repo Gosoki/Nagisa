@@ -25,7 +25,7 @@ import { shutdown, start, waitForPortsFree } from './stack.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const args = process.argv.slice(2);
-const FLAGS = new Set(['time', 'tier', 'ink', 'out', 'width', 'height', 'debug', 'inkdebug']);
+const FLAGS = new Set(['time', 'tier', 'ink', 'out', 'width', 'height', 'debug', 'inkdebug', 'map']);
 const flag = (name, fallback) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : fallback;

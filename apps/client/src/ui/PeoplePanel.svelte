@@ -270,6 +270,14 @@
     opacity: 1;
   }
 
+  /* Without a hover there is no revealing them, and an invisible button that still takes a
+     tap is worse than a visible one: a thumb on the end of a row would mute someone unseen. */
+  @media (hover: none) {
+    .act {
+      opacity: 1;
+    }
+  }
+
   .follow.on {
     border-color: var(--ui-accent);
     color: var(--ui-accent);

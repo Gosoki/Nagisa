@@ -18,7 +18,7 @@
  * ### Layout
  *
  * One module per thing the island does — `bells`, `fireworks`, `fishing`, `quiz-arena`,
- * `emotes`, `lanterns`, `lighthouse`, `music` — over two shared ones: `materials`, which is
+ * `emotes`, `lanterns`, `lighthouse`, `music`, `rain`, `fireflies` — over two shared ones: `materials`, which is
  * how an effect is drawn through the ink pipeline without disturbing it, and `audio`, which
  * is how a sound is placed in it. This file only routes: stores and events in, one update
  * out, and everything given back on `dispose`.
@@ -54,6 +54,8 @@ import { LighthouseBeam } from './lighthouse.js';
 import { Concert } from './music.js';
 import { QuizArena } from './quiz-arena.js';
 import { Rain } from './rain.js';
+import { Fireflies } from './fireflies.js';
+import { Digs } from './digs.js';
 
 /** What a dig's heat looks like over the digger's head. ♨ is a hot spring: warm. */
 const HEAT_GLYPH: Record<DigHeat, string> = { hot: '🔥', warm: '♨️', cool: '💧', cold: '❄️' };
@@ -99,6 +101,8 @@ export class GameFx {
   private readonly lighthouse: LighthouseBeam;
   private readonly concert: Concert;
   private readonly rain: Rain;
+  private readonly fireflies: Fireflies;
+  private readonly digs: Digs;
   /** Null on a map with no arena. */
   private readonly arena: QuizArena | null;
 
@@ -120,6 +124,8 @@ export class GameFx {
     this.lighthouse = new LighthouseBeam(host);
     this.concert = new Concert(host, this.group);
     this.rain = new Rain(host, this.group);
+    this.fireflies = new Fireflies(host, this.group);
+    this.digs = new Digs(host, this.group);
     this.arena = QUIZ_ARENA ? new QuizArena(host, this.group) : null;
 
     this.unsubscribers.push(
@@ -150,10 +156,12 @@ export class GameFx {
       case 'dig':
         // What the sand said, over the digger's head: a crowd reads it from across the plaza.
         this.emotes.showGlyph(event.by, HEAT_GLYPH[event.heat]);
+        this.digs.dug(event.by);
         break;
       case 'treasure':
         // A find is a small celebration where it came up — a gold shell, seen island-wide.
         this.emotes.showGlyph(event.by, '💎');
+        this.digs.found(event.pos);
         this.fireworks.launch({
           k: 'firework',
           x: event.pos[0],
@@ -174,6 +182,7 @@ export class GameFx {
   /** How hard it is raining, 0–1 (`weatherLevels` in the shared package). */
   setRain(level: number): void {
     this.rain.setLevel(level);
+    this.fireflies.setRain(level);
     this.rainLevel = level;
   }
 
@@ -210,6 +219,8 @@ export class GameFx {
     this.lighthouse.update(dt);
     this.concert.update(dt);
     this.rain.update(elapsed);
+    this.fireflies.update(dt, elapsed);
+    this.digs.update(dt);
     this.updateUmbrellas(dt);
   }
 
@@ -225,6 +236,8 @@ export class GameFx {
     this.lighthouse.dispose();
     this.concert.dispose();
     this.rain.dispose();
+    this.fireflies.dispose();
+    this.digs.dispose();
     this.group.clear();
   }
 

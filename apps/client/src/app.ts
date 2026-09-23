@@ -40,6 +40,7 @@ import {
   spawnPoint,
   stagePosition,
   weatherLevels,
+  isIslandNight,
   crowdSlot,
   zoneAt,
   type ActivityId,
@@ -100,6 +101,7 @@ import {
   setServerClock,
   vista,
   weather,
+  islandNight,
   type SelfState,
   type WorldCommands,
 } from './state/stores.js';
@@ -133,8 +135,9 @@ const FOLLOW_REPATH_SQ = 1.6 * 1.6;
  */
 const FOLLOW_AIM_SHORT = FOLLOW_STOP_DISTANCE - 1.3;
 
-/** The sky, as it is written on a photograph's label. */
+/** The sky, as it is written on a photograph's label. A clear night is the moon's. */
 const WEATHER_MARK: Record<Weather, string> = { clear: '☀', cloudy: '☁', rain: '☂' };
+const CLEAR_NIGHT_MARK = '☾';
 
 /** A follow walk that ended short of them is tried again at most this often, ms. */
 const FOLLOW_RETRY_MS = 1000;
@@ -210,6 +213,7 @@ export class App {
   private followRetryAt = 0;
   /** The spell of weather last published to the interface; null before the first frame. */
   private weatherShown: Weather | null = null;
+  private nightShown: boolean | null = null;
 
   /** Zone the player was in last frame, for change detection. */
   private lastZone: ZoneId | null = null;
@@ -620,6 +624,11 @@ export class App {
     this.island.setWeather(now.cloud, now.rain);
     this.fx.setRain(now.rain);
     this.ambience.setRain(now.rain);
+    const night = isIslandNight(serverTime);
+    if (night !== this.nightShown) {
+      this.nightShown = night;
+      islandNight.set(night);
+    }
     if (now.weather === this.weatherShown) return;
     const first = this.weatherShown === null;
     this.weatherShown = now.weather;
@@ -945,7 +954,7 @@ export class App {
         const here = get(room);
         const place = here ? (here.kind === 'private' ? tr('island.private', { code: here.code ?? '' }) : roomName(here)) : '';
         // The island's mark, unless the place's own name already carries it (渚岛, 渚島).
-        const mark = [place.includes('渚') ? '' : '渚', place, `${stamp.getFullYear()}.${pad(stamp.getMonth() + 1)}.${pad(stamp.getDate())}`, WEATHER_MARK[get(weather)]]
+        const mark = [place.includes('渚') ? '' : '渚', place, `${stamp.getFullYear()}.${pad(stamp.getMonth() + 1)}.${pad(stamp.getDate())}`, get(weather) === 'clear' && get(islandNight) ? CLEAR_NIGHT_MARK : WEATHER_MARK[get(weather)]]
           .filter(Boolean)
           .join(' · ');
         void this.renderer.capture().then(async (captured) => {

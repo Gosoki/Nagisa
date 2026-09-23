@@ -576,6 +576,9 @@ export const welcomeOpen: Writable<boolean> = writable(false);
 /** The island's weather right now (see `weather.ts` in the shared package). Written by the app. */
 export const weather: Writable<Weather> = writable('clear');
 
+/** Whether it is night on the island (the fish and the fireflies' night). Written by the app. */
+export const islandNight: Writable<boolean> = writable(false);
+
 /** The treasure hunt that is running, if one is. */
 export const treasureHunt: Readable<ActivityView | null> = derived(
   activities,

@@ -47,7 +47,7 @@
     isLand,
     type Interactable,
   } from '@nagisa/shared';
-  import { currentZone, followTarget, planImage, players, profile, remotePose, selfPose, settings, weather } from '../state/stores.js';
+  import { currentZone, followTarget, planImage, players, profile, remotePose, selfPose, settings, weather, islandNight } from '../state/stores.js';
 
   /** The weather beside the place name: the sky you are under, at a glance. */
   const WEATHER_GLYPH = { clear: '☀️', cloudy: '☁️', rain: '🌧️' } as const;
@@ -391,7 +391,7 @@
       <div class="zone">
         <span class="zone-name">{zoneName($currentZone.id, $lang)}</span>
         {#if zoneSecondary}<span class="zone-ja" lang="ja">{zoneSecondary}</span>{/if}
-        <span class="weather" role="img" aria-label={$t(`weather.${$weather}`)} title={$t(`weather.${$weather}`)}>{WEATHER_GLYPH[$weather]}</span>
+        <span class="weather" role="img" aria-label={$t(`weather.${$weather}`)} title={$t(`weather.${$weather}`)}>{$weather === 'clear' && $islandNight ? '🌙' : WEATHER_GLYPH[$weather]}</span>
       </div>
     {/if}
     {#if $followTarget}

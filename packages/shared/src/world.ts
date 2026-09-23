@@ -124,7 +124,7 @@ let ZONES_BY_SPECIFICITY: readonly Zone[] = [];
  * Which zone a world position belongs to.
  *
  * Resolution is *smallest containing zone wins*. Overlaps are intentional and nested —
- * the notice board (r=18) sits inside the plaza (r=56), which sits inside the coast
+ * the notice board (r=11) sits inside the plaza (r=32), which sits inside the coast
  * fallback (r=9999) — so ranking by radius yields the most specific place without any
  * explicit priority field to keep in sync.
  *

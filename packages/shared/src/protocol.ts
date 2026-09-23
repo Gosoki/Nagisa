@@ -200,7 +200,9 @@ export enum ActivityState {
  */
 export const ACTIVITY_TRANSITIONS: Readonly<Record<ActivityState, readonly ActivityState[]>> = {
   [ActivityState.Scheduled]: [ActivityState.Open, ActivityState.Cancelled],
-  [ActivityState.Open]: [ActivityState.Live, ActivityState.Cancelled, ActivityState.Scheduled],
+  // Not back to `scheduled`: doors open five minutes before the start by the clock, so an
+  // activity sent back would simply be opened again on the next sweep.
+  [ActivityState.Open]: [ActivityState.Live, ActivityState.Cancelled],
   [ActivityState.Live]: [ActivityState.Ended],
   [ActivityState.Ended]: [],
   [ActivityState.Cancelled]: [],
@@ -434,11 +436,11 @@ export interface ClientHello {
    * with the same name comes back as a brand-new visitor and is dropped on the quay,
    * possibly halfway across the island from where they were standing.
    *
-   * So the client also carries its own position. The server honours it **only when a
-   * cryptographically valid resume token accompanies it** — proof this connection was
-   * issued a session, not a first-time arrival, whose landfall at the harbour is
-   * deliberate — and only after re-deriving it through the walkability contract, so a
-   * claim can never place a player somewhere they could not have walked to.
+   * So the client also carries its own position, and the server honours it — after
+   * re-deriving it through the walkability contract (snapped at most a few metres), so a claim
+   * can never place a player somewhere they could not have walked to. It is deliberately not
+   * gated on the resume token: the case it exists for is a server restart, when no token names
+   * anybody the server holds. See `returningSpawn` in the server's handlers.
    */
   at?: { pos: Vec3; yaw: number };
   /**
@@ -903,6 +905,11 @@ export interface QuizView {
   alive: PlayerId[];
   /** Knocked out this round, present in `reveal`. */
   fell?: PlayerId[];
+  /**
+   * In `reveal`: everyone still in answered wrongly, so — by the house rule — nobody went
+   * out. Distinguishes "nobody fell because all were right" from "…because all were wrong".
+   */
+  replay?: boolean;
   /** Present in `finished`. */
   winners?: PlayerId[];
 }
@@ -963,7 +970,7 @@ export interface ServerFish {
   record?: boolean;
   /** Biggest of its kind you have ever landed. */
   personalBest?: boolean;
-  reason?: 'early' | 'late' | 'moved' | 'stopped' | 'busy';
+  reason?: 'early' | 'late' | 'moved';
 }
 
 /** Your omikuji slip. `again` = you had already drawn today, and this is that slip. */

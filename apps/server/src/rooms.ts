@@ -22,6 +22,7 @@
 
 import { randomInt } from 'node:crypto';
 import {
+  ActivityState,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
   normaliseRoomCode,
@@ -76,7 +77,6 @@ export class RoomManager {
   private readonly dormant = new Map<RoomId, PersistedRoom>();
   /** The private island registry, by code. */
   private readonly islands = new Map<string, PersistedIsland>();
-  private shardCounter = 0;
   private readonly log: Logger;
 
   constructor(private readonly opts: RoomManagerOptions) {
@@ -94,11 +94,17 @@ export class RoomManager {
   // Creating rooms
   // ---------------------------------------------------------------------------------------
 
-  /** Create, restore, start and register a public shard. */
+  /**
+   * Create, restore, start and register a public shard. Takes the lowest shard number not
+   * in use, so a shard that went to sleep is the one that wakes when another is needed —
+   * with its guestbook and board — rather than its state waiting forever under a number
+   * that is never issued again.
+   */
   createRoom(): Room {
-    this.shardCounter++;
-    const id: RoomId = `shore-${this.shardCounter}`;
-    const room = new Room(id, `Nagisa — Shore ${this.shardCounter}`, this.opts.roomCapacity, this.log.child({ room: id }), {
+    let n = 1;
+    while (this.rooms.has(`shore-${n}`)) n++;
+    const id: RoomId = `shore-${n}`;
+    const room = new Room(id, `Nagisa — Shore ${n}`, this.opts.roomCapacity, this.log.child({ room: id }), {
       kind: 'public',
       persist: this.opts.persist,
       random: this.opts.random,
@@ -366,6 +372,19 @@ export class RoomManager {
     const all = [...this.islands.values()].sort((a, b) => b.lastActiveAt - a.lastActiveAt);
     for (const gone of all.slice(ISLAND_LIMIT)) this.islands.delete(gone.code);
     return all.slice(0, ISLAND_LIMIT);
+  }
+
+  /** Rooms whose tick loop has stopped while it should be running. See `Room.isStalled`. */
+  stalled(now = Date.now()): Room[] {
+    return this.list().filter((r) => r.isStalled(now));
+  }
+
+  /** Bring the metrics that are cheaper to count than to maintain up to date; called on scrape. */
+  publishMetrics(): void {
+    const byState: Record<string, number> = {};
+    for (const state of Object.values(ActivityState)) byState[state] = 0;
+    for (const room of this.rooms.values()) for (const a of room.activities.list()) byState[a.state]++;
+    for (const [state, n] of Object.entries(byState)) metrics.activitiesCurrent.set(n, { state });
   }
 
   /** Stop every room's tick loop and grace timers. Called during graceful shutdown. */

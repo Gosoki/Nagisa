@@ -1186,14 +1186,6 @@ export const NAGISA_ISLAND: MapPack = {
     spawnPoints: SPAWN_POINTS,
     fallbackZone: 'coast',
 
-    /**
-     * Roadside lanterns asked for by name, and taken away.
-     *
-     * Fifteen of them, every one recorded from inside the world by somebody standing next to
-     * the lamp — between 0.11 m and 1.70 m from it — and every one a lamp the placement rule
-     * put somewhere a person looking at it did not want one. The rule stays; these fifteen
-     * stations do not. See `MapWorld.lanternVetoes`.
-     */
     // The ○× arena: two level discs across the middle of the plaza, clear of every building
     // and prompt, with the crowd's natural gathering point between them.
     quizArena: {
@@ -1215,6 +1207,14 @@ export const NAGISA_ISLAND: MapPack = {
 
     programme: PROGRAMME,
 
+    /**
+     * Roadside lanterns asked for by name, and taken away.
+     *
+     * Fifteen of them, every one recorded from inside the world by somebody standing next to
+     * the lamp — between 0.11 m and 1.70 m from it — and every one a lamp the placement rule
+     * put somewhere a person looking at it did not want one. The rule stays; these fifteen
+     * stations do not. See `MapWorld.lanternVetoes`.
+     */
     lanternVetoes: [
       [-18, -68],
       [-5, -68.9],

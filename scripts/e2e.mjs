@@ -10,7 +10,7 @@
  * does not resume.
  *
  * Run with:  node scripts/e2e.mjs
- * Requires:  npm run build   (server dist + shared dist; client dist is optional)
+ * Requires:  npm run build   (server and shared dist; the client dist for the static-file check)
  *
  * Exits non-zero on the first failure, with the observed frames printed.
  */

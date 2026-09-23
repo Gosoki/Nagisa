@@ -71,7 +71,10 @@ export interface Config {
    * `TRUST_PROXY` is set — a default limit would lock out everyone at once.
    */
   readonly MAX_CONNECTIONS_PER_IP: number;
-  /** Read the client address from `X-Forwarded-For` (set this behind nginx/Caddy). Default off. */
+  /**
+   * Read the client address from the last `X-Forwarded-For` hop — the one our own reverse
+   * proxy appended (set this behind nginx/Caddy). Default off.
+   */
   readonly TRUST_PROXY: boolean;
   /** Number of room shards to pre-create at boot. Default 1. More are opened on demand. */
   readonly ROOM_COUNT: number;

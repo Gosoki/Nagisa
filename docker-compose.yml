@@ -25,6 +25,14 @@ services:
       # Players on one private island (made with "Make a private island" and shared by code).
       PRIVATE_ROOM_CAPACITY: '40'
 
+      # --- Connection limits ---
+      # Behind a reverse proxy (nginx, Caddy) every visitor arrives from the proxy's address;
+      # TRUST_PROXY makes the server read X-Forwarded-For instead, which is what makes the
+      # per-address cap mean "per visitor". Leave both unset when clients connect directly.
+      MAX_CONNECTIONS: '2000'
+      # TRUST_PROXY: '1'
+      # MAX_CONNECTIONS_PER_IP: '24'
+
       # --- Persistence ---
       # Each island's schedule, announcements and guestbook, the registry of private
       # islands and their keepers, and visitors' stamps / fish books / badges survive a

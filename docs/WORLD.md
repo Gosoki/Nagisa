@@ -3,9 +3,9 @@
 Nagisa is one small Japanese island, about 250 m across, surrounded by open water on every
 side. Six places sit on a hexagon 74 m to a side, with a single mountain at its centre.
 
-That scale is the whole design. A neighbour is about eight seconds away at a run and the
-summit is sixteen; the entire ring road takes under a minute. When something starts at the
-plaza, the answer is "I'm nearly there" rather than "I'll set off".
+That scale is the whole design. A neighbour is about nine seconds away at a walk and half
+that at a run; the entire ring road takes under a minute at a walk. When something starts at
+the plaza, the answer is "I'm nearly there" rather than "I'll set off".
 
 > Two earlier islands are kept for reference, each with a table of what changed and why:
 > [`archive/world-v1/`](../archive/world-v1/README.md) and
@@ -21,11 +21,11 @@ plaza, the answer is "I'm nearly there" rather than "I'll set off".
                                 (0, −74)
                               ╱          ╲
         灯台岬 Lighthouse                    町並み Old Street  ┐
-           (−64, −37)  25 m                    (64, −37) 17 m  │ one shelf,
+           (−64, −37)  13 m                    (64, −37)  9 m  │ one shelf,
                │           ▲ 山頂 Summit            │           │ and the road
                │             (0, 0)  26 m           │           │ up the mountain
         神社 Shrine                           広場 Main Plaza   ┘
-           (−64, 37)  22 m                     (64, 37)  15 m
+           (−64, 37)  11 m                     (64, 37)   8 m
                               ╲          ╱
                           南港 South Harbour       2.4 m
                                 (0, 74)
@@ -49,18 +49,25 @@ this codebase including in every coordinate in this document.
 |---|---|---|---|---|---|---|
 | South Harbour | 南港 | venue | ✓ | (0, 74) | 2.4 m | The arrival port. Ferry pier, breakwater, warehouses, market stalls, a torii in the bay. Everyone spawns here. |
 | Sunset Beach | 浜 | venue | ✓ | (46, 92) | 1.6 m | Sand east of the quay. Huts, a boat, a low stage. |
-| Main Plaza | 広場 | venue | ✓ | (64, 37) | 15 m | The civic centre. Roofed stage, gates, well, and the teahouse on its quiet side. |
-| Notice Board | 掲示板 | notice | | (48, 22) | 15.8 m | A shallow step up from the plaza floor. Announcements are read here. |
-| Old Street | 町並み | transit | | (64, −37) | 17 m | Six machiya facing each other across a street, a bathhouse, a kura. |
+| Main Plaza | 広場 | venue | ✓ | (64, 37) | 8 m | The civic centre. Roofed stage, gates, well, and the teahouse on its quiet side. |
+| Notice Board | 掲示板 | notice | | (48, 22) | 8.4 m | A shallow step up from the plaza floor. Announcements are read here. |
+| Old Street | 町並み | transit | | (64, −37) | 9 m | Six machiya facing each other across a street, a bathhouse, a kura. |
 | North Harbour | 北港 | venue | ✓ | (0, −74) | 2.4 m | The working fishery. Funaya boat houses, net racks, an Ebisu torii offshore. |
-| Lighthouse Cape | 灯台岬 | venue | ✓ | (−64, −37) | 25 m | Exposed clifftop. The lamp turns day and night. |
-| Shrine | 神社 | venue | ✓ | (−64, 37) | 22 m | The western headland. Three torii along the approach, komainu, temizuya, the hall. |
+| Lighthouse Cape | 灯台岬 | venue | ✓ | (−64, −37) | 13 m | Exposed clifftop. The lamp turns day and night. |
+| Shrine | 神社 | venue | ✓ | (−64, 37) | 11 m | The western headland. Three torii along the approach, komainu, temizuya, the hall. |
 | Summit | 山頂 | scenic | | (0, 0) | 26 m | The inner shrine and a railing. The camera widens automatically. |
 | Ring Road | 渚道 | transit | | fallback | — | Catches anyone not inside a named place. |
 
 Zone membership resolves as **smallest containing zone wins**, so the notice board (r=11)
 inside the plaza (r=32) inside the ring fallback (r=9999) yields the most specific place
 without any priority field to maintain.
+
+Every zone carries its words in three languages. `name` is the English shown as you
+arrive and `nameJa` the Japanese beneath it; `nameZh` is the Chinese interface's name and
+falls back to `nameJa`, which shares its script. `caption` is the one observational sentence
+shown on first entry, with `captionZh` and `captionJa` beside it, each falling back to the
+English. The client picks the field (`apps/client/src/i18n/index.ts`); nothing is
+duplicated in the interface's dictionaries.
 
 ---
 
@@ -83,7 +90,7 @@ islandMask(x, z)          circle, angular wobble, four capes, two harbour bays
 naturalHeight(x, z)       seabed offshore; onshore: rolling ground + named shelves
                           + sea cliffs + the massif
    ↓
-paddedHeight(x, z)        nine gathering terraces blended in
+paddedHeight(x, z)        ten gathering terraces blended in
    ↓
 heightAt(x, z)            routes cut to their surveyed grade
 ```
@@ -103,14 +110,15 @@ between them, rather than as two platforms with a dip in the middle.
 
 ### Terraces
 
-Nine flat pads. Everything people gather on gets one.
+Ten flat pads. Everything people gather on gets one, and so does the saddle between the
+plaza and the old street.
 
 Their **inner radii are sized by what stands on them**, not by eye — a building is placed at
 a single height sample, so its whole footprint has to be inside the flat part. The ceiling
 on how wide they can get is the gap to the next terrace: two pads need
 `heightDifference / walkableGradient` of clear ground between their flat parts, and the
 hexagon gives 74 m to spend. The tightest pair is the north harbour and the lighthouse cape,
-22.6 m apart in height, so 27 m of that 74 has to stay as slope.
+10.6 m apart in height.
 
 Harbour pads are kept deliberately tight. A pad's blend raises the ground all the way out to
 `outer`, and at a harbour the ground it raises is *seabed* — an over-generous quay does not
@@ -120,14 +128,16 @@ make a bigger harbour, it fills the bay in and leaves the piers standing on a be
 
 ## 3. Routes
 
-| Route | Length | At a run | Surface | Where it goes |
+| Route | Length | At a walk | Surface | Where it goes |
 |---|---|---|---|---|
 | Ring Road | 493 m | 55 s | stone | A closed loop through all six zones |
-| Summit Road | 144 m | 16 s | stone | Leaves the ring between plaza and old street, switchbacks to the summit |
-| Shrine Path | 85 m | 9 s | gravel | Shrine → one switchback up the west flank → summit |
-| Harbour Lane | 95 m | 11 s | gravel | South harbour → notice board → plaza, across the middle |
+| Summit Road | 85 m | 9 s | stone | Leaves the ring at its eastern point (82, 0), between plaza and old street, and climbs west to the summit |
+| Shrine Path | 74 m | 8 s | gravel | Shrine → up the west flank → summit |
+| Harbour Lane | 112 m | 12 s | gravel | South harbour → the notice board terrace → the ring at (82, 0), where the summit road leaves it |
+| Lighthouse Path | 35 m | 4 s | gravel | From the ring on the cape terrace out along the headland to the lighthouse |
 
-Every metre of all four is walkable; `world-smoke` checks it.
+Lengths are surveyed arc lengths (`pathLength`); times are at the 9 m/s walk, on the flat.
+Every metre of all five is walkable; `world-smoke` checks it.
 
 ### Surveyed grades
 
@@ -169,19 +179,27 @@ no two distant samples on it are ever close together.
 
 ## 4. What is built on it
 
-107 hand-placed landmarks in `LANDMARKS`, built by the prop library in
+134 hand-placed landmarks in the map pack's `LANDMARKS`, built by the prop library in
 [`apps/client/src/world/props/`](../apps/client/src/world/props/).
 
 ```
-11 × stone lantern   9 × rock       8 × bench      7 × machiya / post lantern
-6 × torii            5 × boat / warehouse          4 × pier / stage / gate / bell tower / banner
-2 each: sea wall, beach hut, well, minka, boathouse, net rack, rail, komainu, shrine hall
-1 each: lighthouse, keeper's house, bathhouse, teahouse, temizuya, breakwater,
-        notice board, summit marker
+26 × stone lantern   10 × bench     9 × rock       8 × stamp stand    7 × machiya
+6 × torii            5 × boat / warehouse
+4 × pier / stage / bell tower / post lantern / banner / gate
+3 × market stall / notice board
+2 each: sea wall, beach hut, minka, well, boathouse, net rack, rail, komainu, temizuya,
+        shrine hall
+1 each: breakwater, teahouse, bathhouse, lighthouse, keeper's house, summit marker,
+        omikuji stand, rod rack
 ```
 
-Roadside lanterns are **not** in that list: 37 are placed by arc length along the four
-routes at build time, because spacing them by hand goes stale the moment a road is re-routed.
+The last three kinds in that list — `stamp-stand`, `omikuji-stand`, `rod-rack` — are the
+games' furniture (`props/games.ts`); §7 says how they are used.
+
+Roadside lanterns are **not** in that list: they are placed by arc length along the five
+routes at build time, every 21 m (34 m on the low tier), because spacing them by hand goes
+stale the moment a road is re-routed. After the map's vetoes that is fifteen lamps (thirteen
+on the low tier).
 
 ### Buildings stand on level ground
 
@@ -220,11 +238,11 @@ rule, from [`packages/shared/src/movement.ts`](../packages/shared/src/movement.t
 
 | | |
 |---|---|
-| Walk | 4.2 m/s |
-| Run | 9.0 m/s |
+| Walk | 9.0 m/s |
+| Run | 18.0 m/s |
 | Wade | 2.0 m/s, to 0.9 m of water |
 | Max slope | 0.86 rad ≈ 49° |
-| Server budget | 11.5 m/s — the client's ceiling plus headroom |
+| Server budget | 20.5 m/s horizontal — the client's ceiling plus 2.5 m/s of headroom — and 16 m/s vertical |
 
 That file is not a preferences list. Any divergence between the two sides is not a subtle
 physics discrepancy: it is **the player being teleported at random while running**, because
@@ -336,3 +354,90 @@ side-on to it, never turn away. The exemption is a frontage that opens onto wate
 46 m — a boat house, a beach hut, a stage playing to a crowd sitting on the sand — which is
 measured against the terrain rather than declared per kind, because the same kind is right
 both ways round on the same island.
+
+---
+
+## 7. Things to use: interactables and the games' places
+
+Everything a player can walk up to and use is an `Interactable` in the map pack's
+`INTERACTABLES` — twenty-six on the shipped island. Each is an offset (`dx`, `dz`) from its
+zone's anchor, a `range` within which the prompt appears, a `kind` (`use` or `sit`), an
+English `label`, and an `effect` that says what using it does:
+
+| `effect` | On the island | What happens |
+|---|---|---|
+| `none` | 4 seats (`kind: 'sit'`) | Nothing beyond the pose. The server reserves the seat: one person each. |
+| `read_announcements` | the notice board | Opens the board: announcements and the guestbook. Signing requires standing here. |
+| `checkin_nearby` | the plaza post | Checks you in to whatever is live in this zone. |
+| `ring_bell` | 4 bells | Rings, for everyone within earshot. 3 s rest per bell. |
+| `look` | the lighthouse door, the summit rail | The camera turns to take in the view given by `view`. Client only. |
+| `stamp` | 8 stamp stands, one per place | Puts this zone's stamp on your card. |
+| `omikuji` | the shrine's fortune box | Draws the day's fortune. |
+| `fish` | 4 pier ends and 1 beach spot | Casting here starts the fishing game. |
+
+Two optional fields serve particular effects:
+
+- **`view`** — for `look`, where the camera turns: `yaw` in the world's convention (the
+  direction `(sin yaw, cos yaw)` in x/z), `pitch` down from level, and an optional framing
+  `distance`. For `fish`, `yaw` is the way the line goes out over the water.
+- **`habitat`** — for `fish`, `'harbor'` (deep, sheltered) or `'beach'` (surf over sand). It
+  decides which species can bite (`packages/shared/src/games/fish.ts`); omitted means
+  harbour.
+
+The server checks reach against the same data — the player's last validated position within
+`range` plus 1.5 m of slop — so a prompt the client shows is one the server honours. The
+prompt's verb is localised by effect (`prompt.<effect>` in `i18n/core.ts`), so `label` is
+only the English fallback.
+
+### The games' map data
+
+Three more parts of `MapWorld` exist for the games. A map without them simply does not run
+that game.
+
+- **`quizArena`** — `{ zone, o: {x, z, r}, x: {x, z, r} }`: the two circles of the ○× quiz,
+  on flat, walkable ground in a venue. The shipped arena is two 4.5 m discs across the middle
+  of the plaza, clear of every building and prompt. `zone` is where the quiz gathers its
+  field — everyone standing in it when the lobby closes — so it should be the quiz
+  template's venue. The circles must not overlap (`quizSide` gives ○ a tie).
+- **`fireworks`** — `{ zones, sites }`: the shores a player may launch from (the shipped
+  island: the beach and the south harbour), and the launch points out on the water as
+  `[x, z]`. The server launches from the site nearest the player, jittered by up to 7 m.
+- **`programme`** — the island's day: `{ template, at }`, `at` in real minutes after island
+  midnight (a day is ninety). See [ACTIVITIES.md](ACTIVITIES.md) §3. Without one, each
+  template runs once a day, evenly spaced.
+
+Activity templates carry their words the way zones do: `title` and `blurb` in English, with
+`titleZh`, `titleJa`, `blurbZh` and `blurbJa` beside them, each falling back to the English.
+A template's `feature` (`quiz`, `derby`, `fireworks`, `concert`, `lanterns`, `lamp`) says
+what the island does while it is live.
+
+### Adding a game spot
+
+A game is something that happens *at a place*, so adding one is the same work as adding a
+building, plus a prompt.
+
+1. **Put the furniture down.** A `stamp-stand`, `omikuji-stand` or `rod-rack` landmark in
+   `LANDMARKS` — sited like any building, on level ground, clear of the carriageway and of
+   every other footprint. `scripts/layout-solve.mjs` and `scripts/find-spot.mjs` do the
+   geometry. Fishing needs no furniture, but a spot with a rod rack reads as one.
+2. **Add the prompt** in `INTERACTABLES`: offset from the zone's anchor so that it stands in
+   front of the thing it names, with the `effect` and, for fishing, `habitat` and `view.yaw`
+   pointing over water that is actually deep enough.
+3. **Mind the stamp card.** The card is derived: `STAMP_ZONES` is the zone of every `stamp`
+   interactable, in map order, and completing it earns *Island Walker*. So a new stand
+   lengthens the card for everyone, and **one stand per zone** is a rule — a zone is stamped
+   once, so a second stand in the same zone would add a circle nobody can fill.
+4. **Run the audits.**
+   - `npm run audit:placement` — the layout rules, and *interactables that reach nothing*:
+     every prompt must be within its `range` of a landmark's footprint, and on walkable
+     ground. This is the check that catches a prompt left behind when its building moved;
+     six of the island's first twelve were stranded when it was written.
+   - `npm run test:world` — every landmark kind has a builder, every building stands on
+     ground level to within 0.45 m, every route and spawn is walkable.
+
+   Neither looks at `quizArena` or the fireworks sites. Check the circles by standing in
+   them in the running client (`npm run dev`); the server's `games.test.ts` stands players at
+   their centres and would fail on an arena the quiz cannot judge.
+
+The server needs no change for any of this. Handlers dispatch on `effect`, and the games read
+the arena, the shores, the fishing spots and the stamp stands from the active map.

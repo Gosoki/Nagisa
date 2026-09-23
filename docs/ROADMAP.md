@@ -1,68 +1,126 @@
-# MVP scope and roadmap
+# Scope and roadmap
 
 ---
 
 ## 1. What is built
 
-Everything below is implemented, typechecked and covered by an automated test.
+Everything below is implemented; the last list says what the automated
+tests cover.
 
 ### World
-- One Japanese island, ~340 × 300 m, generated entirely from code.
-- Ten zones: harbour, main plaza, notice board, old street, teahouse, shrine path,
-  summit, lighthouse cape, sunset beach, north and south harbours, and a 1 289 m coast
-  road looping the island with three graded lanes climbing to the summit.
-- 40 hand-placed landmarks (6 336 triangles total) — piers, boats, warehouses, torii,
-  machiya, minka, a teahouse, a shrine hall, a lighthouse, stages, gates, rails, a notice
-  board — from a procedural prop library covering all 16 landmark kinds.
-- 18 567 instanced scattered props across 4 draw calls: boulders, grass tufts, driftwood,
-  grass and rocks, placed by rejection sampling against the terrain.
+- One Japanese island about 250 m across, generated entirely from code: six places on a
+  hexagon around a central mountain, sea on every side.
+- Ten zones — South Harbour, Main Plaza, Notice Board, Old Street, North Harbour,
+  Lighthouse Cape, Shrine, Summit, Sunset Beach, and the Ring Road that catches everything
+  else — each named in English, Japanese and Chinese, with a caption in all three.
+- Five surveyed routes, every metre walkable at a legal grade: the 493 m ring road, the
+  summit road, the shrine path, the harbour lane and the lighthouse path.
+- 134 hand-placed landmarks from a procedural prop library — piers, boats, warehouses,
+  torii, machiya, minka, a teahouse, shrine halls, a lighthouse, stages, bell towers, a notice
+  board — plus the games' own furniture: eight stamp stands, the omikuji box and a rod rack.
+- Roadside lanterns dealt out along the routes by rule, with vetoes recorded from inside the
+  world; instanced boulders, grass tufts and driftwood placed by rejection sampling.
 - Custom sea shader with baked bathymetry driving depth colour and shoreline foam.
 - Sky dome and a three-light rig on a 90-minute day/night cycle, synchronised to server
-  time so everyone shares the same dusk.
+  time so everyone shares the same dusk — and the same programme.
 - Synthesised per-zone ambience, six families, crossfaded on zone change.
+- The island is a swappable map pack; a second one (`lantern-atoll`) ships.
 
 ### Multiplayer
-- Server-authoritative rooms with 10 Hz snapshot/delta synchronisation.
+- Server-authoritative rooms with 10 Hz snapshot/delta synchronisation, each delta encoded
+  once and sent compressed.
 - Packed integer transforms: ~3 KB/s per client at 120 players.
-- Client-predicted movement with server speed/bounds validation and hard corrections.
+- Client-predicted movement with server speed/walkability validation and hard corrections.
 - Remote-player interpolation at a 200 ms delay, with animation recovered from observed
   motion so legs never skate.
-- Presence, emotes, name tags, per-zone occupancy.
+- Presence, emotes, name tags, per-zone occupancy, a minimap.
 - Reconnection with signed resume tokens and a 45-second grace window; disconnected
-  players fade rather than vanish.
-- Room shards with population-biased matchmaking.
+  players fade rather than vanish. After a longer outage or a restart, you come back to the
+  same island and where you were standing.
+- Public shards with population-biased matchmaking.
+- **Private islands**: five-letter invite codes, `?island=` links, a keeper who is admin
+  there and only there, a persisted registry so links outlive everyone leaving and a
+  restart, and rooms that sleep when empty and wake on their code.
+- **Visitor profiles** keyed by a hashed browser key: stamp card, fish book, badges, the
+  badge you wear.
 
-### Activities
-- Six activity templates across five venues.
-- Full lifecycle (`scheduled → open → live → ended` / `cancelled`) with server-validated
-  transitions and automatic scheduling.
+### Talking
+- A chat log with speech bubbles over the speaker; arrivals and departures as quiet lines.
+- Whispers (`/w`, reply with `/r`) delivered to both ends only.
+- Player cards: follow someone, challenge them to janken, whisper, block them on your own
+  screen; admins also mute, kick and make hosts.
+- A notice board that can be signed: a line of up to 80 characters, kept across restarts.
+
+### Activities and the island's day
+- Eight templates across six venues, each with a title and blurb in three languages.
+- A daily programme per room — derby at dawn, morning assembly, two quizzes, the market,
+  the lamp lighting, the lantern walk, the concert, fireworks — kept on every room's board
+  by the scheduler, without duplicates across restarts.
+- A lifecycle that runs itself: doors open five minutes early, things start on time unless a
+  present host is holding them (for at most three minutes), anything that could not happen
+  is cancelled, and finished things are cleared off.
+- Features that do something while live: the quiz, the derby, the fireworks show, the
+  concert, lanterns carried on the lantern walk, the lighthouse lamp.
 - Participant and audience modes, capacity enforcement, ring-based crowd placement.
-- Check-in with arrival ordinals, accepted only while live and only once.
-- Announcements scoped to an activity, a zone or the island, gated by role.
-- Four ordered roles with a pure-function permission layer and an append-only audit log.
+- Check-in with arrival ordinals, visible to everyone as `checkedIn`.
+- Announcements scoped to an activity, a zone or the island, gated by role, and toasted only
+  to the people they are addressed to.
+- Roles computed per room, a pure-function permission layer, an append-only audit log, and
+  admin scheduling of any template from the host panel.
+- Seats that hold one person.
+
+### Games
+- The ○× quiz, answered by where you stand, judged by the server; a 90-statement bank in
+  three languages.
+- Fishing at five spots, 19 catches with rarity and size, night-only species, today's
+  records, and the dawn derby with a live leaderboard.
+- The shrine's omikuji, one slip a day by Japan's calendar.
+- A stamp rally across eight places.
+- Janken between neighbours, with hidden hands, tie replays and a forfeit clock.
+- Fireworks from two shores, and a show after dark.
+- Four bells that everyone in earshot hears, spatialised; two viewpoints the camera turns to
+  take in.
+- Dice, seven badges, and titles worn under your name.
+
+### Interface
+- Simplified Chinese, Japanese and English throughout, following the browser, switchable.
+- Game cards (quiz, fishing line, omikuji slip, janken, player card) and panels (notice
+  board, collection, island) that stay small and fold away.
+- A photo button that saves the frame without the interface or the name plates.
 
 ### Client engineering
 - Three quality tiers plus a settling adaptive-resolution controller.
 - Fixed-step simulation at 60 Hz, decoupled from render rate.
 - Worker-based terrain meshing with a main-thread fallback.
 - Zone-bucket distance culling; ranked character LOD.
+- An effects layer (`fx/`) that draws the games through the ink pipeline without
+  disturbing its outlines, with every sound synthesised.
 - Keyboard, mouse, touch (floating virtual stick) and gamepad input.
-- Total payload: **~188 KB gzipped**, with no art assets of any kind.
+- No art assets of any kind.
 
 ### Server engineering
 - Zero runtime dependencies beyond `ws`.
 - Structured JSON logging, Prometheus metrics, health and readiness endpoints.
-- Per-connection token-bucket rate limits and classified backpressure.
-- Pluggable persistence (`Store` interface, JSON-file and in-memory implementations).
+- Per-connection token buckets with bursts, per-game cooldowns, a 16 KiB inbound frame cap,
+  and classified backpressure.
+- Pluggable persistence (`Store` interface, JSON-file and in-memory implementations),
+  partitioned by room, with caps on every collection, atomic serialised writes, and a
+  corrupt file set aside rather than overwritten.
 - Graceful shutdown; static client serving from the same origin.
 
 ### Verification
-- 28 server unit tests (`node:test`).
-- 26 headless world-generation checks — terrain finiteness and determinism, zone/pad/spawn
-  correctness, mesh integrity, all landmarks, scatter determinism, every character variant.
-- 41 end-to-end checks against a real server over real WebSockets — handshake, movement
-  sync, correction, jitter tolerance, the full activity lifecycle, permissions, admin
-  announcements, emotes, reconnect-and-resume, resync, version rejection.
+- Server unit tests (`node:test`): lifecycle, permissions, rooms, reconnection, the
+  movement validator, and every game through a room with a pinned random source.
+- Headless world-generation checks: terrain finiteness and determinism, zone/pad/spawn
+  correctness, every route walkable, every building level, every landmark kind built, the
+  walkability contract between client and server.
+- Two interface suites in jsdom: the whole overlay through every phase and panel, and each
+  game card and panel through every state the server can put it in, in all three languages.
+- End-to-end checks against a real server over real WebSockets — handshake, movement,
+  corrections, the activity lifecycle, permissions, reconnect and resync, private islands,
+  whispers, and every game.
+- Browser tests of the whole stack: two players meeting, a private island reached by its
+  invite link, a long walk with no corrections, and coming back after the server dies.
 
 ---
 
@@ -71,14 +129,23 @@ Everything below is implemented, typechecked and covered by an automated test.
 Each of these was considered and left out on purpose. They are listed so nobody has to
 guess whether they were forgotten.
 
+The first version of this list said Nagisa was not a chat application and not a game:
+nothing to win, and no text beyond a one-line bubble. v2 moved that line, deliberately. The
+product was broadened from a quiet place you pass through into a **lively hangout** — somewhere
+a group of friends, a remote team or a club comes *together*, and a group needs things to do
+and things to say to each other. What did not move is the register: the games are small,
+ambient and done with your feet; nothing is lost, bought or ranked across the island; the
+interface still folds away; and calm is still the art direction. The rows below record where
+the line is now.
+
 | Not built | Why |
 |---|---|
-| **Text chat** | Nagisa is not a chat application. A one-line speech bubble exists in the protocol and is rate-limited to 1/s; a chat log, history and moderation queue would change what the product is. |
-| **Voice** | Would dominate the atmosphere and require a media server, TURN infrastructure and a much larger moderation commitment. |
-| **Accounts and persistence of identity** | You are whoever you say you are, for as long as your session lasts. Adding accounts adds a password reset flow, a privacy policy and a data-deletion obligation — for a world you visit for twenty minutes. |
-| **An admin dashboard** | Explicitly out of scope. Hosts run events from inside the world, standing on the stage. |
-| **Fast travel** | The island is small enough to cross in ninety seconds, and the crossing is the product. |
-| **Inventory, currency, progression** | There is nothing to win here, and adding a scoreboard would change the register completely. |
+| **Voice** | Would dominate the atmosphere and require a media server, TURN infrastructure and a much larger moderation commitment. Designed in advance and deferred — see §4. |
+| **Accounts** | A random visitor key in the browser carries your profile and your private islands between visits, and the server keeps only its hash. Accounts would add a password reset flow, a privacy policy and a data-deletion obligation for what is, still, a place you visit. The cost is in §3. |
+| **Heavy progression** | Progression exists in a light form — a stamp card, a fish book, seven badges, one worn as a title. There is no inventory, no currency, no levels, and no leaderboard beyond the one on a live derby. A collection gives people something to point at; a scoreboard would change the register completely. |
+| **Chat history and a moderation queue** | Text chat exists now (a log, bubbles, whispers), because a group that has come together has to be able to talk. But the log is the client's own since you arrived; the server keeps no history, and whispers never enter one. Moderation is mute, kick and a personal block, from inside the world. |
+| **An admin dashboard** | Explicitly out of scope. Hosts run events from inside the world; admins schedule from a one-row control in the same host panel. |
+| **Fast travel** | The island is small enough to cross in well under a minute, and the crossing is the product. |
 | **User-generated building** | A large feature that needs its own permission model, moderation story and persistence layer. |
 | **Cross-process room sharding** | Not needed below several hundred concurrent players. The path is documented in [`OPERATIONS.md`](OPERATIONS.md) § Scaling. |
 
@@ -88,52 +155,66 @@ guess whether they were forgotten.
 
 Honest list of what is imperfect today.
 
-1. **Persisted state is not partitioned by room.** On restart, all shards' schedules
-   consolidate onto the first room. Nothing is lost; activities are re-homed. Fine for the
-   default single-shard deployment, wrong for a large one.
-2. **Announcement fan-out is unfiltered.** Scope governs who may *create* an announcement
-   and how the client presents it, not server-side delivery filtering. Every session
-   receives every announcement's existence. Harmless at current scale; it should become a
+1. **Announcement delivery is unfiltered server-side.** Scope governs who may *create* an
+   announcement and — now — whom the client interrupts with a toast, but every session in
+   the room still receives every announcement. Harmless at current scale; it should become a
    real filter before island-wide traffic grows.
-3. **Quality tier changes take effect on next load.** Tier controls scene content, which
-   cannot be rebuilt in place without a visible hitch. The interface says so rather than
-   pretending otherwise.
-4. **No visual regression testing.** The world generation is verified numerically
-   (finiteness, determinism, budgets), but nothing checks that the island *looks* right.
-   A screenshot-diff harness would need a GPU-capable CI runner.
-5. **Character animation is coarse.** Procedural cycles cannot express subtle motion. This
-   is the accepted cost of shipping no rigged assets.
-6. **`chat` is defined in the protocol but has no interface surface.** The server accepts
-   and broadcasts it; no component renders it yet.
+2. **Voice is still deferred.** See §4.
+3. **A profile lives in one browser.** It is keyed by a random key in `localStorage`.
+   Clearing site data, a private window or another device is a new visitor: the stamp card,
+   the fish book, the badges — and the keepership of any private island made from that
+   browser — are unreachable from there, and the server, holding only hashes, cannot help.
+4. **Private island codes are unlisted, not secret.** Five characters from a 31-letter
+   alphabet is about 28.6 million codes, drawn from the system CSPRNG, and unknown codes open
+   nothing — but anyone who has the link can walk in, and a kick is not a ban. There is no
+   lock, no guest list and no way to change an island's code.
+5. **One process.** Every room lives in one Node process and one event loop; the registry,
+   the profiles and every room's state live in one JSON file, rewritten whole on each save.
+   Fine at the current caps; the first thing to change before scaling out (see
+   [`OPERATIONS.md`](OPERATIONS.md) § Scaling).
+6. **Template `formation` is not implemented.** `seated` and `procession` are declared and
+   ignored; every crowd is placed in rings. The lantern walk reads as a procession because of
+   its lanterns, not because anyone follows the host.
+7. **One quiz arena per map**, so one quiz at a time per room.
+8. **Quality tier changes take effect on next load.** Tier controls scene content, which
+    cannot be rebuilt in place without a visible hitch. The interface says so rather than
+    pretending otherwise.
+9. **No visual regression testing.** The world generation is verified numerically
+    (finiteness, determinism, budgets), but nothing checks that the island *looks* right.
+    A screenshot-diff harness would need a GPU-capable CI runner.
+10. **Character animation is coarse.** Procedural cycles cannot express subtle motion. This
+    is the accepted cost of shipping no rigged assets.
 
 ---
 
 ## 4. Roadmap
 
-### Blocked on modelling — environment interaction
+### Done since the last roadmap
 
-Agreed with the author 2026-08-08: **the models come first.** These three are wanted, and
-none of them starts until the prop and building geometry is where the author wants it. Recorded
-here so the reasoning is not lost, not as a queue to start on.
+The previous version of this section held three environment interactions, blocked on the
+modelling pass, and a near-term list. All of the following are now built and are in §1:
 
-The finding that prompted them: of the island's twelve interactables, **six press and
-nothing happens** — the four `Ring` bells and the two `Look` viewpoints, all
-`effect: 'none'`. (The four `Sit`s do work: `kind: 'sit'` drives the animation through the
-packed-transform channel, independently of `effect`. `Check in` and `Read` work too.) The
-island is dense and beautiful and, at the moment you touch it, inert. That is what "有点
-单调" means here — not a shortage of content.
-
-- **Ring the bell, and have it ring.** The strongest of the three, and the smallest: one new
-  effect plus a zone broadcast, a swinging clapper and a sound. Its value is not the sound —
-  it is that ringing is the only channel besides chat where *one player's action is
-  perceived by another*. Chat is text about the world; a bell is the world answering. Four
-  bells already stand in four different places, and their prompts all reach them as of
-  `0e88f18`. Expect it to grow its own uses: greeting, gathering, marking dusk.
-- **Give the two `Look` viewpoints something to look at.** The lighthouse door and the
-  summit rail are the island's two vantage points and both are silent.
-- **Let the notice board be written to.** It can be read; it cannot be signed. A short line
-  that survives a restart is the cheapest possible "somebody was here", and the persistence
-  layer already exists. The world currently resets to nobody-has-ever-been-here.
+- **The bells ring.** A world event, a synthesised bronze note placed by distance and
+  bearing for everyone within earshot, and ink rings spreading from the tower. It was the strongest of the three for the reason given at the
+  time: it is a channel on which one player's action is perceived by another — the world
+  answering rather than text about it.
+- **The viewpoints have something to look at.** The lighthouse door and the summit rail turn
+  the camera out to sea and over the shrine.
+- **The notice board can be signed** — the cheapest possible "somebody was here", surviving
+  a restart.
+- **Speech bubbles**, from the chat the protocol always carried.
+- **Seat occupancy**, reserved server-side.
+- **Announcement toasts filtered by scope** on the client (delivery is still unfiltered —
+  limitation 1).
+- **A health check that means it.** `/healthz` answers 503 when an awake room's tick loop
+  has stalled, so an orchestrator restarts a frozen island; `nagisa_activities_current` is
+  counted on each scrape.
+- **Sleeping overflow shards come back.** A new public shard takes the lowest free number,
+  so a shard that slept wakes with its own guestbook and board.
+- **Room-partitioned persistence**, which retired the old limitation that every shard's
+  schedule consolidated onto the first room after a restart.
+- **Lanterns on the lantern walk.** The procession *reads* now; the formation itself does
+  not exist yet (limitation 6).
 
 ### Voice — deferred on purpose, designed in advance
 
@@ -290,31 +371,35 @@ and the SFU together; the binding constraint is the network, not the compute.
   authority for it.
 - **Zone ambience must duck** when someone nearby speaks, or the two layers smear.
 
-### Near term — finish what is started
-- **Announcement scope filtering** server-side (limitation 2).
-- **Room-partitioned persistence** (limitation 1).
-- **Speech bubbles** — render the `chat` frames the protocol already carries, as
-  short-lived bubbles above characters. Small, and it completes an existing path.
-- **Procession formation** — `ACTIVITY_TEMPLATES` declares `formation: 'procession'` for
-  the Lantern Walk, and crowd placement currently treats it as `gather`. Implementing
-  followers-behind-host would make the shrine walk read properly.
-- **Seat occupancy** — sitting is broadcast, but two players can currently sit on the same
-  mat. Reserve seats server-side.
+### Next — finish what is started
+- **Announcement scope filtering server-side** (limitation 1).
+- **A tick-jitter metric**, which the voice plan asks for, beside the tick duration.
+- **Procession and seated formations** (limitation 6): followers behind the host up the
+  shrine path; the concert's crowd sitting on the sand.
+- **Carry a profile to another browser** (limitation 3): a short one-time transfer code
+  shown in the collection panel, redeemed in the other browser, re-keying the profile and
+  any keeperships. No account, and no new secret to guard.
+- **Keeper tools for private islands** (limitation 4): a session ban that outlasts a kick,
+  and a way to retire a code and issue a new one.
 
 ### Medium term — deepen the world
 - **Weather**, shared like the day cycle: rain on the sea, mist on the mountain. Uses the
   same server-time mechanism, so it costs nothing in protocol terms.
 - **Interior spaces** — the shrine hall and the teahouse are currently solid. Making two of
   them enterable would add somewhere to be when it rains.
-- **A second island**, reached by the boats already moored at the harbour, as a real test
-  of the room/zone abstractions.
+- **A second island in play.** `lantern-atoll` exists as a map pack, but a server runs one
+  map; letting a private island choose its map — or reaching another island by the boats
+  already moored at the harbour — would be the real test of the room and map abstractions.
+- **More for groups to do together**, in the same register: a second quiz arena, team
+  quizzes for a team's island, a quiz bank a keeper can extend.
 - **Spectator camera for hosts** — a free camera while running an event, without leaving
   the world.
 - **Recorded events** — replay a delta stream. The ring buffer and tick numbering already
   make this straightforward.
 
 ### Longer term — scale and openness
-- **Cross-process sharding** with sticky routing and a Redis store.
+- **Cross-process sharding** with sticky routing, a shared island registry and a Redis or
+  Postgres store (limitation 5).
 - **Regional deployments**, with the room list surfacing latency.
 - **Optional GLB assets** for hero props, loaded through the existing `createLandmark`
   dispatch — worth doing for a handful of landmarks once there is an artist, without
@@ -332,3 +417,7 @@ Features that add presence, weather, places to be and reasons to stay come befor
 that add information, controls and notifications. When a proposed feature would require a
 new persistent interface element, that is a strong signal it belongs to a different
 product.
+
+v2 is a test of the rule, not an exception to it. Everything it added is something to do in
+the world — a circle to stand in, a pier to fish from, a bell to ring — and each game's
+interface is a card that appears while you are playing and goes away when you stop.

@@ -4,7 +4,8 @@
  * ====================================================================================
  *
  * Routes:
- * - `GET /healthz` — liveness. 200 once the process is up, regardless of readiness.
+ * - `GET /healthz` — liveness. 200 while every awake room's tick loop is running; 503 if one
+ *   has stalled.
  *   An orchestrator uses this to decide "should I restart this container," not "should
  *   I route traffic here" — those are different questions, hence two endpoints.
  * - `GET /readyz`   — readiness. 200 once rooms are constructed and ticking; used to
@@ -174,7 +175,12 @@ export function createServer(deps: {
     const pathname = url.pathname;
 
     if (req.method === 'GET' && pathname === '/healthz') {
-      text(res, 200, 'ok');
+      // Alive means the rooms are still ticking, not merely that the process answers HTTP: a
+      // wedged tick loop leaves the port open and the island frozen, and a restart is the
+      // cure. Readiness (below) is the separate question of whether to send traffic here.
+      const stalled = rooms.stalled();
+      if (stalled.length > 0) text(res, 503, `tick stalled: ${stalled.length} room(s)`);
+      else text(res, 200, 'ok');
       return;
     }
     if (req.method === 'GET' && pathname === '/readyz') {
@@ -182,6 +188,7 @@ export function createServer(deps: {
       return;
     }
     if (req.method === 'GET' && pathname === '/metrics') {
+      rooms.publishMetrics();
       text(res, 200, metrics.renderPrometheus(), 'text/plain; version=0.0.4; charset=utf-8');
       return;
     }

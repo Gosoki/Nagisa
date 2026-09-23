@@ -182,7 +182,7 @@ class Metrics {
     'nagisa_room_population',
     'Current population of each public shard, by room; private islands summed as room="private".',
   );
-  readonly roomsCurrent = new Gauge('nagisa_rooms_current', 'Number of active room shards.');
+  readonly roomsCurrent = new Gauge('nagisa_rooms_current', 'Rooms awake: public shards and private islands.');
   readonly activitiesCurrent = new Gauge('nagisa_activities_current', 'Number of activities, by state.');
 
   private readonly all = [

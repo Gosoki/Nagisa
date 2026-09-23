@@ -115,14 +115,15 @@ resync, never kept in a snapshot.
 The arena is two circles on the plaza (`MapWorld.quizArena`, r = 4.5 m). When the activity goes
 live the server runs a `QuizRunner`:
 
-1. **lobby** (20 s) — `QuizView.phase = 'lobby'`. Everyone who is in the plaza zone or attached
-   to the activity when the lobby closes is a contestant.
+1. **lobby** (20 s) — `QuizView.phase = 'lobby'`. Everyone connected who is in the plaza zone,
+   or has joined the activity as a participant, when the lobby closes is a contestant.
 2. **question** (15 s) — a statement from the bank (`games/quiz-bank.ts`, 90 statements in
    three languages; never the same one twice in a quiz). `endsAt` is server time.
 3. At `endsAt` the server reads each contestant's **last validated position**: inside ○, inside
    ×, or neither. Neither counts as wrong.
-4. **reveal** (6 s) — `answer`, and `fell` (who went out). If *everyone* was wrong, nobody goes
-   out: the round is replayed with a new statement rather than ending the quiz with no winner.
+4. **reveal** (6 s) — `answer`, and `fell` (who went out). If everyone *present* was wrong,
+   none of them goes out (`replay: true`) — a quiz should not end with no winner because one
+   statement was hard. Whoever has dropped or left is out regardless.
 5. Repeat until one contestant is left, nobody is left to ask, or 8 rounds have been asked.
    **finished** (8 s) names `winners` (all survivors), who get *quiz-champ*; then the view
    is cleared and the activity ends.
@@ -140,19 +141,21 @@ client                         server
 fish{cast, spot}  ───────────► in reach of spot? not already fishing?
                   ◄─────────── fish{waiting, spot}          (bite scheduled 2.5–9 s)
                   ◄─────────── fish{bite, window: 1200}     (at the scheduled moment)
-fish{hook}        ───────────► hooked within window (+300 ms slack)?
+fish{hook}        ───────────► hooked within window (+350 ms slack)?
                   ◄─────────── fish{caught, fish, size, newSpecies, record, personalBest}
                                + event catch → everyone
 ```
 
-- `hook` before the bite → `escaped/early`; after the window → `escaped/late`; the line stays
-  in the water at most 30 s without a bite before the server reels it in.
+- `hook` before the bite → `escaped/early`; after the window → `escaped/late`. The bite
+  always comes 2.5–9 s after the cast, and a bite not struck in time escapes by itself.
 - Moving more than `range + 1.5 m` from the spot, leaving the room or disconnecting reels in
   (`escaped/moved` or silently).
 - The catch is rolled from `fishFor(habitat, night)` weighted by rarity; size skews small.
-  `record` = biggest of that species landed in this room today (island day).
+  `record` = the biggest of that species landed in this room today (island day) *and* a
+  genuinely big one — at least 60% of the way up the species' size range; the old boot is
+  never a record.
 - **Derby**: while a `derby` activity is live, each participant's biggest single fish (cm) is
-  their score; `ActivityView.board` carries the top five. At the end the winner gets
+  their score (the boot does not count); `ActivityView.board` carries the top five. At the end the winner gets
   *derby-champ* and an announcement names the top three.
 
 ### Omikuji (`effect: 'omikuji'`)

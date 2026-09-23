@@ -476,7 +476,7 @@ export interface MapWorld {
   /**
    * Where fireworks go up. `zones` are the shores a player may launch from; `sites` are
    * the launch points out on the water, as [x, z] — the server picks the one nearest the
-   * player's zone.
+   * player, and jitters it a few metres.
    */
   readonly fireworks?: {
     readonly zones: readonly ZoneId[];

@@ -789,9 +789,21 @@ export class Room implements GameRoom {
     this.expireAnnouncements(now);
   }
 
+  /** Epoch ms of the last tick, for the liveness check. */
+  private lastTickAt = Date.now();
+
+  /**
+   * Whether this room's loop has stopped ticking while it is supposed to be running — the
+   * one failure a liveness probe exists to catch, since the process itself stays up.
+   */
+  isStalled(now = Date.now(), graceMs = 5000): boolean {
+    return this.tickTimer !== null && now - this.lastTickAt > graceMs;
+  }
+
   /** Run one tick: advance, gather changes, broadcast, record history. Never throws. */
   private runTick(): void {
     const startedAt = performance.now();
+    this.lastTickAt = Date.now();
     try {
       this.tick++;
       this.advance(Date.now());
@@ -835,6 +847,7 @@ export class Room implements GameRoom {
   /** Start the fixed-rate tick loop. Idempotent. */
   start(): void {
     if (this.tickTimer) return;
+    this.lastTickAt = Date.now();
     this.tickTimer = setInterval(() => this.runTick(), 1000 / PROTOCOL.TICK_HZ);
     this.tickTimer.unref?.();
   }

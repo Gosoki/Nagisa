@@ -61,14 +61,19 @@ function adminTokenMatches(presented: string | null): boolean {
 
 /**
  * The address a connection comes from, for the per-address cap: the socket's peer, or —
- * behind a reverse proxy that says so (`TRUST_PROXY`) — the first `X-Forwarded-For` hop.
- * Without `TRUST_PROXY`, a proxied deployment sees every visitor as the proxy.
+ * behind a reverse proxy that says so (`TRUST_PROXY`) — the **last** `X-Forwarded-For` hop,
+ * the one our own proxy appended. Earlier hops are whatever the client chose to send (nginx's
+ * `$proxy_add_x_forwarded_for` appends to the client's header), so trusting the first would
+ * let anyone pick their own address and walk around the cap. Without `TRUST_PROXY`, a proxied
+ * deployment sees every visitor as the proxy.
  */
 function clientAddress(req: IncomingMessage): string {
   if (CONFIG.TRUST_PROXY) {
-    const forwarded = req.headers['x-forwarded-for'];
-    const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim();
-    if (first) return first;
+    const header = req.headers['x-forwarded-for'];
+    const joined = Array.isArray(header) ? header.join(',') : header;
+    const hops = joined?.split(',').map((h) => h.trim()).filter(Boolean) ?? [];
+    const last = hops[hops.length - 1];
+    if (last) return last;
   }
   return req.socket.remoteAddress ?? 'unknown';
 }

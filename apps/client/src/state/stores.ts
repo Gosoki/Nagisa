@@ -37,6 +37,7 @@ import {
   type ServerDig,
   type ServerFriends,
   type ServerOmikuji,
+  type Weather,
   type ZoneId,
 } from '@nagisa/shared';
 import type { ConnectionState } from '../net/connection.js';
@@ -568,6 +569,9 @@ export const friendsHere: Readable<Set<PlayerId>> = derived(
     return new Set($friends.friends.flatMap((f) => (f.player && here.has(f.player) ? [f.player] : [])));
   },
 );
+
+/** The island's weather right now (see `weather.ts` in the shared package). Written by the app. */
+export const weather: Writable<Weather> = writable('clear');
 
 /** The treasure hunt that is running, if one is. */
 export const treasureHunt: Readable<ActivityView | null> = derived(

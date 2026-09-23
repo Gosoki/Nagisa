@@ -161,7 +161,9 @@ void main() {
 
     // Hard threshold makes the paper-cut edge; the two smoothsteps either side of it are
     // the fill and the ink line drawn exactly on the boundary.
-    float threshold = mix(0.72, 0.60, uCloudAmount);
+    // Above the fair-weather amount the deck closes in (the weather: see Sky.setWeather);
+    // below it the mapping is the one the fair sky was drawn with.
+    float threshold = mix(0.72, 0.60, min(uCloudAmount, 1.0)) - max(0.0, uCloudAmount - 0.5) * 0.3;
     float fill = smoothstep(threshold, threshold + 0.035, field);
     float edge = smoothstep(threshold - 0.016, threshold, field) * (1.0 - smoothstep(threshold + 0.002, threshold + 0.018, field));
 
@@ -189,6 +191,19 @@ void main() {
 }
 `;
 
+/** Scratch for {@link sampleStops}, which runs every frame. */
+const stopColor = new THREE.Color();
+const greyColor = new THREE.Color();
+
+/**
+ * Take `amount` of the colour out of `c` and darken it by `darken`: what an overcast sky does
+ * to every colour in it.
+ */
+function overcast(c: THREE.Color, amount: number, darken: number): void {
+  const l = c.r * 0.299 + c.g * 0.587 + c.b * 0.114;
+  c.lerp(greyColor.setRGB(l, l, l), amount).multiplyScalar(1 - darken);
+}
+
 /** Sample the stop table at a normalised cycle position. */
 function sampleStops(t: number, out: SkyState): SkyState {
   const p = ((t % 1) + 1) % 1;
@@ -204,10 +219,10 @@ function sampleStops(t: number, out: SkyState): SkyState {
   const span = b.t - a.t || 1;
   const k = (p - a.t) / span;
 
-  out.horizon.setHex(a.horizon).lerp(new THREE.Color(b.horizon), k);
-  out.zenith.setHex(a.zenith).lerp(new THREE.Color(b.zenith), k);
-  out.sun.setHex(a.sun).lerp(new THREE.Color(b.sun), k);
-  out.fill.setHex(a.fill).lerp(new THREE.Color(b.fill), k);
+  out.horizon.setHex(a.horizon).lerp(stopColor.setHex(b.horizon), k);
+  out.zenith.setHex(a.zenith).lerp(stopColor.setHex(b.zenith), k);
+  out.sun.setHex(a.sun).lerp(stopColor.setHex(b.sun), k);
+  out.fill.setHex(a.fill).lerp(stopColor.setHex(b.fill), k);
   out.sunIntensity = a.sunIntensity + (b.sunIntensity - a.sunIntensity) * k;
   out.night = a.night + (b.night - a.night) * k;
 
@@ -241,11 +256,18 @@ export class Sky {
     sunDir: new THREE.Vector3(1, 1, 0),
   };
 
+  /** The weather, 0–1: how overcast, how hard it rains. See `setWeather`. */
+  private cloud = 0;
+  private rain = 0;
+
   /** Fixed time of day, 0–1, when the cycle is paused. `null` means "follow the clock". */
   private frozenAt: number | null = null;
   private elapsed = 0;
+  /** Fair-weather cloud cover. */
+  private readonly baseClouds: number;
 
   constructor(private readonly quality: QualitySettings) {
+    this.baseClouds = quality.tier === 'low' ? 0.35 : 0.5;
     this.material = new THREE.ShaderMaterial({
       glslVersion: THREE.GLSL3,
       vertexShader: SKY_VERTEX,
@@ -260,7 +282,7 @@ export class Sky {
         uCloudShadow: { value: new THREE.Color(0xc9d3d4) },
         uTime: { value: 0 },
         uNight: { value: 0 },
-        uCloudAmount: { value: quality.tier === 'low' ? 0.35 : 0.5 },
+        uCloudAmount: { value: this.baseClouds },
       },
       side: THREE.BackSide,
       depthWrite: false,
@@ -319,6 +341,15 @@ export class Sky {
   }
 
   /**
+   * The weather (`weatherLevels` in the shared package): more cloud, a greyer and dimmer sky,
+   * and less sun on the island as it clouds over; a little darker again in the rain.
+   */
+  setWeather(cloud: number, rain: number): void {
+    this.cloud = cloud;
+    this.rain = rain;
+  }
+
+  /**
    * Advance the sky. `focus` is the point the shadow box should follow — normally the
    * local player, so shadow resolution is spent where the player is looking.
    */
@@ -326,6 +357,14 @@ export class Sky {
     this.elapsed += dt;
     const t = this.timeOfDay(serverTimeMs);
     sampleStops(t, this.state);
+    if (this.cloud > 0) {
+      const grey = this.cloud * 0.45 + this.rain * 0.2;
+      const dim = this.cloud * 0.06 + this.rain * 0.14;
+      overcast(this.state.horizon, grey, dim);
+      overcast(this.state.zenith, grey, dim);
+      overcast(this.state.fill, grey * 0.6, 0);
+      this.state.sunIntensity *= 1 - this.cloud * 0.4 - this.rain * 0.2;
+    }
 
     const u = this.material.uniforms;
     u.uHorizon.value.copy(this.state.horizon);
@@ -334,6 +373,7 @@ export class Sky {
     u.uSunDir.value.copy(this.state.sunDir);
     u.uTime.value = this.elapsed;
     u.uNight.value = this.state.night;
+    u.uCloudAmount.value = this.baseClouds + (1 - this.baseClouds) * this.cloud;
 
     // --- Feed the shared ink lighting -------------------------------------------------
     inkLighting.uSunDir.value.copy(this.state.sunDir);

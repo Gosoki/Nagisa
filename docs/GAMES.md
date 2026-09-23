@@ -217,6 +217,16 @@ that is refused with `cooldown`.
 per player per 30 s, not while muted. The board keeps the newest 60 per room, persisted.
 `guestbook_remove{id}` — your own line (same player id or visitor), or any line if admin.
 
+### Weather (`packages/shared/src/games/weather.ts`)
+
+One sky for every island, worked out from the server clock alone, like the time of day:
+the clock is cut into 15-minute spells and each spell's weather is a hash of its index —
+clear about 60 % of the time, cloudy 25 %, rain 15 % — eased into over 90 s. Nothing about
+it is sent. The client greys and dims the sky and closes the cloud deck as it clouds over,
+draws rain around the camera and plays it under the zone's ambience, shows the weather
+beside the place name, and says so when rain starts. The server's one use of it: in the
+rain a bite comes after 70 % of the usual wait.
+
 ### Friends (`server/src/friends.ts`)
 
 A friendship is a pair of visitor keys, recorded on both profiles (`ProfileRecord.friends`,

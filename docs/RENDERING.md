@@ -232,7 +232,10 @@ dome shader means no sorting, no overdraw, no transparency and no cloud clipping
 lighthouse. The projection divides by `d.y`, so the cloud deck has to be held well clear of
 the horizon or a rounded shape overhead becomes a vertical smear reaching down to the sea.
 After dark the clouds take the sky's own colour, lifted a little, and their ink line softens:
-the daytime paper white in a night sky reads as a lamp, not a cloud.
+the daytime paper white in a night sky reads as a lamp, not a cloud. The weather
+(`Sky.setWeather`) closes the deck in past the fair-weather amount, and takes colour out of
+and dims the horizon, zenith and fill, and the sun, as it clouds over and rains; rain itself
+is `fx/rain.ts`, strokes in a box that travels with the camera.
 
 One thing to know about the sea geometry: it is a polar disc, and its winding must be
 counter-clockwise **seen from above**. Getting that backwards does not produce a dark sea or

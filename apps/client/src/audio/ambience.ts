@@ -65,6 +65,9 @@ const SPECS: Record<AmbienceKind, AmbienceSpec> = {
 /** Seconds to crossfade between zones. Long, so transitions are never a cut. */
 const CROSSFADE_SECONDS = 2.6;
 
+/** The rain bed at full rain, before the master volume. A hiss over whatever else is playing. */
+const RAIN_GAIN = 0.3;
+
 /** One running ambience bed. */
 interface Bed {
   gain: GainNode;
@@ -83,6 +86,11 @@ export class Ambience {
 
   private readonly beds = new Map<AmbienceKind, Bed>();
   private active: AmbienceKind | null = null;
+
+  /** The rain: its own bed, over the zone's, as loud as it is raining. See `setRain`. */
+  private rainGain: GainNode | null = null;
+  private rainLevel = 0;
+  private rainApplied = -1;
 
   private _muted = true;
   private _volume = 0.5;
@@ -138,8 +146,35 @@ export class Ambience {
       this.beds.set(kind, this.createBed(ctx, kind));
     }
 
+    // Rain is the same noise with the low end taken out: a broad hiss, no swell.
+    const rainFilter = ctx.createBiquadFilter();
+    rainFilter.type = 'bandpass';
+    rainFilter.frequency.value = 3200;
+    rainFilter.Q.value = 0.35;
+    this.rainGain = ctx.createGain();
+    this.rainGain.gain.value = 0;
+    this.source.connect(rainFilter);
+    rainFilter.connect(this.rainGain);
+    this.rainGain.connect(this.master);
+
     // If a zone was requested before unlock, honour it now.
     if (this.active) this.setZoneKind(this.active, true);
+    this.setRain(this.rainLevel);
+  }
+
+  /**
+   * How hard it is raining, 0–1. Safe to call every frame: only a real change is scheduled,
+   * and it is ramped, so the rain comes on and goes off rather than switching.
+   */
+  setRain(level: number): void {
+    this.rainLevel = level;
+    if (!this.ctx || !this.rainGain) return;
+    if (Math.abs(level - this.rainApplied) < 0.02) return;
+    this.rainApplied = level;
+    const now = this.ctx.currentTime;
+    this.rainGain.gain.cancelScheduledValues(now);
+    this.rainGain.gain.setValueAtTime(this.rainGain.gain.value, now);
+    this.rainGain.gain.linearRampToValueAtTime(level * RAIN_GAIN, now + 1.5);
   }
 
   /**

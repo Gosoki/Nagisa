@@ -23,6 +23,10 @@ export const CORE: Dictionaries = {
 
     // Connection.
     'net.connected': '已连接',
+    'weather.clear': '晴',
+    'weather.cloudy': '阴',
+    'weather.rain': '雨',
+    'weather.rainStarts': '🌧️ 下雨了——雨天鱼更容易上钩',
     'island.shore': '渚岛 · 第 {n} 岸',
     'net.welcomeBack': '欢迎回来',
     'net.reconnecting': '重新连接中…',
@@ -282,6 +286,10 @@ export const CORE: Dictionaries = {
     'prompt.fish': '釣る',
 
     'net.connected': '接続しました',
+    'weather.clear': '晴れ',
+    'weather.cloudy': 'くもり',
+    'weather.rain': '雨',
+    'weather.rainStarts': '🌧️ 雨が降ってきた——雨の日は魚がかかりやすい',
     'island.shore': '渚島 · 第{n}浜',
     'net.welcomeBack': 'おかえりなさい',
     'net.reconnecting': '再接続中…',
@@ -522,6 +530,10 @@ export const CORE: Dictionaries = {
     'prompt.fish': 'Fish',
 
     'net.connected': 'Connected',
+    'weather.clear': 'Clear',
+    'weather.cloudy': 'Cloudy',
+    'weather.rain': 'Rain',
+    'weather.rainStarts': '🌧️ It’s started to rain — the fish bite sooner in the rain',
     'island.shore': 'Nagisa — Shore {n}',
     'net.welcomeBack': 'Welcome back',
     'net.reconnecting': 'Reconnecting…',

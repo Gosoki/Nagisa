@@ -47,7 +47,10 @@
     isLand,
     type Interactable,
   } from '@nagisa/shared';
-  import { currentZone, followTarget, planImage, players, profile, remotePose, selfPose, settings } from '../state/stores.js';
+  import { currentZone, followTarget, planImage, players, profile, remotePose, selfPose, settings, weather } from '../state/stores.js';
+
+  /** The weather beside the place name: the sky you are under, at a glance. */
+  const WEATHER_GLYPH = { clear: '☀️', cloudy: '☁️', rain: '🌧️' } as const;
   import { lang, t, zoneName } from '../i18n/index.js';
 
   /** On-screen size, CSS pixels: the desktop size, and the phone size. */
@@ -388,6 +391,7 @@
       <div class="zone">
         <span class="zone-name">{zoneName($currentZone.id, $lang)}</span>
         {#if zoneSecondary}<span class="zone-ja" lang="ja">{zoneSecondary}</span>{/if}
+        <span class="weather" role="img" aria-label={$t(`weather.${$weather}`)} title={$t(`weather.${$weather}`)}>{WEATHER_GLYPH[$weather]}</span>
       </div>
     {/if}
     {#if $followTarget}
@@ -435,6 +439,11 @@
     margin-left: var(--sp-xs);
     font-size: var(--fs-xs);
     color: var(--ui-ink-faint);
+  }
+
+  .weather {
+    margin-left: var(--sp-xs);
+    font-size: var(--fs-xs);
   }
 
   canvas {

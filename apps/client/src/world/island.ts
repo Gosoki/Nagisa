@@ -701,6 +701,11 @@ export class Island {
     }
   }
 
+  /** The weather, 0–1 each: how overcast, how hard it rains. The sky and light follow it. */
+  setWeather(cloud: number, rain: number): void {
+    this.sky.setWeather(cloud, rain);
+  }
+
   /** Per-frame update for the animated parts of the island. */
   update(elapsed: number, serverTime: number, focus: THREE.Vector3, dt = 0): void {
     this.sky.update(serverTime, focus, dt);

@@ -20,7 +20,11 @@ import {
   STAMP_ZONES,
   DIG_COOLDOWN_MS,
   TREASURE_COUNT,
+  RAIN_BITE_FACTOR,
+  WEATHER_BLEND_MS,
+  WEATHER_BLOCK_MS,
   digHeat,
+  weatherOfBlock,
   getQuizQuestion,
   isWalkable,
   getZone,
@@ -111,6 +115,11 @@ function flushEvents(room: Room, socket: FakeSocket) {
 // Fishing
 // ---------------------------------------------------------------------------------------------
 
+/** A time well into a spell of dry weather, and one well into a rainy spell. Found, not assumed. */
+const blockOf = (w: string) => Array.from({ length: 200 }, (_, i) => i).find((i) => weatherOfBlock(i) === w)!;
+const DRY = blockOf('clear') * WEATHER_BLOCK_MS + WEATHER_BLEND_MS;
+const WET = blockOf('rain') * WEATHER_BLOCK_MS + WEATHER_BLEND_MS;
+
 test('fishing: cast, too early, bite, strike, catch goes in the book and to everyone', () => {
   const room = makeRoom(() => 0);
   const { player, socket } = join(room);
@@ -130,16 +139,17 @@ test('fishing: cast, too early, bite, strike, catch goes in the book and to ever
   room.fishing.hook(player, 1100);
   assert.deepEqual([lastOf(socket, 'fish')?.phase, lastOf(socket, 'fish')?.reason], ['escaped', 'early']);
 
-  // Cast again; with random() = 0 the bite comes at the earliest moment.
-  room.fishing.cast(player, spot.id, 2000);
-  room.fishing.tick(2000 + 2400);
+  // Cast again, in dry weather; with random() = 0 the bite comes at the earliest moment.
+  const t = DRY + 2000;
+  room.fishing.cast(player, spot.id, t);
+  room.fishing.tick(t + 2400);
   assert.equal(lastOf(socket, 'fish')?.phase, 'waiting', 'no bite yet');
-  room.fishing.tick(2000 + 2500);
+  room.fishing.tick(t + 2500);
   const bite = lastOf(socket, 'fish');
   assert.equal(bite?.phase, 'bite');
   assert.equal(bite?.window, BITE_WINDOW_MS);
 
-  room.fishing.hook(player, 2000 + 2500 + 800);
+  room.fishing.hook(player, t + 2500 + 800);
   const caught = lastOf(socket, 'fish');
   assert.equal(caught?.phase, 'caught');
   assert.ok(caught?.fish);
@@ -150,6 +160,22 @@ test('fishing: cast, too early, bite, strike, catch goes in the book and to ever
 
   const events = flushEvents(room, watcher.socket);
   assert.ok(events.some((e) => e.k === 'catch' && e.by === player.id && e.fish === caught!.fish));
+});
+
+test('fishing: in the rain the fish bite sooner', () => {
+  const room = makeRoom(() => 1); // The longest wait there is.
+  const { player, socket } = join(room);
+  const spot = interactablesWith('fish')[0];
+  standAt(player, spot.id);
+
+  room.fishing.cast(player, spot.id, DRY);
+  room.fishing.tick(DRY + 9000 * RAIN_BITE_FACTOR + 100);
+  assert.equal(lastOf(socket, 'fish')?.phase, 'waiting', 'a dry wait is the full one');
+  room.fishing.stop(player);
+
+  room.fishing.cast(player, spot.id, WET);
+  room.fishing.tick(WET + 9000 * RAIN_BITE_FACTOR + 100);
+  assert.equal(lastOf(socket, 'fish')?.phase, 'bite', 'a wet one is shorter');
 });
 
 test('fishing: a missed bite escapes late, walking off reels in, leaving forgets the line', () => {

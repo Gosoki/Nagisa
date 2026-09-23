@@ -39,6 +39,7 @@ import {
   normaliseRoomCode,
   spawnPoint,
   stagePosition,
+  weatherLevels,
   crowdSlot,
   zoneAt,
   type ActivityId,
@@ -49,6 +50,7 @@ import {
   type InteractableEffect,
   type PlayerId,
   type RoomView,
+  type Weather,
   type ZoneId,
 } from '@nagisa/shared';
 import { inkLighting } from './engine/ink/ink-material.js';
@@ -96,6 +98,7 @@ import {
   selectedPlayer,
   setServerClock,
   vista,
+  weather,
   type SelfState,
   type WorldCommands,
 } from './state/stores.js';
@@ -188,6 +191,8 @@ export class App {
   private followAnchor: THREE.Vector3 | null = null;
   /** When a follow walk that ended short may be issued again (`performance.now()` ms). */
   private followRetryAt = 0;
+  /** The spell of weather last published to the interface; null before the first frame. */
+  private weatherShown: Weather | null = null;
 
   /** Zone the player was in last frame, for change detection. */
   private lastZone: ZoneId | null = null;
@@ -442,6 +447,7 @@ export class App {
 
       const serverTime = this.connection?.serverNow() ?? Date.now();
       this.updateFollow();
+      this.updateWeather(serverTime);
       this.island.update(this.elapsed, serverTime, this.local.position, dt);
       this.renderer.setBloomStrength(this.island.sky.bloomStrength());
 
@@ -583,6 +589,24 @@ export class App {
       }
     }
     if (best) selectedPlayer.set(best);
+  }
+
+  /**
+   * The weather, worked out from the server clock like the time of day (`weather.ts` in the
+   * shared package): the sky, the rain and its sound follow it every frame, and a change of
+   * spell is published once, with a word when the rain starts — it is also when the fish
+   * start biting sooner.
+   */
+  private updateWeather(serverTime: number): void {
+    const now = weatherLevels(serverTime);
+    this.island.setWeather(now.cloud, now.rain);
+    this.fx.setRain(now.rain);
+    this.ambience.setRain(now.rain);
+    if (now.weather === this.weatherShown) return;
+    const first = this.weatherShown === null;
+    this.weatherShown = now.weather;
+    weather.set(now.weather);
+    if (!first && now.weather === 'rain' && this.entered) notify(tr('weather.rainStarts'), 'neutral', 5000);
   }
 
   /** Feed the name-tag layer with everyone it might want to label. */

@@ -10,6 +10,8 @@
  *                      └─(hook too soon)──────────────────────────────► escaped/early
  * ```
  *
+ * The wait for a bite is 2.5–9 s, shorter in the rain (see `weather.ts`).
+ *
  * The server decides everything that could be argued about: when the bite comes, whether
  * the strike was in time, and what was on the end of the line. The client only says "cast"
  * and "now". Bites are driven by the room's tick (100 ms), not by per-line timers, so there is
@@ -30,6 +32,8 @@ import {
   islandDayStart,
   isIslandNight,
   rollCatch,
+  weatherAt,
+  RAIN_BITE_FACTOR,
   type ActivityId,
   type PlayerId,
 } from '@nagisa/shared';
@@ -98,7 +102,8 @@ export class Fishing {
       x: at.x,
       z: at.z,
       reach: spot.range + DRIFT_SLOP_M,
-      biteAt: now + BITE_MIN_MS + this.room.random() * (BITE_MAX_MS - BITE_MIN_MS),
+      // Fish bite sooner in the rain (the one thing the weather changes on the server).
+      biteAt: now + (BITE_MIN_MS + this.room.random() * (BITE_MAX_MS - BITE_MIN_MS)) * (weatherAt(now) === 'rain' ? RAIN_BITE_FACTOR : 1),
       phase: 'waiting',
     });
     this.room.sendTo(player.id, { t: 'fish', phase: 'waiting', spot: spot.id });

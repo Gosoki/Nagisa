@@ -53,6 +53,7 @@ import { Lanterns } from './lanterns.js';
 import { LighthouseBeam } from './lighthouse.js';
 import { Concert } from './music.js';
 import { QuizArena } from './quiz-arena.js';
+import { Rain } from './rain.js';
 
 /** What a dig's heat looks like over the digger's head. ♨ is a hot spring: warm. */
 const HEAT_GLYPH: Record<DigHeat, string> = { hot: '🔥', warm: '♨️', cool: '💧', cold: '❄️' };
@@ -91,6 +92,7 @@ export class GameFx {
   private readonly lanterns: Lanterns;
   private readonly lighthouse: LighthouseBeam;
   private readonly concert: Concert;
+  private readonly rain: Rain;
   /** Null on a map with no arena. */
   private readonly arena: QuizArena | null;
 
@@ -105,6 +107,7 @@ export class GameFx {
     this.lanterns = new Lanterns(host, this.group);
     this.lighthouse = new LighthouseBeam(host);
     this.concert = new Concert(host, this.group);
+    this.rain = new Rain(host, this.group);
     this.arena = QUIZ_ARENA ? new QuizArena(host, this.group) : null;
 
     this.unsubscribers.push(
@@ -155,6 +158,11 @@ export class GameFx {
     }
   }
 
+  /** How hard it is raining, 0–1 (`weatherLevels` in the shared package). */
+  setRain(level: number): void {
+    this.rain.setLevel(level);
+  }
+
   /** Someone emoted (you included); float the glyph over their head. */
   onEmote(id: PlayerId, emote: Emote): void {
     this.emotes.show(id, emote);
@@ -170,6 +178,7 @@ export class GameFx {
     this.lanterns.update(dt);
     this.lighthouse.update(dt);
     this.concert.update(dt);
+    this.rain.update(elapsed);
   }
 
   dispose(): void {
@@ -183,6 +192,7 @@ export class GameFx {
     this.lanterns.dispose();
     this.lighthouse.dispose();
     this.concert.dispose();
+    this.rain.dispose();
     this.group.clear();
   }
 

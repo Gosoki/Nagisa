@@ -930,7 +930,11 @@ export type WorldEvent =
    * launch, so a client that hears about it late can skip ahead rather than replay it.
    */
   | { k: 'firework'; x: number; z: number; h: number; hue: number; pattern: number; at: number; by: PlayerId | null }
-  /** A fish was landed. `record` = the biggest of its kind anyone has landed on this island today. */
+  /**
+   * A fish was landed. `record` = the biggest of its kind anyone has landed on this island
+   * today, *and* at least 60% of the way up that kind's size range — the first small one of
+   * the morning is not a record. Never set for junk.
+   */
   | { k: 'catch'; by: PlayerId; fish: string; size: number; record: boolean }
   /** Somebody drew a fortune. */
   | { k: 'omikuji'; by: PlayerId; fortune: number }
@@ -966,7 +970,7 @@ export interface ServerFish {
   fish?: string;
   size?: number;
   newSpecies?: boolean;
-  /** Biggest of its kind landed on this island today. */
+  /** Biggest of its kind landed on this island today, and a big one for its kind (see the `catch` event). */
   record?: boolean;
   /** Biggest of its kind you have ever landed. */
   personalBest?: boolean;

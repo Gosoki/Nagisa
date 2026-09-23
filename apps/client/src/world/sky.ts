@@ -169,9 +169,13 @@ void main() {
     // is the one piece of form a flat cloud needs to stop reading as a hole in the sky.
     float lit = smoothstep(-0.3, 0.5, dot(normalize(vec3(plane.x, 1.0, plane.y)), normalize(uSunDir)));
     vec3 body = mix(uCloudShadow, uCloudColor, lit);
+    // Paper white in a night sky reads as a lamp, not a cloud. After dark the clouds take the
+    // sky's own colour, lifted a little as if the moon were on them, and their ink line
+    // softens with them.
+    body = mix(body, mix(uHorizon, uZenith, 0.5) * 1.35 + 0.02, uNight);
 
     color = mix(color, body, fill * skyMask * 0.94);
-    color = mix(color, uInkColor, edge * skyMask * 0.4);
+    color = mix(color, uInkColor, edge * skyMask * 0.4 * (1.0 - 0.5 * uNight));
   }
 
   // Paper tooth, so the sky is part of the same drawing as the island.

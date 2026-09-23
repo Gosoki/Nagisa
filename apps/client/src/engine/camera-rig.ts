@@ -58,6 +58,13 @@ const FRAMINGS: Record<Framing, FramingSpec> = {
   cinematic: { distance: 13.0, height: 2.4, targetHeight: 1.35, fov: 38 },
 };
 
+/**
+ * How much wider the lens is on a tall viewport (a phone held upright). The framings are
+ * vertical FOVs tuned on a landscape screen; kept as they are on a portrait one, the sides
+ * of the island are cropped away and the view is all sky and ground.
+ */
+const PORTRAIT_FOV_SCALE = 62 / 50;
+
 /** Pitch limits, radians. Stops short of straight down and of the horizon flipping. */
 const MIN_PITCH = -0.35;
 const MAX_PITCH = 1.15;
@@ -225,8 +232,9 @@ export class CameraRig {
       this.camera.lookAt(this.smoothTarget);
     }
 
-    // A slightly longer lens for the view, eased with it.
-    const fov = this.spec.fov * (1 - 0.1 * ease);
+    // A slightly longer lens for the view, eased with it; a wider one on a portrait screen.
+    const portrait = this.camera.aspect < 1 ? PORTRAIT_FOV_SCALE : 1;
+    const fov = this.spec.fov * portrait * (1 - 0.1 * ease);
 
     // Only touch the projection matrix when the FOV has actually moved; it is a matrix
     // rebuild and it happens every frame otherwise.

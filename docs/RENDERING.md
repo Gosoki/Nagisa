@@ -47,6 +47,7 @@ Files:
 | `engine/ink/ink-pass.ts` | The MRT target and the composite shader |
 | `engine/renderer.ts` | Owns the context, the camera and the frame loop |
 | `world/materials.ts` | Named, cached materials — the palette applied |
+| `fx/materials.ts` | Materials for game effects (sparks, beams, ripples, lines) that must not disturb the contours |
 
 WebGL2 is required for MRT. If the context comes back WebGL1 the pipeline falls back to
 rendering straight to the canvas: flat shading, no contours, still playable. `hasInk` says
@@ -230,11 +231,26 @@ into a paper-cut shape, with the ink line drawn exactly at the threshold. Doing 
 dome shader means no sorting, no overdraw, no transparency and no cloud clipping through the
 lighthouse. The projection divides by `d.y`, so the cloud deck has to be held well clear of
 the horizon or a rounded shape overhead becomes a vertical smear reaching down to the sea.
+After dark the clouds take the sky's own colour, lifted a little, and their ink line softens:
+the daytime paper white in a night sky reads as a lamp, not a cloud.
 
 One thing to know about the sea geometry: it is a polar disc, and its winding must be
 counter-clockwise **seen from above**. Getting that backwards does not produce a dark sea or
 a flipped sea — it back-face culls every triangle, the water vanishes completely, and what
 you see instead is the seabed and the underside of the sky dome.
+
+### Effects
+
+Fireworks, the lighthouse beam, lantern halos, bell rings, the fishing line, the ○× circles:
+none of these is a surface, and none may change what the contour pass sees behind it. Every
+effect material comes from `fx/materials.ts`, which blends the colour target's alpha with
+factors (0, 1) so the **material id** underneath is kept exactly, and writes `vec4(0)` to the
+info target with a source-alpha–weighted blend so depth, normal and mask pass through
+untouched. Depth test stays on (a hill still hides a firework); depth write is off. Three
+blends cover everything: `add` for light, `over` for marks laid on the drawing, and
+`unline`, drawn under a name plate or speech bubble, which clears the outline mask there so a
+roof's edge is not drawn through the text. A new effect built on an ordinary three.js
+transparent material will ring itself with ink — that is the symptom to look for.
 
 ---
 

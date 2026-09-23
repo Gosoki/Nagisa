@@ -321,7 +321,8 @@ export class Renderer {
       this.camera.aspect = w / h;
       // On phones in portrait a 50° horizontal-equivalent FOV crops the world badly.
       // Widening the vertical FOV on tall viewports keeps the same amount of island on
-      // screen as on a desktop.
+      // screen as on a desktop. The camera rig owns the FOV from frame to frame (see its
+      // PORTRAIT_FOV_SCALE); this only keeps the frame right after a resize from jumping.
       this.camera.fov = h > w ? 62 : 50;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(w, h, false);

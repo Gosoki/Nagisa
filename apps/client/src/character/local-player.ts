@@ -108,6 +108,8 @@ export class LocalPlayer {
 
   /** Set while the player is attached to a seat; suppresses movement input. */
   private seated = false;
+  /** Holding a rod out while the line is in the water. See `setFishing`. */
+  private fishing = false;
 
   /** Set while a scripted move is running (walking to an activity slot). */
   private autoWalkTarget: THREE.Vector3 | null = null;
@@ -156,6 +158,24 @@ export class LocalPlayer {
 
   get isGrounded(): boolean {
     return this.grounded;
+  }
+
+  /**
+   * Hold a rod out over the water, or put it away. The pose is only held while standing
+   * still — walk off and the character walks, and the server reels the line in.
+   */
+  setFishing(fishing: boolean): void {
+    this.fishing = fishing;
+  }
+
+  get isFishing(): boolean {
+    return this.fishing;
+  }
+
+  /** Turn to face a bearing (the world's yaw convention), e.g. out over the water to cast. */
+  faceYaw(yaw: number): void {
+    this.yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+    this.syncTransform();
   }
 
   /** Sit down / stand up. Seated players do not accept movement input. */
@@ -483,7 +503,7 @@ export class LocalPlayer {
       return;
     }
     const speed = this.speed;
-    if (speed < 0.35) this.character.setAnim(AnimState.Idle);
+    if (speed < 0.35) this.character.setAnim(this.fishing ? AnimState.Fish : AnimState.Idle);
     else if (speed < WALK_SPEED * 1.15 || wading) this.character.setAnim(AnimState.Walk);
     else this.character.setAnim(AnimState.Run);
   }

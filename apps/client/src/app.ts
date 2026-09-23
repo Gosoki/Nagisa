@@ -33,6 +33,7 @@ import {
   activeMapId,
   getZone,
   interactablePosition,
+  normaliseRoomCode,
   spawnPoint,
   stagePosition,
   crowdSlot,
@@ -40,6 +41,10 @@ import {
   type ActivityId,
   type AnnouncementView,
   type Emote,
+  type Interactable,
+  type InteractableEffect,
+  type PlayerId,
+  type RoomView,
   type ZoneId,
 } from '@nagisa/shared';
 import { inkLighting } from './engine/ink/ink-material.js';
@@ -56,7 +61,10 @@ import { Speech } from './character/speech.js';
 import { Connection } from './net/connection.js';
 import { WorldSync } from './net/world-sync.js';
 import { readPose } from './net/last-pose.js';
+import { adminToken, inviteCodeFromUrl, reflectIslandInUrl, visitorKey } from './net/visitor.js';
 import { Ambience } from './audio/ambience.js';
+import { GameFx } from './fx/index.js';
+import { interactLabel, tr, zoneName } from './i18n/index.js';
 import {
   activities,
   appPhase,
@@ -75,6 +83,12 @@ import {
   followTarget,
   planImage,
   selfPose,
+  atBoard,
+  fishing,
+  openPanel,
+  room,
+  setServerClock,
+  vista,
   type SelfState,
   type WorldCommands,
 } from './state/stores.js';
@@ -125,6 +139,15 @@ export class App {
 
   private connection: Connection | null = null;
   private sync: WorldSync | null = null;
+  private readonly fx: GameFx;
+
+  /**
+   * Which room to ask for when a hello cannot simply resume: the invite code in the URL at
+   * first, then wherever the player last was — a private island by its code, a public shard
+   * by its id — so that a long outage or a server restart does not quietly move a group of
+   * friends from their island back onto the public one.
+   */
+  private roomHint: string | null = inviteCodeFromUrl();
 
   /** Wall-clock elapsed since boot, seconds. Drives shader animation. */
   private elapsed = 0;
@@ -148,7 +171,7 @@ export class App {
   private entered = false;
 
   /** Interactable currently within range, if any. */
-  private nearbyInteractable: { id: string; label: string; kind: 'use' | 'sit' } | null = null;
+  private nearbyInteractable: Interactable | null = null;
 
   constructor(container: HTMLElement) {
     // The frame loop must read the follow target synchronously and cannot afford a store
@@ -176,6 +199,21 @@ export class App {
     this.renderer.scene.add(this.remote.group);
     this.renderer.scene.add(this.nameTags.group);
     this.renderer.scene.add(this.local.character.root);
+
+    this.fx = new GameFx({
+      scene: this.renderer.scene,
+      camera: this.renderer.camera,
+      quality,
+      playerPosition: (id) => {
+        if (id === this.sync?.selfPlayerId) return this.local.position;
+        return this.remote.positionOf(id);
+      },
+      characterOf: (id) => (id === this.sync?.selfPlayerId ? this.local.character : this.remote.characterOf(id)),
+      selfId: () => this.sync?.selfPlayerId ?? null,
+      serverNow: () => this.connection?.serverNow() ?? Date.now(),
+      sfx: () => this.ambience.sfx(),
+    });
+    this.renderer.scene.add(this.fx.group);
 
     // Feed the touch stick's screen-space state to the overlay so it can draw the ring.
     // This is the only per-pointer-event value that crosses into the interface.
@@ -279,25 +317,39 @@ export class App {
     // the character is *now*, including anything walked during the outage — the world
     // keeps simulating while the socket is down, and coming back to where you were two
     // minutes ago is its own small teleport.
-    this.connection = new Connection('/ws', (resumeToken) => {
-      const pose = readPose(activeMapId());
-      return {
-        t: 'hello',
-        protocol: PROTOCOL.VERSION,
-        name: finalName,
-        appearance,
-        resumeToken: resumeToken ?? undefined,
-        at: pose ? { pos: pose.pos, yaw: pose.yaw } : undefined,
-        caps: { mobile: isTouchDevice(), lowMemory: this.renderer.quality.tier === 'low' },
-      };
-    });
+    const visitor = visitorKey();
+    this.connection = new Connection(
+      '/ws',
+      (resumeToken) => {
+        const pose = readPose(activeMapId());
+        return {
+          t: 'hello',
+          protocol: PROTOCOL.VERSION,
+          name: finalName,
+          appearance,
+          resumeToken: resumeToken ?? undefined,
+          // Every island shares one map, so a remembered position is ground on any of them.
+          at: pose ? { pos: pose.pos, yaw: pose.yaw } : undefined,
+          room: this.roomHint ?? undefined,
+          visitor,
+          caps: { mobile: isTouchDevice(), lowMemory: this.renderer.quality.tier === 'low' },
+        };
+      },
+      adminToken(),
+    );
+    const connection = this.connection;
+    setServerClock(() => connection.serverNow());
 
     this.connection.on('state', (state) => {
       connectionState.set(state);
-      if (state === 'connected') notify('Connected', 'good', 1800);
+      if (state === 'connected') notify(tr('net.connected'), 'good', 1800);
     });
 
     this.sync = new WorldSync(this.connection, this.remote, rebuilt, this.speech);
+    this.sync.onWorldEvent = (event) => this.fx.onEvent(event);
+    this.sync.onEmote = (id, emote) => this.fx.onEmote(id, emote);
+    // Keep the hint and the address bar on whatever island we are actually on.
+    room.subscribe((view) => this.adoptRoom(view));
     this.connection.connect();
 
     // Audio can only start from inside a gesture, and "Go ashore" is one.
@@ -309,6 +361,13 @@ export class App {
     this.camera.locked = false;
     this.camera.snap(rebuilt.position);
     appPhase.set('world');
+  }
+
+  /** Follow the room we are in: remember it for reconnects, and put it in the address bar. */
+  private adoptRoom(view: RoomView | null): void {
+    if (!view) return;
+    this.roomHint = view.kind === 'private' && view.code ? view.code : view.id;
+    reflectIslandInUrl(view.kind === 'private' ? (view.code ?? null) : null);
   }
 
   // -------------------------------------------------------------------------
@@ -351,6 +410,11 @@ export class App {
       this.island.update(this.elapsed, serverTime, this.local.position, dt);
       this.renderer.setBloomStrength(this.island.sky.bloomStrength());
 
+      this.fx.update(dt, this.elapsed);
+
+      // A photograph is of the island, not of who is standing on it: the name plates and
+      // bubbles are hidden for the frame being captured.
+      this.nameTags.group.visible = !this.renderer.capturing;
       this.updateNameTags();
       this.updateZone(dt);
       this.updateInteractables(dt);
@@ -481,8 +545,8 @@ export class App {
   /**
    * Find the interactable within reach, if any, and publish it as the contextual prompt.
    *
-   * Throttled: there are nine interactables on the island and the answer cannot change
-   * meaningfully within an eighth of a second.
+   * Throttled: there are a couple of dozen interactables on the island and the answer cannot
+   * change meaningfully within an eighth of a second.
    */
   private updateInteractables(dt: number): void {
     if (!this.entered) return;
@@ -491,35 +555,55 @@ export class App {
     if (this.interactAccumulator >= 1 / INTERACT_CHECK_HZ) {
       this.interactAccumulator = 0;
 
-      let found: { id: string; label: string; kind: 'use' | 'sit' } | null = null;
+      let found: Interactable | null = null;
       let bestDistance = Infinity;
+      let nearBoard = false;
 
       for (const item of INTERACTABLES) {
         const p = interactablePosition(item);
         const d = Math.hypot(this.local.position.x - p.x, this.local.position.z - p.z);
-        if (d <= item.range && d < bestDistance) {
+        if (d > item.range) continue;
+        if (item.effect === 'read_announcements') nearBoard = true;
+        if (d < bestDistance) {
           bestDistance = d;
-          found = { id: item.id, label: item.label, kind: item.kind };
+          found = item;
         }
       }
+      atBoard.set(nearBoard);
 
       if (found?.id !== this.nearbyInteractable?.id) {
         this.nearbyInteractable = found;
-        interactPrompt.set(found ? { id: found.id, label: found.label } : null);
+        interactPrompt.set(
+          found ? { id: found.id, label: interactLabel(found.effect, found.kind), effect: found.effect, kind: found.kind } : null,
+        );
       }
     }
 
     if (this.input.consumeInteract()) this.performInteract();
   }
 
-  /** Act on the nearby interactable. */
+  /**
+   * Act on the nearby interactable. What "act" means is the interactable's effect: sit,
+   * read the board, ring, draw, stamp, take in a view, or cast — and, at a fishing spot with
+   * a line already out, strike.
+   */
   private performInteract(): void {
     const target = this.nearbyInteractable;
+
+    // With a line in the water, the one button is the strike, wherever the prompt points.
+    let line = { phase: 'idle' as string };
+    fishing.subscribe((f) => (line = f))();
+    if (line.phase === 'waiting' || line.phase === 'bite') {
+      this.sync?.fish('hook');
+      return;
+    }
+
     if (!target) return;
 
     if (target.kind === 'sit') {
       // Sitting is a toggle, and it is purely local until the server echoes it back to
-      // everyone else — you should never wait a round trip to sit down.
+      // everyone else — you should never wait a round trip to sit down. If the seat turns
+      // out to be taken, the server says so and `world-sync` stands us back up.
       const seated = !getSelfSnapshot().seated;
       this.local.setSeated(seated);
       self.update((s) => ({ ...s, seated }));
@@ -527,8 +611,30 @@ export class App {
       return;
     }
 
-    this.sync?.interact(target.id, 'use');
-    notify(target.label === 'Read' ? 'Nothing new on the board' : '…', 'neutral', 2200);
+    this.useEffect(target, target.effect);
+  }
+
+  private useEffect(target: Interactable, effect: InteractableEffect): void {
+    switch (effect) {
+      case 'read_announcements':
+        openPanel.set('board');
+        return;
+      case 'look':
+        // A view is the camera's business, and nobody else's: no message goes out.
+        vista.set({ id: target.id });
+        return;
+      case 'fish': {
+        // Face out over the water before the line goes out, so the cast reads as a cast.
+        if (target.view) this.local.faceYaw(target.view.yaw);
+        this.sync?.fish('cast', target.id);
+        return;
+      }
+      case 'none':
+        return;
+      default:
+        // checkin_nearby, ring_bell, omikuji, stamp: the server decides, and says so.
+        this.sync?.interact(target.id, 'use');
+    }
   }
 
   private publishStats(): void {
@@ -558,6 +664,7 @@ export class App {
       enterWorld: (name, appearance) => this.enterWorld(name, appearance),
 
       joinActivity: (id, mode) => {
+        if (mode === 'participant' && this.local.isFishing) this.sync?.fish('stop');
         this.sync?.joinActivity(id, mode);
         // Walk toward a sensible spot rather than teleporting. The server will confirm
         // the attachment; the walk starts immediately because it is only movement.
@@ -585,17 +692,17 @@ export class App {
         }
         const view = this.remote.views().find((p) => p.id === id);
         if (!view) {
-          notify('They are no longer here', 'warn');
+          notify(tr('follow.gone'), 'warn');
           return;
         }
         followTarget.set({ id, name: view.name });
-        notify(`Following ${view.name}`, 'neutral');
+        notify(tr('follow.following', { name: view.name }), 'neutral');
       },
 
       checkIn: () => {
         const current = getSelfSnapshot().activity;
         if (current) this.sync?.checkIn(current);
-        else notify('Join something first', 'neutral');
+        else notify(tr('activity.joinFirst'), 'neutral');
       },
 
       emote: (emote) => this.sync?.sendEmote(emote as Emote),
@@ -609,7 +716,7 @@ export class App {
         // A tier change alters scene *content* (mesh density, scatter counts), which
         // cannot be rebuilt in place without a visible hitch, so it takes effect on the
         // next load. Saying so is better than pretending it applied.
-        notify('Quality applies next time you load', 'neutral', 4000);
+        notify(tr('settings.qualityNextLoad'), 'neutral', 4000);
       },
 
       setMuted: (muted) => {
@@ -635,11 +742,12 @@ export class App {
         if (!zone) return;
         // "Travel" walks you there. There is no fast travel on Nagisa — the island is
         // small enough to cross in ninety seconds, and the crossing is the product.
-        notify(`Walking to ${zone.name}`, 'neutral');
+        const place = zoneName(zone.id);
+        notify(tr('travel.walking', { place }), 'neutral');
         void this.local.walkTo(zone.x, zone.z).then((outcome) => {
           // Saying "walking to the shrine" and then silently not going is worse than not
           // offering to.
-          if (outcome === 'blocked') notify(`Could not find a way to ${zone.name} from here`, 'warn');
+          if (outcome === 'blocked') notify(tr('travel.blocked', { place }), 'warn');
         });
       },
 
@@ -649,6 +757,62 @@ export class App {
 
       announce: (text: string, scope: AnnouncementView['scope']) => {
         this.sync?.send({ t: 'host_announce', text: text.slice(0, PROTOCOL.MAX_ANNOUNCEMENT_LENGTH), scope });
+      },
+
+      whisper: (id: PlayerId, text: string) => this.sync?.whisper(id, text),
+
+      roll: (sides?: number) => this.sync?.send({ t: 'roll', sides }),
+
+      fishHook: () => this.sync?.fish('hook'),
+      fishStop: () => this.sync?.fish('stop'),
+
+      jankenChallenge: (id) => this.sync?.jankenChallenge(id),
+      jankenRespond: (duel, accept) => this.sync?.jankenRespond(duel, accept),
+      jankenThrow: (duel, hand) => this.sync?.jankenThrow(duel, hand),
+
+      firework: () => this.sync?.send({ t: 'firework' }),
+
+      guestbookWrite: (text) => {
+        const trimmed = text.trim().slice(0, PROTOCOL.MAX_GUESTBOOK_LENGTH);
+        if (trimmed) this.sync?.send({ t: 'guestbook_write', text: trimmed });
+      },
+      guestbookRemove: (id) => this.sync?.send({ t: 'guestbook_remove', id }),
+
+      setTitle: (badge) => this.sync?.send({ t: 'set_title', badge }),
+
+      createIsland: () => this.sync?.createRoom(),
+
+      joinIsland: (idOrCode: string) => {
+        // A code is typed by people; normalise it. Anything else is a room id from a list.
+        const code = normaliseRoomCode(idOrCode);
+        this.sync?.switchRoom(code ?? idOrCode.trim());
+      },
+
+      schedule: (template, inMin) => this.sync?.send({ t: 'host_schedule', template, inMin }),
+
+      admin: (action, target, activity) => this.sync?.send({ t: 'admin_action', action, target, activity }),
+
+      endVista: () => vista.set(null),
+
+      takePhoto: () => {
+        void this.renderer.capture().then((blob) => {
+          if (!blob) {
+            notify(tr('photo.failed'), 'warn');
+            return;
+          }
+          const stamp = new Date();
+          const pad = (n: number): string => String(n).padStart(2, '0');
+          const name = `nagisa-${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}${pad(stamp.getSeconds())}.png`;
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = name;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 10_000);
+          notify(tr('photo.saved'), 'good', 2200);
+        });
       },
     };
 
@@ -674,6 +838,7 @@ export class App {
 
   dispose(): void {
     if (this.zoneCardTimer !== null) clearTimeout(this.zoneCardTimer);
+    this.fx.dispose();
     this.sync?.dispose();
     this.connection?.dispose();
     void this.ambience.dispose();
@@ -701,6 +866,8 @@ export class App {
       chatLog: () => snapshot(chatLog),
       following: () => snapshot(followTarget),
       commands: () => snapshot(commands),
+      fx: this.fx,
+      sync: this.sync,
     };
   }
 }

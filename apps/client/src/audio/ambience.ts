@@ -295,6 +295,16 @@ export class Ambience {
     this.master.gain.linearRampToValueAtTime(muted ? 0 : this._volume, now + 0.35);
   }
 
+  /**
+   * Where one-shot sounds (a bell, a firework's boom, the concert) should connect: this
+   * context and its master gain, so mute and volume apply to them exactly as to the beds.
+   * Null until audio has been unlocked by a gesture.
+   */
+  sfx(): { ctx: AudioContext; out: AudioNode } | null {
+    if (!this.ctx || !this.master || this.ctx.state !== 'running') return null;
+    return { ctx: this.ctx, out: this.master };
+  }
+
   setVolume(volume: number): void {
     this._volume = Math.max(0, Math.min(1, volume));
     if (!this._muted) this.setMuted(false);

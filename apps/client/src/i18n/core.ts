@@ -1,0 +1,212 @@
+/**
+ * Interface strings — the furniture: HUD, panels, chat, connection, the entry screen.
+ *
+ * Keys are `area.thing`. Every key must exist in all three languages; `en` is the fallback
+ * for anything missing, so write it first. `{name}` placeholders are filled by `t()`.
+ */
+
+import type { Dictionaries } from './index.js';
+
+export const CORE: Dictionaries = {
+  zh: {
+    // Interaction prompts, by effect.
+    'prompt.sit': '坐下',
+    'prompt.stand': '起身',
+    'prompt.none': '…',
+    'prompt.read_announcements': '看公告栏',
+    'prompt.checkin_nearby': '签到',
+    'prompt.ring_bell': '敲钟',
+    'prompt.omikuji': '抽签',
+    'prompt.stamp': '盖章',
+    'prompt.look': '眺望',
+    'prompt.fish': '钓鱼',
+
+    // Connection.
+    'net.connected': '已连接',
+    'net.welcomeBack': '欢迎回来',
+    'net.reconnecting': '重新连接中…',
+    'net.mapMismatch': '这个房间用的是「{map}」地图——请带上 ?map={map} 重新打开',
+
+    // Following, walking.
+    'follow.following': '正在跟随 {name}',
+    'follow.stopped': '已停止跟随',
+    'follow.gone': '对方已经不在了',
+    'travel.walking': '正在前往{place}',
+    'travel.blocked': '从这里找不到去{place}的路',
+
+    // Activities.
+    'activity.joinFirst': '请先加入一个活动',
+    'checkin.ok': '签到成功 — 第 {n} 位',
+    'checkin.okPlain': '签到成功',
+    'checkin.fail': '无法签到',
+    'checkin.reason.not_live': '活动还没开始',
+    'checkin.reason.already': '你已经签到过了',
+    'checkin.reason.not_attending': '请先加入这个活动',
+    'checkin.reason.not_found': '活动不存在了',
+    'role.hosting': '你现在是主持人',
+    'role.admin': '你是这座岛的管理员',
+
+    // Settings.
+    'settings.qualityNextLoad': '画质设置将在下次加载时生效',
+
+    // Chat, presence.
+    'chat.arrived': '{name} 来了',
+    'chat.left': '{name} 离开了',
+    'mute.on': '已屏蔽 {name}',
+    'mute.off': '已取消屏蔽 {name}',
+    'board.nothingNew': '公告栏上没有新消息',
+
+    // Server refusals, by `ServerError.key`.
+    'error.generic': '出了点问题',
+    'error.too_far': '离得太远了',
+    'error.cooldown': '稍等 {seconds} 秒再试',
+    'error.seat_taken': '这个位置有人坐了',
+    'error.muted': '你已被管理员禁言',
+    'error.not_here': '这里不能这么做',
+    'error.full': '已经满员了',
+    'error.not_found': '找不到了',
+    'error.forbidden': '没有权限',
+    'error.busy': '对方正忙',
+    'error.kicked': '你被请出了这座岛',
+    'error.shutdown': '服务器正在重启，稍后自动重连',
+    'error.version': '版本已更新，请刷新页面',
+    'error.not_open': '活动还没开放',
+    'error.room_not_found': '找不到这座岛',
+    'error.already_stamped': '这里的印章已经盖过了',
+    'error.invalid': '无效的操作',
+    'error.too_long': '太长了（最多 {max} 个字）',
+    'error.empty': '内容不能为空',
+    'photo.saved': '照片已保存',
+    'photo.failed': '拍照失败',
+  },
+
+  ja: {
+    'prompt.sit': '座る',
+    'prompt.stand': '立つ',
+    'prompt.none': '…',
+    'prompt.read_announcements': '掲示板を見る',
+    'prompt.checkin_nearby': 'チェックイン',
+    'prompt.ring_bell': '鐘を鳴らす',
+    'prompt.omikuji': 'おみくじ',
+    'prompt.stamp': 'スタンプ',
+    'prompt.look': '眺める',
+    'prompt.fish': '釣る',
+
+    'net.connected': '接続しました',
+    'net.welcomeBack': 'おかえりなさい',
+    'net.reconnecting': '再接続中…',
+    'net.mapMismatch': 'この部屋は「{map}」のマップです — ?map={map} を付けて開き直してください',
+
+    'follow.following': '{name} についていきます',
+    'follow.stopped': 'ついていくのをやめました',
+    'follow.gone': 'その人はもういません',
+    'travel.walking': '{place}へ向かっています',
+    'travel.blocked': 'ここから{place}への道が見つかりません',
+
+    'activity.joinFirst': '先にイベントに参加してください',
+    'checkin.ok': 'チェックインしました — {n}番目',
+    'checkin.okPlain': 'チェックインしました',
+    'checkin.fail': 'チェックインできませんでした',
+    'checkin.reason.not_live': 'まだ始まっていません',
+    'checkin.reason.already': 'もうチェックイン済みです',
+    'checkin.reason.not_attending': '先にこのイベントに参加してください',
+    'checkin.reason.not_found': 'イベントが見つかりません',
+    'role.hosting': '司会になりました',
+    'role.admin': 'この島の管理人です',
+
+    'settings.qualityNextLoad': '画質は次回の読み込みから反映されます',
+
+    'chat.arrived': '{name} さんが来ました',
+    'chat.left': '{name} さんが帰りました',
+    'mute.on': '{name} さんをミュートしました',
+    'mute.off': '{name} さんのミュートを解除しました',
+    'board.nothingNew': '掲示板に新しいお知らせはありません',
+
+    'error.generic': 'うまくいきませんでした',
+    'error.too_far': '遠すぎます',
+    'error.cooldown': 'あと{seconds}秒待ってください',
+    'error.seat_taken': 'その席は使われています',
+    'error.muted': '管理人にミュートされています',
+    'error.not_here': 'ここではできません',
+    'error.full': '満員です',
+    'error.not_found': '見つかりません',
+    'error.forbidden': '権限がありません',
+    'error.busy': '相手は取り込み中です',
+    'error.kicked': 'この島から退出させられました',
+    'error.shutdown': 'サーバーを再起動しています。自動で再接続します',
+    'error.version': '新しい版があります。ページを再読み込みしてください',
+    'error.not_open': 'まだ受付していません',
+    'error.room_not_found': 'その島は見つかりません',
+    'error.already_stamped': 'ここのスタンプはもう押してあります',
+    'error.invalid': 'その操作はできません',
+    'error.too_long': '長すぎます（{max}文字まで）',
+    'error.empty': '何か書いてください',
+    'photo.saved': '写真を保存しました',
+    'photo.failed': '写真を撮れませんでした',
+  },
+
+  en: {
+    'prompt.sit': 'Sit',
+    'prompt.stand': 'Stand',
+    'prompt.none': '…',
+    'prompt.read_announcements': 'Read',
+    'prompt.checkin_nearby': 'Check in',
+    'prompt.ring_bell': 'Ring',
+    'prompt.omikuji': 'Draw a fortune',
+    'prompt.stamp': 'Stamp',
+    'prompt.look': 'Look',
+    'prompt.fish': 'Fish',
+
+    'net.connected': 'Connected',
+    'net.welcomeBack': 'Welcome back',
+    'net.reconnecting': 'Reconnecting…',
+    'net.mapMismatch': 'This room is on "{map}" — reload with ?map={map}',
+
+    'follow.following': 'Following {name}',
+    'follow.stopped': 'Stopped following',
+    'follow.gone': 'They are no longer here',
+    'travel.walking': 'Walking to {place}',
+    'travel.blocked': 'Could not find a way to {place} from here',
+
+    'activity.joinFirst': 'Join something first',
+    'checkin.ok': 'Checked in — #{n}',
+    'checkin.okPlain': 'Checked in',
+    'checkin.fail': 'Could not check in',
+    'checkin.reason.not_live': 'It has not started yet',
+    'checkin.reason.already': 'Already checked in',
+    'checkin.reason.not_attending': 'Join it first',
+    'checkin.reason.not_found': 'That is no longer on',
+    'role.hosting': 'You are hosting',
+    'role.admin': 'You keep this island',
+
+    'settings.qualityNextLoad': 'Quality applies next time you load',
+
+    'chat.arrived': '{name} arrived',
+    'chat.left': '{name} left',
+    'mute.on': 'Muted {name}',
+    'mute.off': 'Unmuted {name}',
+    'board.nothingNew': 'Nothing new on the board',
+
+    'error.generic': 'That did not work',
+    'error.too_far': 'Too far away',
+    'error.cooldown': 'Try again in {seconds}s',
+    'error.seat_taken': 'Someone is sitting there',
+    'error.muted': 'You have been muted',
+    'error.not_here': 'Not here',
+    'error.full': 'It is full',
+    'error.not_found': 'Not found',
+    'error.forbidden': 'Not allowed',
+    'error.busy': 'They are busy',
+    'error.kicked': 'You were asked to leave the island',
+    'error.shutdown': 'The server is restarting — reconnecting shortly',
+    'error.version': 'There is a new version — please reload',
+    'error.not_open': 'Not open yet',
+    'error.room_not_found': 'No island with that code',
+    'error.already_stamped': 'You already have this stamp',
+    'error.invalid': 'That is not something you can do',
+    'error.too_long': 'Too long (at most {max})',
+    'error.empty': 'Write something first',
+    'photo.saved': 'Photo saved',
+    'photo.failed': 'Could not take a photo',
+  },
+};

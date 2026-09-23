@@ -47,8 +47,13 @@
 
 /** Protocol-wide tunables. Client and server MUST agree on every value here. */
 export const PROTOCOL = {
-  /** Bumped on any breaking change to message shape or packing. */
-  VERSION: 1,
+  /**
+   * Bumped on any breaking change to message shape or packing.
+   *
+   * v2: private islands, visitor keys, world events, the games (○× quiz, fishing,
+   * omikuji, stamps, janken, fireworks, dice), the guestbook, whispers.
+   */
+  VERSION: 2,
 
   /** Server simulation/broadcast tick. Deltas are emitted at this rate. */
   TICK_HZ: 10,
@@ -86,15 +91,49 @@ export const PROTOCOL = {
   MAX_NAME_LENGTH: 20,
   MAX_CHAT_LENGTH: 140,
   MAX_ANNOUNCEMENT_LENGTH: 240,
+  /** A guestbook line is a signature, not a letter. */
+  MAX_GUESTBOOK_LENGTH: 80,
 
-  /** Per-connection rate limits (messages per second, token bucket). */
+  /**
+   * Per-connection rate limits: a token bucket per message type, refilled at `rate` per
+   * second and holding at most `burst`. The burst is what lets someone type two short lines
+   * back to back without the second silently vanishing; the rate is what stops a script.
+   * Game-level cooldowns (one firework per few seconds, one guestbook line per half
+   * minute) are enforced by the game modules on top of this, and say so when they refuse.
+   */
   RATE_LIMIT: {
-    move: 15,
-    emote: 2,
-    chat: 1,
-    default: 10,
+    move: { rate: 15, burst: 15 },
+    emote: { rate: 2, burst: 3 },
+    chat: { rate: 1, burst: 4 },
+    default: { rate: 10, burst: 10 },
   },
+
+  /**
+   * A visitor key: the random string a browser keeps so that stamps, the fish book and
+   * badges survive between visits without an account. Opaque; the server stores only a
+   * hash of it. See {@link ClientHello.visitor}.
+   */
+  VISITOR_KEY_MIN: 16,
+  VISITOR_KEY_MAX: 64,
 } as const;
+
+/** What a visitor key may contain. Anything else is ignored as if absent. */
+export const VISITOR_KEY_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
+
+/**
+ * A private island's invite code: five characters from an alphabet with no look-alikes
+ * (no 0/O, 1/I/L), so it survives being read aloud or copied off a phone screen.
+ */
+export const ROOM_CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+export const ROOM_CODE_LENGTH = 5;
+export const ROOM_CODE_PATTERN = /^[2-9A-HJKMNP-Z]{5}$/;
+
+/** Normalise user input ("ab c2d") into a code, or null if it cannot be one. */
+export function normaliseRoomCode(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const code = raw.replace(/[\s-]/g, '').toUpperCase();
+  return ROOM_CODE_PATTERN.test(code) ? code : null;
+}
 
 // ---------------------------------------------------------------------------
 // Core domain types
@@ -112,6 +151,8 @@ export type ActivityId = string;
  */
 export type { ZoneId } from './world.js';
 import type { ZoneId } from './world.js';
+import type { ActivityFeature } from './map/types.js';
+import type { BadgeId } from './games/badges.js';
 
 /**
  * Authority a player holds. Ordered — a numerically higher role subsumes every
@@ -180,6 +221,10 @@ export enum AnimState {
   Clap = 6,
   Wave = 7,
   Bow = 8,
+  /** Holding a rod over the water. Broadcast like any other pose, so the rod is seen. */
+  Fish = 9,
+  /** Arms up. Winners, and the first sight of a fish worth keeping. */
+  Cheer = 10,
 }
 
 /** Emotes a player can broadcast. Deliberately small — see the UI's emote wheel. */
@@ -218,6 +263,10 @@ export interface PlayerView {
   mode: AttendanceMode | null;
   /** True while the session is disconnected but still inside its grace window. */
   away?: boolean;
+  /** Checked in to the activity they are attending. Cleared when the attachment changes. */
+  checkedIn?: boolean;
+  /** The badge they have chosen to wear under their name, if any. */
+  title?: BadgeId | null;
 }
 
 export type Vec3 = [number, number, number];
@@ -247,6 +296,15 @@ export interface ActivityView {
   checkinEnabled: boolean;
   /** Number of check-ins recorded so far. */
   checkinCount: number;
+  /** Template it was made from — the client's key for localised titles and venue effects. */
+  templateId: string;
+  /** What the island does while it runs. See {@link ActivityFeature}. */
+  feature: ActivityFeature | null;
+  /**
+   * A small leaderboard, for activities that keep score (the derby's biggest fish, the
+   * quiz's survivors). Top few only; `score` is in the activity's own unit.
+   */
+  board?: Array<{ id: PlayerId; name: string; score: number }>;
 }
 
 /** A message pushed to the island, a zone, or one activity's attendees. */
@@ -272,6 +330,15 @@ export interface RoomView {
   name: string;
   population: number;
   capacity: number;
+  /**
+   * `public` shards are what matchmaking fills. A `private` island exists because someone
+   * made it and shared its code; it is never listed to strangers.
+   */
+  kind: 'public' | 'private';
+  /** The invite code, for private islands. */
+  code?: string;
+  /** Display name of whoever made it, for private islands, when known. */
+  ownerName?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -371,10 +438,26 @@ export interface ClientHello {
    * claim can never place a player somewhere they could not have walked to.
    */
   at?: { pos: Vec3; yaw: number };
-  /** Preferred room. Omit to be placed by the matchmaker. */
+  /**
+   * Preferred room. Omit to be placed by the matchmaker.
+   *
+   * May also be a private island's invite code (see {@link ROOM_CODE_PATTERN}). A code
+   * that names an island the server is not currently holding re-opens it — an invite link
+   * keeps working after everyone has left, and after a restart.
+   */
   room?: RoomId;
   /** Reported so the server can size deltas for weak devices. Advisory only. */
   caps?: { mobile: boolean; lowMemory: boolean };
+  /**
+   * This browser's visitor key, if it has one (see {@link VISITOR_KEY_PATTERN}).
+   *
+   * Not authentication — there is nothing on the island worth stealing — but continuity:
+   * it is what lets the stamp card, the fish book and badges outlive the tab, and what
+   * makes the person who created a private island its keeper when they come back. The
+   * server keeps a hash, never the key. Absent or malformed means "a visitor with no
+   * past": everything still works, and nothing is kept.
+   */
+  visitor?: string;
 }
 
 /** Heartbeat. `t0` is echoed back so the client can measure RTT without a clock sync. */
@@ -399,10 +482,16 @@ export interface ClientEmote {
   emote: Emote;
 }
 
-/** Short speech bubble. Rate limited hard; this is not a chat app. */
+/**
+ * A line of chat: to the whole island, or — with `to` — to one person only.
+ *
+ * A whisper is never broadcast in a delta and never raises a bubble; both ends receive a
+ * {@link ServerWhisper} and nobody else learns it happened.
+ */
 export interface ClientChat {
   t: 'chat';
   text: string;
+  to?: PlayerId;
 }
 
 /** Attach to an activity as participant or audience. */
@@ -472,6 +561,85 @@ export interface ClientInteract {
   kind: 'use' | 'sit' | 'stand';
 }
 
+// --- v2: games, guestbook, private islands ----------------------------------------------
+
+/** Rock, paper, scissors. */
+export type Hand = 'rock' | 'paper' | 'scissors';
+export const HANDS: readonly Hand[] = ['rock', 'paper', 'scissors'];
+
+/**
+ * Fishing. `cast` at a fishing spot (an interactable whose effect is `fish`), then `hook`
+ * when the float goes under. `stop` reels in. The server rolls what was caught.
+ */
+export type ClientFish =
+  | { t: 'fish'; action: 'cast'; spot: string }
+  | { t: 'fish'; action: 'hook' }
+  | { t: 'fish'; action: 'stop' };
+
+/**
+ * Janken between two people standing near each other. One challenges, the other answers,
+ * both throw; the server reveals. Ties replay, up to a limit.
+ */
+export type ClientJanken =
+  | { t: 'janken'; action: 'challenge'; target: PlayerId }
+  | { t: 'janken'; action: 'respond'; duel: string; accept: boolean }
+  | { t: 'janken'; action: 'throw'; duel: string; hand: Hand };
+
+/** Roll a die with `sides` faces (2–1000, default 100). Everyone sees the result. */
+export interface ClientRoll {
+  t: 'roll';
+  sides?: number;
+}
+
+/**
+ * Send a firework up from the shore you are standing on. Only zones the map lists as
+ * firework shores accept it; the server picks the launch site offshore.
+ */
+export interface ClientFirework {
+  t: 'firework';
+  /** 0–1. Omitted = the server picks. */
+  hue?: number;
+  /** Burst shape, 0–3. Omitted = the server picks. */
+  pattern?: number;
+}
+
+/** Sign the notice board. Must be standing at one. */
+export interface ClientGuestbookWrite {
+  t: 'guestbook_write';
+  text: string;
+}
+
+/** Take a line off the board: your own, or anyone's if you are an admin. */
+export interface ClientGuestbookRemove {
+  t: 'guestbook_remove';
+  id: string;
+}
+
+/** Wear a badge you have earned under your name, or `null` to wear none. */
+export interface ClientSetTitle {
+  t: 'set_title';
+  badge: BadgeId | null;
+}
+
+/**
+ * Make a private island and move there. The server answers with {@link ServerRoomChanged}
+ * carrying the new island's code; the creator keeps it (as its admin) from then on.
+ */
+export interface ClientRoomCreate {
+  t: 'room_create';
+}
+
+/**
+ * Admin: put something on the programme now — "a quiz in two minutes". Uses a template,
+ * so there is no form to fill in.
+ */
+export interface ClientHostSchedule {
+  t: 'host_schedule';
+  template: string;
+  /** Minutes from now until it starts, 0–120. */
+  inMin: number;
+}
+
 export type ClientMessage =
   | ClientHello
   | ClientPing
@@ -486,7 +654,16 @@ export type ClientMessage =
   | ClientHostActivityState
   | ClientHostAnnounce
   | ClientAdminAction
-  | ClientInteract;
+  | ClientInteract
+  | ClientFish
+  | ClientJanken
+  | ClientRoll
+  | ClientFirework
+  | ClientGuestbookWrite
+  | ClientGuestbookRemove
+  | ClientSetTitle
+  | ClientRoomCreate
+  | ClientHostSchedule;
 
 export type ClientMessageType = ClientMessage['t'];
 
@@ -518,8 +695,10 @@ export interface ServerWelcome {
    * Better to say so at the handshake.
    */
   mapId: string;
-  /** Rooms the client may switch to, for the room picker. */
+  /** Rooms the client may switch to, for the room picker. Public shards, plus your own. */
   rooms: RoomView[];
+  /** Your stamps, fish book and badges. Also re-sent as {@link ServerProfile} on change. */
+  profile: ProfileView;
 }
 
 export interface ServerPong {
@@ -540,6 +719,10 @@ export interface ServerSnapshot {
   announcements: AnnouncementView[];
   /** Per-zone occupancy, for the map/zone labels. */
   zonePopulation: Record<ZoneId, number>;
+  /** The notice board's signatures, oldest first. */
+  guestbook: GuestbookEntry[];
+  /** The ○× quiz in progress, if any. */
+  quiz: QuizView | null;
 }
 
 /**
@@ -567,6 +750,14 @@ export interface ServerDelta {
   emotes?: Array<{ id: PlayerId; emote: Emote }>;
   chats?: Array<{ id: PlayerId; text: string }>;
   zonePopulation?: Record<ZoneId, number>;
+  /** One-shot things that happened in the world this tick. See {@link WorldEvent}. */
+  events?: WorldEvent[];
+  /** New signatures on the notice board. */
+  guestbook?: GuestbookEntry[];
+  /** Signatures taken down. */
+  guestbookRemoved?: string[];
+  /** The quiz changed phase. `null` means it is over and gone. Absent means unchanged. */
+  quiz?: QuizView | null;
 }
 
 /**
@@ -603,6 +794,12 @@ export interface ServerRoleChanged {
 export interface ServerRoomChanged {
   t: 'room_changed';
   room: RoomView;
+  /** Your role in the new room — a private island's keeper is its admin. */
+  role: Role;
+  /** The room list, from the new room's point of view. */
+  rooms: RoomView[];
+  /** A fresh resume token bound to the new room. */
+  resumeToken: string;
 }
 
 export enum ErrorCode {
@@ -626,8 +823,185 @@ export enum ErrorCode {
 export interface ServerError {
   t: 'error';
   code: ErrorCode;
+  /** English, for logs and as a fallback. */
   message: string;
   fatal?: boolean;
+  /**
+   * A machine-readable reason the client can say in the player's own language, e.g.
+   * `'cooldown'`, `'too_far'`, `'seat_taken'`. Absent on errors that are not the player's
+   * business (malformed frames, internal faults).
+   */
+  key?: string;
+  /** Values for the localised sentence, e.g. `{ seconds: 12 }`. */
+  params?: Record<string, string | number>;
+}
+
+// --- v2 -----------------------------------------------------------------------------------
+
+/**
+ * One signature on the notice board. Survives restarts; the board keeps the most recent
+ * few dozen per island.
+ */
+export interface GuestbookEntry {
+  id: string;
+  name: string;
+  text: string;
+  /** Epoch ms. */
+  at: number;
+  /** The player who wrote it, while they are still that player — lets them take it down. */
+  authorId: PlayerId | null;
+}
+
+/** A player's progress, as they see it. Private: sent only to them. */
+export interface ProfileView {
+  /** Zones whose stamp is on the card. */
+  stamps: ZoneId[];
+  /** How many stamps the card holds on this map. */
+  stampTotal: number;
+  /** Per species caught: how many, and the largest, cm. */
+  fish: Record<string, { count: number; best: number }>;
+  /** Every fish ever landed, junk included. */
+  catches: number;
+  badges: BadgeId[];
+  /** The badge being worn, if any. */
+  title: BadgeId | null;
+  /** Today's omikuji (JST day), if drawn. */
+  omikuji: { day: string; fortune: number; item: number; direction: number } | null;
+  jankenWins: number;
+  quizWins: number;
+  /**
+   * Whether any of this outlives the session. False when the client sent no usable
+   * visitor key — the card still fills in, and is gone when the tab is.
+   */
+  persistent: boolean;
+}
+
+/**
+ * The ○× quiz, as everyone sees it.
+ *
+ * `lobby` gathers contestants; each `question` phase shows a statement and counts down to
+ * `endsAt`, at which moment the server looks at where every contestant is standing; `reveal`
+ * shows the answer and who fell; `finished` names the winners and then the view goes away.
+ */
+export interface QuizView {
+  activity: ActivityId;
+  phase: 'lobby' | 'question' | 'reveal' | 'finished';
+  /** 1-based; 0 in the lobby. */
+  round: number;
+  totalRounds: number;
+  /** Id into the shared question bank. Null in the lobby. */
+  questionId: string | null;
+  /** The right answer (`true` = ○), present from `reveal` on. */
+  answer?: boolean;
+  /** Server epoch ms at which this phase ends. */
+  endsAt: number;
+  /** Contestants still in. */
+  alive: PlayerId[];
+  /** Knocked out this round, present in `reveal`. */
+  fell?: PlayerId[];
+  /** Present in `finished`. */
+  winners?: PlayerId[];
+}
+
+/**
+ * Something that happened, once, that everybody nearby should see or hear.
+ *
+ * Events ride in the tick's delta rather than having messages of their own, so they are
+ * ordered with everything else that happened in that tick and replayed with it on resync.
+ * They are never kept in a snapshot: a bell you did not hear ring is not a bell that is
+ * ringing.
+ */
+export type WorldEvent =
+  /** A bell was rung. `id` is the interactable. */
+  | { k: 'bell'; id: string; by: PlayerId }
+  /**
+   * A firework went up from (x, z) and bursts at height h. `at` is server epoch ms at
+   * launch, so a client that hears about it late can skip ahead rather than replay it.
+   */
+  | { k: 'firework'; x: number; z: number; h: number; hue: number; pattern: number; at: number; by: PlayerId | null }
+  /** A fish was landed. `record` = the biggest of its kind anyone has landed on this island today. */
+  | { k: 'catch'; by: PlayerId; fish: string; size: number; record: boolean }
+  /** Somebody drew a fortune. */
+  | { k: 'omikuji'; by: PlayerId; fortune: number }
+  /** A stamp went on somebody's card; `complete` when it was the last one. */
+  | { k: 'stamp'; by: PlayerId; zone: ZoneId; complete: boolean }
+  /** A die was rolled. */
+  | { k: 'dice'; by: PlayerId; value: number; sides: number }
+  /** A janken round was decided. `winner` null = a draw after the tie limit. */
+  | { k: 'janken'; a: PlayerId; b: PlayerId; ha: Hand; hb: Hand; winner: PlayerId | null }
+  /** Somebody earned a badge. */
+  | { k: 'badge'; by: PlayerId; badge: BadgeId };
+
+export type WorldEventKind = WorldEvent['k'];
+
+/** Your progress changed. */
+export interface ServerProfile {
+  t: 'profile';
+  profile: ProfileView;
+}
+
+/**
+ * Your line, as the fishing spot sees it.
+ *
+ * `waiting` — the float is out. `bite` — it went under; `hook` within `window` ms.
+ * `caught` — landed (`fish`, `size`, and whether it is new to your book or a record).
+ * `escaped` — missed it (`reason`). `idle` — line in, for any reason.
+ */
+export interface ServerFish {
+  t: 'fish';
+  phase: 'waiting' | 'bite' | 'caught' | 'escaped' | 'idle';
+  spot?: string;
+  window?: number;
+  fish?: string;
+  size?: number;
+  newSpecies?: boolean;
+  /** Biggest of its kind landed on this island today. */
+  record?: boolean;
+  /** Biggest of its kind you have ever landed. */
+  personalBest?: boolean;
+  reason?: 'early' | 'late' | 'moved' | 'stopped' | 'busy';
+}
+
+/** Your omikuji slip. `again` = you had already drawn today, and this is that slip. */
+export interface ServerOmikuji {
+  t: 'omikuji';
+  fortune: number;
+  item: number;
+  direction: number;
+  again: boolean;
+}
+
+/** A janken duel, from one participant's side. */
+export interface ServerJanken {
+  t: 'janken';
+  kind: 'invited' | 'waiting' | 'start' | 'result' | 'cancelled';
+  duel: string;
+  opponent: PlayerId;
+  opponentName: string;
+  /** Epoch ms by which to answer (`invited`) or throw (`start`). */
+  deadline?: number;
+  /** 1-based round; ties replay. */
+  round?: number;
+  /** In `result`: what each side threw. */
+  mine?: Hand | null;
+  theirs?: Hand | null;
+  /** In `result`: the winner, null for a tie (another round follows unless `final`). */
+  winner?: PlayerId | null;
+  /** In `result`: whether the duel is over. */
+  final?: boolean;
+  /** In `cancelled`. */
+  reason?: 'declined' | 'timeout' | 'left' | 'busy' | 'far';
+}
+
+/** A whisper, to both its ends. */
+export interface ServerWhisper {
+  t: 'whisper';
+  from: PlayerId;
+  fromName: string;
+  to: PlayerId;
+  toName: string;
+  text: string;
+  at: number;
 }
 
 export type ServerMessage =
@@ -639,7 +1013,12 @@ export type ServerMessage =
   | ServerCheckinAck
   | ServerRoleChanged
   | ServerRoomChanged
-  | ServerError;
+  | ServerError
+  | ServerProfile
+  | ServerFish
+  | ServerOmikuji
+  | ServerJanken
+  | ServerWhisper;
 
 export type ServerMessageType = ServerMessage['t'];
 

@@ -120,6 +120,10 @@ const PROFILES: Record<AnimState, AnimProfile> = {
   [AnimState.Clap]: { armSwing: 0.0, legSwing: 0, elbowBend: 1.25, kneeBend: 0.05, rate: 9.0, bob: 0.009, lean: 0.03, armRaise: 1.05, hipFold: 0 },
   [AnimState.Wave]: { armSwing: 0.0, legSwing: 0, elbowBend: 0.9, kneeBend: 0.05, rate: 6.0, bob: 0.011, lean: 0, armRaise: 2.2, hipFold: 0 },
   [AnimState.Bow]: { armSwing: 0.0, legSwing: 0, elbowBend: 0.15, kneeBend: 0.05, rate: 0, bob: 0, lean: 0.8, armRaise: 0, hipFold: 0 },
+  // Arms forward and a little raised, holding a rod out over the water; breathing, not moving.
+  [AnimState.Fish]: { armSwing: 0.0, legSwing: 0, elbowBend: 0.7, kneeBend: 0.08, rate: 0.9, bob: 0.006, lean: 0.06, armRaise: 0.75, hipFold: 0 },
+  // Both arms up, a small bounce.
+  [AnimState.Cheer]: { armSwing: 0.15, legSwing: 0, elbowBend: 0.3, kneeBend: 0.18, rate: 8.0, bob: 0.03, lean: -0.05, armRaise: 2.6, hipFold: 0 },
 };
 
 // ---------------------------------------------------------------------------

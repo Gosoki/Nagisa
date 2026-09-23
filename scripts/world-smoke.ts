@@ -248,7 +248,7 @@ console.log('\nLandmarks');
     'post-lantern': [0.8, 0.8], 'stone-lantern': [1.4, 1.4], bench: [2.4, 0.8],
     'summit-marker': [1.6, 1.6], 'beach-hut': [8, 6], minka: [12, 10], machiya: [9, 12],
     warehouse: [13, 9], teahouse: [12, 9], bathhouse: [15, 12], 'keepers-house': [11, 8],
-    'shrine-hall': [14, 11],
+    'shrine-hall': [14, 11], 'stamp-stand': [1.1, 0.7], 'omikuji-stand': [2.1, 0.7], 'rod-rack': [1.7, 0.5],
   };
   const EXEMPT_FROM_FLATNESS = new Set(['pier', 'boat', 'breakwater', 'boathouse', 'rock', 'sea-wall', 'steps', 'rail']);
   const uneven: { id: string; drop: number }[] = [];

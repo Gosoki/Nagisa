@@ -185,6 +185,11 @@ export class RemotePlayers {
     return this.players.get(id)?.position ?? null;
   }
 
+  /** A player's character rig, for props held in the hand. */
+  characterOf(id: PlayerId): Character | null {
+    return this.players.get(id)?.character ?? null;
+  }
+
   /** Add a player. Idempotent — a duplicate join is treated as a metadata update. */
   add(view: PlayerView): void {
     const existing = this.players.get(view.id);

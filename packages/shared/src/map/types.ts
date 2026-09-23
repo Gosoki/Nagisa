@@ -242,6 +242,8 @@ export interface Zone {
   readonly name: string;
   /** Japanese name, shown smaller beneath. Flavour, never load-bearing. */
   readonly nameJa: string;
+  /** Chinese name, for the Chinese interface. Falls back to `nameJa`. */
+  readonly nameZh?: string;
   readonly kind: ZoneKind;
   /** Anchor point on the ground plane. Y comes from the terrain field. */
   readonly x: number;
@@ -262,6 +264,9 @@ export interface Zone {
    * observational, unhurried, never instructional.
    */
   readonly caption: string;
+  /** The caption in Chinese and Japanese. Fall back to `caption`. */
+  readonly captionZh?: string;
+  readonly captionJa?: string;
 }
 
 /** Something a player can walk up to and use. Deliberately few, deliberately small. */
@@ -274,14 +279,56 @@ export interface Interactable {
   /** How close you must be for the prompt to appear, metres. */
   readonly range: number;
   readonly kind: 'use' | 'sit';
-  /** Verb shown in the prompt, e.g. "Read". Kept to one word wherever possible. */
+  /**
+   * Verb shown in the prompt, e.g. "Read". Kept to one word wherever possible. The
+   * client localises by `effect`; this is the English fallback.
+   */
   readonly label: string;
   /**
-   * What the server does when it is used. `none` is a purely client-side flourish
-   * (sitting down, ringing a bell) that is still broadcast so others can see it.
+   * What using it does.
+   *
+   * - `none` — nothing beyond the pose (sitting is carried by the pose itself).
+   * - `read_announcements` — opens the notice board; signing it requires standing here.
+   * - `checkin_nearby` — checks you in to whatever is live in this zone.
+   * - `ring_bell` — rings; everyone in earshot hears it.
+   * - `omikuji` — draws the day's fortune.
+   * - `stamp` — puts this zone's stamp on your card.
+   * - `look` — a view: the camera takes it in (`view`). Client only.
+   * - `fish` — a fishing spot (`habitat`): casting here starts the fishing game.
    */
-  readonly effect: 'none' | 'read_announcements' | 'checkin_nearby';
+  readonly effect: InteractableEffect;
+  /**
+   * For `look`: where to point the camera — yaw in the world's convention (the direction
+   * `(sin yaw, cos yaw)` in x/z), pitch down from level, and how far out to frame.
+   * For `fish`: `yaw` is the way the line goes out over the water.
+   */
+  readonly view?: { readonly yaw: number; readonly pitch: number; readonly distance?: number };
+  /** For `fish`: what kind of water. */
+  readonly habitat?: 'harbor' | 'beach';
 }
+
+export type InteractableEffect =
+  | 'none'
+  | 'read_announcements'
+  | 'checkin_nearby'
+  | 'ring_bell'
+  | 'omikuji'
+  | 'stamp'
+  | 'look'
+  | 'fish';
+
+/**
+ * What the island does while an activity runs. Templates without one are gatherings: a
+ * place, a time, a roster and a check-in.
+ *
+ * - `quiz` — the ○× quiz runs in the quiz arena (server).
+ * - `derby` — catches by participants are scored; the biggest fish wins (server).
+ * - `fireworks` — the server sends up a show; anyone on the shore may add to it.
+ * - `concert` — music on the beach (client).
+ * - `lanterns` — attendees carry paper lanterns (client).
+ * - `lamp` — the lighthouse lamp is lit and turning (client).
+ */
+export type ActivityFeature = 'quiz' | 'derby' | 'fireworks' | 'concert' | 'lanterns' | 'lamp';
 
 /**
  * Generators available in the client's prop library. Adding a kind here without adding
@@ -326,7 +373,14 @@ export type LandmarkKind =
   | 'rail'
   | 'steps'
   | 'summit-marker'
-  | 'rock';
+  | 'rock'
+  // — Games ——————————————————————————————————————————————————————
+  /** A small roofed box on a post holding the place's rubber stamp and an ink pad. */
+  | 'stamp-stand'
+  /** The shrine's fortune box, with the rack where slips are tied. */
+  | 'omikuji-stand'
+  /** Rods leaning on a rail at a fishing spot. */
+  | 'rod-rack';
 
 /**
  * Fixed set-pieces the client builds. The server does not care about these, but they
@@ -361,6 +415,13 @@ export interface ActivityTemplate {
   readonly id: string;
   readonly title: string;
   readonly blurb: string;
+  /** Localised title and blurb. Fall back to the English. */
+  readonly titleZh?: string;
+  readonly titleJa?: string;
+  readonly blurbZh?: string;
+  readonly blurbJa?: string;
+  /** What the island does while it runs. */
+  readonly feature?: ActivityFeature;
   /** Venue it is normally held at. A host with admin rights may override. */
   readonly zone: ZoneId;
   /** Default run length, minutes. */
@@ -401,6 +462,34 @@ export interface MapWorld {
    * complaint. See `roadsideLanterns`.
    */
   readonly lanternVetoes?: readonly (readonly [number, number])[];
+
+  /**
+   * The ○× quiz arena: two circles on flat, walkable ground in a venue. Contestants stand
+   * in one or the other when the countdown ends. A map without one never runs a quiz.
+   */
+  readonly quizArena?: {
+    readonly zone: ZoneId;
+    readonly o: { readonly x: number; readonly z: number; readonly r: number };
+    readonly x: { readonly x: number; readonly z: number; readonly r: number };
+  };
+
+  /**
+   * Where fireworks go up. `zones` are the shores a player may launch from; `sites` are
+   * the launch points out on the water, as [x, z] — the server picks the one nearest the
+   * player's zone.
+   */
+  readonly fireworks?: {
+    readonly zones: readonly ZoneId[];
+    readonly sites: readonly (readonly [number, number])[];
+  };
+
+  /**
+   * The island's day, as the scheduler lays it out: which template starts how many real
+   * minutes into each island day (0 = island midnight; a day is `ISLAND_DAY_MS`). Every
+   * room keeps the next day or so of this materialised as activities. A map without one
+   * gets each template once per day, evenly spaced.
+   */
+  readonly programme?: readonly { readonly template: string; readonly at: number }[];
 }
 
 /** A complete, self-contained world. */

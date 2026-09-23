@@ -260,8 +260,38 @@ export class Renderer {
     if (this.ink) this.ink.render(this.scene, this.camera);
     else this.renderer.render(this.scene, this.camera);
 
+    // A photograph is taken here, in the same task as the draw: the drawing buffer is not
+    // preserved, so by the next task the canvas may already be blank. `toBlob` copies the
+    // bitmap synchronously and encodes it afterwards.
+    if (this.captureWaiters.length > 0) {
+      const waiters = this.captureWaiters;
+      this.captureWaiters = [];
+      try {
+        this.canvas.toBlob((blob) => {
+          for (const done of waiters) done(blob);
+        }, 'image/png');
+      } catch {
+        for (const done of waiters) done(null);
+      }
+    }
+
     this.trackPerformance(frameMs);
   };
+
+  private captureWaiters: Array<(blob: Blob | null) => void> = [];
+
+  /** Whether a capture has been asked for and not yet taken — subscribers may tidy the frame. */
+  get capturing(): boolean {
+    return this.captureWaiters.length > 0;
+  }
+
+  /**
+   * The next rendered frame, as a PNG. Resolves `null` if the browser refuses (a tainted or
+   * lost context). The picture is of the canvas alone: the interface is DOM and never in it.
+   */
+  capture(): Promise<Blob | null> {
+    return new Promise((resolve) => this.captureWaiters.push(resolve));
+  }
 
   private trackPerformance(frameMs: number): void {
     this.fpsAccum += frameMs;

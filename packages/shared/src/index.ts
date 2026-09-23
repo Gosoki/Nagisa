@@ -24,3 +24,4 @@ export * from './movement.js';
 export * from './world.js';
 export * from './routing.js';
 export * from './tokens.js';
+export * from './games/index.js';

@@ -28,6 +28,9 @@
     settings: 'Settings',
     host: 'Host',
     notes: 'Placement notes',
+    board: 'Notice board',
+    collection: 'Collection',
+    island: 'Island',
   } as const;
 
   let panelEl: HTMLElement | undefined = $state();

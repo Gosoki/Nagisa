@@ -340,6 +340,7 @@ const FOOTPRINT: Record<string, [number, number]> = {
   'shrine-hall': [10, 8], lighthouse: [9.3, 9.3], 'market-stall': [3.2, 2.4], 'beach-hut': [6, 5],
   'net-rack': [1.4, 5], well: [2.6, 1.6], 'notice-board': [3.2, 0.4], 'bell-tower': [2.6, 2.6],
   temizuya: [3.6, 3], torii: [5.4, 0.5], gate: [4.6, 0.34], komainu: [1.5, 1.2],
+  'stamp-stand': [1.1, 0.7], 'omikuji-stand': [2.1, 0.7], 'rod-rack': [1.7, 0.5],
 };
 
 /**

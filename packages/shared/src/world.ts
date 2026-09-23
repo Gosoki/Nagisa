@@ -38,8 +38,10 @@ import { onMapChange } from './map/registry.js';
 import type {
   ActivityTemplate,
   Interactable,
+  InteractableEffect,
   Landmark,
   LandmarkKind,
+  MapWorld,
   Zone,
   ZoneId,
   ZoneKind,
@@ -75,6 +77,18 @@ export let LANDMARKS: readonly Landmark[] = [];
 
 /** Everything a player can walk up to and use. */
 export let INTERACTABLES: readonly Interactable[] = [];
+
+/** The ○× quiz arena, if the map has one. */
+export let QUIZ_ARENA: MapWorld['quizArena'] | null = null;
+
+/** Firework shores and launch sites, if the map has any. */
+export let FIREWORKS: MapWorld['fireworks'] | null = null;
+
+/** The island's daily programme; see `MapWorld.programme`. Derived when the map has none. */
+export let PROGRAMME: readonly { readonly template: string; readonly at: number }[] = [];
+
+/** Every zone that has a stamp on the stamp card, in the order the card shows them. */
+export let STAMP_ZONES: readonly ZoneId[] = [];
 
 /** The kinds of thing that can be scheduled here. */
 export let ACTIVITY_TEMPLATES: readonly ActivityTemplate[] = [];
@@ -265,6 +279,7 @@ const LANDMARK_FOOTPRINTS: Readonly<Record<string, readonly [number, number]>> =
   komainu: [1.5, 1.2], 'stone-lantern': [1.4, 1.4], 'post-lantern': [0.8, 0.8], bench: [2.4, 0.8],
   'summit-marker': [1.6, 1.6], rock: [2, 2], boat: [2.4, 5.4], banner: [1.2, 1.2],
   pier: [4, 22], breakwater: [3, 34], 'sea-wall': [1.4, 14], rail: [0.4, 12], steps: [3, 3],
+  'stamp-stand': [1.3, 1.1], 'omikuji-stand': [2.2, 1.2], 'rod-rack': [1.8, 0.8],
 };
 
 /** What a kind takes up when nothing more specific is known. */
@@ -654,11 +669,38 @@ export function stageSeatingStations(): number {
  * Last statement in the file for the same reason as its twin in `terrain.ts`: the listener
  * runs the moment it is registered, so everything it assigns must already be initialised.
  */
+/** Interactables with a given effect, in map order. */
+export function interactablesWith(effect: InteractableEffect): Interactable[] {
+  return INTERACTABLES.filter((i) => i.effect === effect);
+}
+
+/** Whether (x, z) is within `slop` metres beyond the interactable's own range. */
+export function withinReach(it: Interactable, x: number, z: number, slop = 0): boolean {
+  const p = interactablePosition(it);
+  return Math.hypot(x - p.x, z - p.z) <= it.range + slop;
+}
+
+/** Which quiz circle (x, z) stands in, if either. The ○ wins a tie, which cannot happen on a sane map. */
+export function quizSide(x: number, z: number): 'o' | 'x' | null {
+  const arena = QUIZ_ARENA;
+  if (!arena) return null;
+  if (Math.hypot(x - arena.o.x, z - arena.o.z) <= arena.o.r) return 'o';
+  if (Math.hypot(x - arena.x.x, z - arena.x.z) <= arena.x.r) return 'x';
+  return null;
+}
+
 onMapChange((pack) => {
   const w = pack.world;
   ZONES = w.zones;
   LANDMARKS = w.landmarks;
   INTERACTABLES = w.interactables;
+  QUIZ_ARENA = w.quizArena ?? null;
+  FIREWORKS = w.fireworks ?? null;
+  // A map with no programme still has a day: each template once, evenly spread.
+  PROGRAMME =
+    w.programme ??
+    w.activityTemplates.map((t, i) => ({ template: t.id, at: Math.round((i * 90) / Math.max(1, w.activityTemplates.length)) }));
+  STAMP_ZONES = w.interactables.filter((i) => i.effect === 'stamp').map((i) => i.zone);
   ACTIVITY_TEMPLATES = w.activityTemplates;
   SPAWN_POINTS = w.spawnPoints;
   LANTERN_VETOES = w.lanternVetoes ?? [];

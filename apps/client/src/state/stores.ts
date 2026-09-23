@@ -20,16 +20,25 @@
 import { derived, get, writable, type Readable, type Writable } from 'svelte/store';
 import {
   ActivityState,
+  FIREWORKS,
   Role,
   type ActivityId,
   type ActivityView,
   type AnnouncementView,
+  type BadgeId,
+  type GuestbookEntry,
+  type Hand,
   type PlayerId,
   type PlayerView,
+  type ProfileView,
+  type QuizView,
   type RoomView,
+  type ServerFish,
+  type ServerOmikuji,
   type ZoneId,
 } from '@nagisa/shared';
 import type { ConnectionState } from '../net/connection.js';
+import { tr } from '../i18n/index.js';
 import type { QualityTier } from '../engine/quality.js';
 
 // ---------------------------------------------------------------------------
@@ -243,6 +252,11 @@ export interface ChatLine {
   readonly self: boolean;
   /** System lines (arrivals, departures, errors) have no author. */
   readonly system?: boolean;
+  /**
+   * Present on a whisper: who the other end is, and which way it went. Whispers are shown
+   * in the log like any line, marked, and never raise a bubble.
+   */
+  readonly whisper?: { readonly peerId: string; readonly peerName: string; readonly outgoing: boolean };
 }
 
 /**
@@ -365,7 +379,7 @@ export function toggleMute(id: string, name: string): void {
     } catch {
       /* Non-fatal: the mute still holds for this session. */
     }
-    notify(next.includes(id) ? `Muted ${name}` : `Unmuted ${name}`);
+    notify(tr(next.includes(id) ? 'mute.on' : 'mute.off', { name }));
     return next;
   });
 }
@@ -389,8 +403,17 @@ export const followTarget: Writable<{ id: string; name: string } | null> = writa
 // Interaction
 // ---------------------------------------------------------------------------
 
-/** The interactable within reach, if any. Drives the single contextual prompt. */
-export const interactPrompt: Writable<{ id: string; label: string } | null> = writable(null);
+/**
+ * The interactable within reach, if any. Drives the single contextual prompt. `label` is
+ * already in the player's language at the moment it was found; components that want it to
+ * follow a language change mid-prompt can re-derive it from `effect` and `kind`.
+ */
+export const interactPrompt: Writable<{
+  id: string;
+  label: string;
+  effect: import('@nagisa/shared').InteractableEffect;
+  kind: 'use' | 'sit';
+} | null> = writable(null);
 
 /** Whether the emote wheel is open. */
 export const emoteOpen: Writable<boolean> = writable(false);
@@ -416,8 +439,23 @@ export interface StickState {
 export const stickState: Writable<StickState | null> = writable(null);
 
 
-/** Which optional panel is open. Only ever one, and `null` most of the time. */
-export type PanelId = 'people' | 'activities' | 'settings' | 'host' | 'notes' | null;
+/**
+ * Which optional panel is open. Only ever one, and `null` most of the time.
+ *
+ * - `board` — the notice board: announcements and the guestbook.
+ * - `collection` — your stamp card, fish book and badges.
+ * - `island` — which island you are on, private islands, invites.
+ */
+export type PanelId =
+  | 'people'
+  | 'activities'
+  | 'settings'
+  | 'host'
+  | 'notes'
+  | 'board'
+  | 'collection'
+  | 'island'
+  | null;
 export const openPanel: Writable<PanelId> = writable(null);
 
 /**
@@ -445,63 +483,113 @@ export function togglePanel(id: Exclude<PanelId, null>): void {
 }
 
 // ---------------------------------------------------------------------------
-// Settings
+// Server clock
 // ---------------------------------------------------------------------------
 
-export interface Settings {
-  quality: QualityTier;
-  /** Master audio mute. Audio starts muted until the first gesture — browsers require it. */
-  muted: boolean;
-  /** Show name tags above other players. */
-  showNames: boolean;
-  /** Show the minimap. On by default — it is the only way to find people. */
-  minimap: boolean;
-  /** Show the performance readout. Off by default; toggled with a keyboard shortcut. */
-  showStats: boolean;
-  /** Reduce motion: stills the camera drift and shortens transitions. */
-  reducedMotion: boolean;
-  /**
-   * Draw the medium: pen hatching in the shade and paper tooth over everything.
-   *
-   * Both are screen-space, so they belong to the picture rather than to the surfaces —
-   * which is the point of them and also why they slide as you walk. On by default;
-   * off gives flat fills and lines only.
-   */
-  paperTexture: boolean;
+let serverClock: () => number = () => Date.now();
+
+/**
+ * The server's clock, best estimate. Countdowns (the quiz, a janken deadline) run on it so
+ * that everyone's "3, 2, 1" ends at the same moment whatever their own clock says.
+ */
+export function serverNow(): number {
+  return serverClock();
 }
 
-const SETTINGS_KEY = 'nagisa.settings';
-
-/** Load persisted settings, falling back to sensible defaults. */
-function loadSettings(): Settings {
-  const defaults: Settings = {
-    quality: 'high',
-    muted: true,
-    showNames: true,
-    minimap: true,
-    showStats: false,
-    reducedMotion:
-      typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches,
-    paperTexture: true,
-  };
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    return raw ? { ...defaults, ...(JSON.parse(raw) as Partial<Settings>) } : defaults;
-  } catch {
-    return defaults;
-  }
+/** Registered by the app once the connection exists. */
+export function setServerClock(fn: () => number): void {
+  serverClock = fn;
 }
 
-export const settings: Writable<Settings> = writable(loadSettings());
+// ---------------------------------------------------------------------------
+// Games
+// ---------------------------------------------------------------------------
 
-// Persist on every change. Cheap, and it means quality choices survive a reload.
-settings.subscribe((value) => {
-  try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(value));
-  } catch {
-    /* Private mode: settings are session-only. */
-  }
+/** Your stamps, fish book and badges, as the server last told you. */
+export const profile: Writable<ProfileView | null> = writable(null);
+
+/** The ○× quiz in progress in this room, if any. */
+export const quiz: Writable<QuizView | null> = writable(null);
+
+/** The notice board's signatures, newest first. */
+export const guestbook: Writable<GuestbookEntry[]> = writable([]);
+
+/** Whether you are standing at a notice board — signing requires it. */
+export const atBoard: Writable<boolean> = writable(false);
+
+/** Your line in the water. */
+export interface FishingState {
+  phase: ServerFish['phase'];
+  /** The spot you cast from, while the line is out. */
+  spot: string | null;
+  /** On `bite`: local `performance.now()` when the bite arrived, and how long you have. */
+  biteAt: number;
+  window: number;
+  /** On `caught`. */
+  caught: { fish: string; size: number; newSpecies: boolean; record: boolean; personalBest: boolean } | null;
+  /** On `escaped`. */
+  reason: ServerFish['reason'] | null;
+}
+
+export const fishing: Writable<FishingState> = writable({
+  phase: 'idle',
+  spot: null,
+  biteAt: 0,
+  window: 0,
+  caught: null,
+  reason: null,
 });
+
+/** The omikuji slip you just drew, while it is being shown. */
+export const omikujiSlip: Writable<Omit<ServerOmikuji, 't'> | null> = writable(null);
+
+/** A janken duel you are in. */
+export interface JankenState {
+  duel: string;
+  opponent: PlayerId;
+  opponentName: string;
+  /**
+   * `invited` — they challenged you; answer. `waiting` — you challenged them; wait.
+   * `choose` — throw before `deadline`. `result` — a round was decided. `cancelled` — over
+   * without a result (`reason`).
+   */
+  phase: 'invited' | 'waiting' | 'choose' | 'result' | 'cancelled';
+  /** Server epoch ms. */
+  deadline: number;
+  round: number;
+  /** What you threw this round, once you have. */
+  mine: Hand | null;
+  theirs: Hand | null;
+  /** In `result`: the winner, or null for a tie. */
+  winner: PlayerId | null;
+  final: boolean;
+  reason: 'declined' | 'timeout' | 'left' | 'busy' | 'far' | null;
+}
+
+export const janken: Writable<JankenState | null> = writable(null);
+
+/** The player whose card is open, if any. */
+export const selectedPlayer: Writable<PlayerId | null> = writable(null);
+
+/** The view being taken in at a lookout, while the camera is turned to it. */
+export const vista: Writable<{ id: string } | null> = writable(null);
+
+/** Whether the zone you are standing in is a shore fireworks may go up from. */
+export const onFireworkShore: Readable<boolean> = derived(self, ($self) =>
+  Boolean(FIREWORKS?.zones.includes($self.zone)),
+);
+
+/** The badge you are wearing, straight from the profile. */
+export const myTitle: Readable<BadgeId | null> = derived(profile, ($p) => $p?.title ?? null);
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+//
+// Lives in its own module so the language layer (`i18n/`) can read it without importing
+// this file, which imports the language layer in turn.
+
+export { settings, type Settings, type Lang } from './settings.js';
 
 // ---------------------------------------------------------------------------
 // Diagnostics
@@ -559,6 +647,39 @@ export interface WorldCommands {
   /** Host controls. */
   setActivityState(id: ActivityId, state: ActivityState): void;
   announce(text: string, scope: AnnouncementView['scope']): void;
+
+  // --- v2 ---------------------------------------------------------------------------------
+  /** Whisper to one player. */
+  whisper(id: PlayerId, text: string): void;
+  /** Roll a die; everyone sees it. */
+  roll(sides?: number): void;
+  /** Strike when the float goes under. */
+  fishHook(): void;
+  /** Reel in. */
+  fishStop(): void;
+  /** Janken. */
+  jankenChallenge(id: PlayerId): void;
+  jankenRespond(duel: string, accept: boolean): void;
+  jankenThrow(duel: string, hand: Hand): void;
+  /** Send a firework up from the shore you are on. */
+  firework(): void;
+  /** Sign / unsign the notice board. */
+  guestbookWrite(text: string): void;
+  guestbookRemove(id: string): void;
+  /** Wear a badge, or none. */
+  setTitle(badge: BadgeId | null): void;
+  /** Make a private island and go there. */
+  createIsland(): void;
+  /** Go to an island by room id or invite code. */
+  joinIsland(idOrCode: string): void;
+  /** Admin: put a template on the programme `inMin` minutes from now. */
+  schedule(template: string, inMin: number): void;
+  /** Admin: moderation. */
+  admin(action: 'kick' | 'mute' | 'unmute' | 'grant_host' | 'revoke_host', target: PlayerId, activity?: ActivityId): void;
+  /** Leave a lookout view early. */
+  endVista(): void;
+  /** Save a picture of the island as it is on screen, without the interface. */
+  takePhoto(): void;
 }
 
 /** No-op implementations, replaced at boot. Keeps components safe before wiring. */
@@ -581,6 +702,23 @@ export const commands: Writable<WorldCommands> = writable({
   travelTo: noop,
   setActivityState: noop,
   announce: noop,
+  whisper: noop,
+  roll: noop,
+  fishHook: noop,
+  fishStop: noop,
+  jankenChallenge: noop,
+  jankenRespond: noop,
+  jankenThrow: noop,
+  firework: noop,
+  guestbookWrite: noop,
+  guestbookRemove: noop,
+  setTitle: noop,
+  createIsland: noop,
+  joinIsland: noop,
+  schedule: noop,
+  admin: noop,
+  endVista: noop,
+  takePhoto: noop,
 });
 
 /** Convenience for components: `cmd().joinActivity(...)`. */

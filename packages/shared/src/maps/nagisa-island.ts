@@ -400,6 +400,7 @@ const ZONES: MapPack['world']['zones'] = [
     id: 'south-harbor',
     name: 'South Harbour',
     nameJa: '南港',
+    nameZh: '南港',
     kind: 'venue',
     x: 0,
     z: 74,
@@ -410,11 +411,14 @@ const ZONES: MapPack['world']['zones'] = [
     softCapacity: 60,
     ambience: 'harbor',
     caption: 'The ferry ties up here. Everyone arrives at the south quay.',
+    captionZh: '渡轮停靠在这里。每个人都从南边的码头上岛。',
+    captionJa: 'フェリーはここに着く。誰もが南の岸壁から島に上がる。',
   },
   {
     id: 'plaza',
     name: 'Main Plaza',
     nameJa: '広場',
+    nameZh: '广场',
     kind: 'venue',
     x: 64,
     z: 37,
@@ -423,11 +427,14 @@ const ZONES: MapPack['world']['zones'] = [
     softCapacity: 140,
     ambience: 'town',
     caption: 'The middle of things, on the eastern shelf. Something is usually about to start.',
+    captionZh: '东边台地上的热闹中心，总有什么事快要开始。',
+    captionJa: '東の段丘にある島の真ん中。いつも何かが始まりそう。',
   },
   {
     id: 'noticeboard',
     name: 'Notice Board',
     nameJa: '掲示板',
+    nameZh: '公告栏',
     kind: 'notice',
     x: 48,
     z: 22,
@@ -435,11 +442,14 @@ const ZONES: MapPack['world']['zones'] = [
     softCapacity: 20,
     ambience: 'town',
     caption: 'Paper slips, pinned and re-pinned. Today’s word is here.',
+    captionZh: '纸条钉了又钉。今天的消息在这里。',
+    captionJa: '貼っては貼り直される紙片。今日の知らせはここに。',
   },
   {
     id: 'village',
     name: 'Old Street',
     nameJa: '町並み',
+    nameZh: '老街',
     kind: 'transit',
     x: 64,
     z: -37,
@@ -447,11 +457,14 @@ const ZONES: MapPack['world']['zones'] = [
     softCapacity: 50,
     ambience: 'town',
     caption: 'Wooden fronts, low eaves, a cat that has never moved.',
+    captionZh: '木造的店面，低矮的屋檐，还有一只从没动过的猫。',
+    captionJa: '木の軒先、低いひさし、一度も動いたことのない猫。',
   },
   {
     id: 'north-harbor',
     name: 'North Harbour',
     nameJa: '北港',
+    nameZh: '北港',
     kind: 'venue',
     x: 0,
     z: -74,
@@ -460,11 +473,14 @@ const ZONES: MapPack['world']['zones'] = [
     softCapacity: 40,
     ambience: 'harbor',
     caption: 'Nets, ice, and boats that go out before anyone is awake.',
+    captionZh: '渔网、冰块，还有天亮前就出海的船。',
+    captionJa: '網と氷と、誰も起きないうちに出ていく船。',
   },
   {
     id: 'lighthouse',
     name: 'Lighthouse Cape',
     nameJa: '灯台岬',
+    nameZh: '灯塔岬',
     kind: 'venue',
     x: -64,
     z: -37,
@@ -473,11 +489,14 @@ const ZONES: MapPack['world']['zones'] = [
     softCapacity: 50,
     ambience: 'wind',
     caption: 'The lamp turns whether anyone is watching or not.',
+    captionZh: '无论有没有人看，灯都在转。',
+    captionJa: '誰が見ていても、いなくても、灯りは回る。',
   },
   {
     id: 'shrine',
     name: 'Shrine',
     nameJa: '神社',
+    nameZh: '神社',
     kind: 'venue',
     x: -64,
     z: 37,
@@ -486,11 +505,14 @@ const ZONES: MapPack['world']['zones'] = [
     softCapacity: 70,
     ambience: 'shrine',
     caption: 'Torii, one after another, on the headland above the water.',
+    captionZh: '鸟居一座接一座，立在海边的岬角上。',
+    captionJa: '海を見下ろす岬に、鳥居がいくつも続く。',
   },
   {
     id: 'summit',
     name: 'Summit',
     nameJa: '山頂',
+    nameZh: '山顶',
     kind: 'scenic',
     x: 0,
     z: 0,
@@ -498,11 +520,14 @@ const ZONES: MapPack['world']['zones'] = [
     softCapacity: 30,
     ambience: 'wind',
     caption: 'From up here the whole island fits between your hands.',
+    captionZh: '从这里看，整座岛都能捧在手心。',
+    captionJa: 'ここからは、島がまるごと両手に収まる。',
   },
   {
     id: 'beach',
     name: 'Sunset Beach',
     nameJa: '浜',
+    nameZh: '海滩',
     kind: 'venue',
     x: 46,
     z: 92,
@@ -511,11 +536,14 @@ const ZONES: MapPack['world']['zones'] = [
     softCapacity: 60,
     ambience: 'waves',
     caption: 'Flat sand, shallow water, and the long light.',
+    captionZh: '平坦的沙滩，浅浅的海水，悠长的夕光。',
+    captionJa: '平らな砂浜、浅い海、長い夕日。',
   },
   {
     id: 'coast',
     name: 'Ring Road',
     nameJa: '渚道',
+    nameZh: '环岛路',
     kind: 'transit',
     x: 0,
     z: 0,
@@ -523,6 +551,8 @@ const ZONES: MapPack['world']['zones'] = [
     softCapacity: 999,
     ambience: 'waves',
     caption: 'The road follows the water the whole way round.',
+    captionZh: '这条路沿着海岸绕岛一周。',
+    captionJa: '道は水辺に沿って島をぐるりと巡る。',
   },
 ] as const;
 
@@ -552,19 +582,47 @@ const INTERACTABLES: MapPack['world']['interactables'] = [
   // Six of these twelve were stranded when it first did.
   { id: 'notice-board', zone: 'noticeboard', dx: -2.4, dz: -1.9, range: 4.5, kind: 'use', label: 'Read', effect: 'read_announcements' },
   { id: 'plaza-post', zone: 'plaza', dx: -13, dz: 7, range: 3.5, kind: 'use', label: 'Check in', effect: 'checkin_nearby' },
-  { id: 'shrine-bell', zone: 'shrine', dx: -13.2, dz: -8.1, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
-  { id: 'summit-bell', zone: 'summit', dx: 0, dz: 12.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
+  { id: 'shrine-bell', zone: 'shrine', dx: -13.2, dz: -8.1, range: 3.5, kind: 'use', label: 'Ring', effect: 'ring_bell' },
+  { id: 'summit-bell', zone: 'summit', dx: 0, dz: 12.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'ring_bell' },
   // Follows `sh-bell`, which moved out onto the quay. Left where it was, this rang a banner.
-  { id: 'south-harbor-bell', zone: 'south-harbor', dx: 12.4, dz: 23.2, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
-  { id: 'north-harbor-bell', zone: 'north-harbor', dx: 13.1, dz: -3.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'none' },
+  { id: 'south-harbor-bell', zone: 'south-harbor', dx: 12.4, dz: 23.2, range: 3.5, kind: 'use', label: 'Ring', effect: 'ring_bell' },
+  { id: 'north-harbor-bell', zone: 'north-harbor', dx: 13.1, dz: -3.5, range: 3.5, kind: 'use', label: 'Ring', effect: 'ring_bell' },
   // Follows the tower to the head. It used to resolve to (−64, −34), 11.6 m from a lighthouse
   // that was already not there, and reach the keeper's house instead.
-  { id: 'lighthouse-door', zone: 'lighthouse', dx: -33.5, dz: -21.5, range: 4, kind: 'use', label: 'Look', effect: 'none' },
-  { id: 'summit-rail', zone: 'summit', dx: -21.5, dz: -7, range: 6, kind: 'use', label: 'Look', effect: 'none' },
+  // The island's two vantage points. `view` is the way the camera turns to take them in:
+  // out to sea from the lighthouse's door, and west over the shrine from the summit rail.
+  { id: 'lighthouse-door', zone: 'lighthouse', dx: -33.5, dz: -21.5, range: 4, kind: 'use', label: 'Look', effect: 'look', view: { yaw: -2.111, pitch: 0.12, distance: 16 } },
+  { id: 'summit-rail', zone: 'summit', dx: -21.5, dz: -7, range: 6, kind: 'use', label: 'Look', effect: 'look', view: { yaw: -1.886, pitch: 0.28, distance: 22 } },
   { id: 'teahouse-mat-a', zone: 'plaza', dx: 17.5, dz: -14.7, range: 2.5, kind: 'sit', label: 'Sit', effect: 'none' },
   { id: 'teahouse-mat-b', zone: 'plaza', dx: 19.4, dz: -18.7, range: 2.5, kind: 'sit', label: 'Sit', effect: 'none' },
   { id: 'beach-log', zone: 'beach', dx: 5, dz: 7, range: 3, kind: 'sit', label: 'Sit', effect: 'none' },
   { id: 'plaza-bench', zone: 'plaza', dx: 3.6, dz: 9.9, range: 3, kind: 'sit', label: 'Sit', effect: 'none' },
+
+  // — The stamp rally ———————————————————————————————————————————————————————————————————
+  // One stand in each of the eight places, each on level ground a couple of metres off the
+  // road and clear of every building (sited with the same walkability and clearance rules
+  // as everything else). Each prompt stands on its `stamp-stand` landmark below.
+  { id: 'stamp-south-harbor', zone: 'south-harbor', dx: -2.5, dz: -6, range: 2.5, kind: 'use', label: 'Stamp', effect: 'stamp' },
+  { id: 'stamp-plaza', zone: 'plaza', dx: 5, dz: 4, range: 2.5, kind: 'use', label: 'Stamp', effect: 'stamp' },
+  { id: 'stamp-village', zone: 'village', dx: -20, dz: -18, range: 2.5, kind: 'use', label: 'Stamp', effect: 'stamp' },
+  { id: 'stamp-north-harbor', zone: 'north-harbor', dx: -12.5, dz: -5.5, range: 2.5, kind: 'use', label: 'Stamp', effect: 'stamp' },
+  { id: 'stamp-lighthouse', zone: 'lighthouse', dx: 6, dz: 2.5, range: 2.5, kind: 'use', label: 'Stamp', effect: 'stamp' },
+  { id: 'stamp-shrine', zone: 'shrine', dx: -5, dz: 4, range: 2.5, kind: 'use', label: 'Stamp', effect: 'stamp' },
+  { id: 'stamp-summit', zone: 'summit', dx: -4, dz: -4, range: 2.5, kind: 'use', label: 'Stamp', effect: 'stamp' },
+  { id: 'stamp-beach', zone: 'beach', dx: -4, dz: 3.5, range: 2.5, kind: 'use', label: 'Stamp', effect: 'stamp' },
+
+  // — The shrine's fortunes ———————————————————————————————————————————————————————————————
+  { id: 'omikuji', zone: 'shrine', dx: -8, dz: -2, range: 2.5, kind: 'use', label: 'Draw', effect: 'omikuji' },
+
+  // — Fishing ——————————————————————————————————————————————————————————————————————————
+  // The seaward ends of the four piers, where the deck is still solid ground and deep water
+  // starts a few metres on, and one spot on the beach where the sand shelves off. `view.yaw`
+  // is the way the line goes out: along each pier, or straight off the beach.
+  { id: 'fish-south-main', zone: 'south-harbor', dx: 0, dz: 30, range: 3, kind: 'use', label: 'Fish', effect: 'fish', habitat: 'harbor', view: { yaw: 0, pitch: 0 } },
+  { id: 'fish-south-west', zone: 'south-harbor', dx: -25.5, dz: 33.9, range: 3, kind: 'use', label: 'Fish', effect: 'fish', habitat: 'harbor', view: { yaw: -1.064, pitch: 0 } },
+  { id: 'fish-north-east', zone: 'north-harbor', dx: 8, dz: -32, range: 3, kind: 'use', label: 'Fish', effect: 'fish', habitat: 'harbor', view: { yaw: 3.1, pitch: 0 } },
+  { id: 'fish-north-west', zone: 'north-harbor', dx: -18, dz: -33, range: 3, kind: 'use', label: 'Fish', effect: 'fish', habitat: 'harbor', view: { yaw: 3.5, pitch: 0 } },
+  { id: 'fish-beach', zone: 'beach', dx: -6, dz: 29, range: 3, kind: 'use', label: 'Fish', effect: 'fish', habitat: 'beach', view: { yaw: -0.197, pitch: 0 } },
 ] as const;
 
 /**
@@ -933,35 +991,80 @@ const LANDMARKS: MapPack['world']['landmarks'] = [
   { id: 'sr-gatelamp-1b', kind: 'stone-lantern', x: -67.9, z: 15.8, rot: -2.689 },
   { id: 'sr-gatelamp-2a', kind: 'stone-lantern', x: -56.9, z: 57.8, rot: -2.547 },
   { id: 'sr-gatelamp-2b', kind: 'stone-lantern', x: -47.3, z: 51.3, rot: -2.547 },
+
+  // ═══ Games ═════════════════════════════════════════════════════════════════════════════
+  // Stamp stands, one per place, each turned to face its zone's anchor — the direction
+  // somebody arriving is looking from. Positions solved against the walkability, level and
+  // clearance rules; the stamp prompts above stand on them.
+  { id: 'gm-stamp-south-harbor', kind: 'stamp-stand', x: -2.5, z: 68, rot: -2.747 },
+  { id: 'gm-stamp-plaza', kind: 'stamp-stand', x: 69, z: 41, rot: 0.896 },
+  { id: 'gm-stamp-village', kind: 'stamp-stand', x: 44, z: -55, rot: -2.304 },
+  { id: 'gm-stamp-north-harbor', kind: 'stamp-stand', x: -12.5, z: -79.5, rot: -1.985 },
+  { id: 'gm-stamp-lighthouse', kind: 'stamp-stand', x: -58, z: -34.5, rot: 1.176 },
+  { id: 'gm-stamp-shrine', kind: 'stamp-stand', x: -69, z: 41, rot: -0.896 },
+  { id: 'gm-stamp-summit', kind: 'stamp-stand', x: -4, z: -4, rot: -2.356 },
+  { id: 'gm-stamp-beach', kind: 'stamp-stand', x: 42, z: 95.5, rot: -0.852 },
+  // The omikuji box, on the approach below the bell.
+  { id: 'gm-omikuji', kind: 'omikuji-stand', x: -72, z: 35, rot: -1.816 },
+  // A rod rack just up the sand from the beach's fishing spot, facing back up the beach.
+  { id: 'gm-rod-rack', kind: 'rod-rack', x: 41.5, z: 119.5, rot: -0.197 },
 ] as const;
 
 const ACTIVITY_TEMPLATES: MapPack['world']['activityTemplates'] = [
   {
     id: 'morning-assembly',
     title: 'Morning Assembly',
+    titleZh: '早会',
+    titleJa: '朝の集い',
     blurb: 'Everyone on the island, in one place, briefly.',
+    blurbZh: '全岛的人，短暂地聚在一处。',
+    blurbJa: '島じゅうの人が、少しのあいだ一か所に。',
     zone: 'plaza',
-    durationMin: 15,
+    durationMin: 8,
     capacity: 0,
     checkinEnabled: true,
     formation: 'gather',
   },
   {
+    id: 'island-quiz',
+    title: '○× Quiz',
+    titleZh: '○×问答',
+    titleJa: '○×クイズ',
+    blurb: 'Run to ○ or ×. Last one standing wins.',
+    blurbZh: '跑到○或×，坚持到最后的人获胜。',
+    blurbJa: '○か×へ走れ。最後まで残った人が優勝。',
+    zone: 'plaza',
+    durationMin: 10,
+    capacity: 0,
+    checkinEnabled: false,
+    formation: 'gather',
+    feature: 'quiz',
+  },
+  {
     id: 'lantern-walk',
     title: 'Lantern Walk',
+    titleZh: '提灯夜行',
+    titleJa: '提灯行列',
     blurb: 'Up the shrine path, one lantern each.',
+    blurbZh: '沿着参道往上走，每人一盏灯笼。',
+    blurbJa: '参道をのぼる。一人ひとつ提灯を持って。',
     zone: 'shrine',
-    durationMin: 20,
+    durationMin: 12,
     capacity: 60,
     checkinEnabled: true,
     formation: 'procession',
+    feature: 'lanterns',
   },
   {
     id: 'harbor-market',
     title: 'Harbour Market',
+    titleZh: '港口集市',
+    titleJa: '港の市',
     blurb: 'Stalls on the south quay until the light goes.',
+    blurbZh: '南码头的摊位，一直开到天黑。',
+    blurbJa: '日が暮れるまで、南の岸壁に屋台が並ぶ。',
     zone: 'south-harbor',
-    durationMin: 45,
+    durationMin: 25,
     capacity: 0,
     checkinEnabled: false,
     formation: 'gather',
@@ -969,34 +1072,82 @@ const ACTIVITY_TEMPLATES: MapPack['world']['activityTemplates'] = [
   {
     id: 'beach-concert',
     title: 'Beach Concert',
+    titleZh: '海滩音乐会',
+    titleJa: '浜辺のコンサート',
     blurb: 'Sit on the sand. Someone is playing.',
+    blurbZh: '坐在沙滩上，有人在演奏。',
+    blurbJa: '砂浜に座って。誰かが演奏している。',
     zone: 'beach',
-    durationMin: 30,
+    durationMin: 9,
     capacity: 70,
     checkinEnabled: true,
     formation: 'seated',
+    feature: 'concert',
   },
   {
     id: 'lamp-lighting',
     title: 'Lamp Lighting',
+    titleZh: '点灯仪式',
+    titleJa: '点灯式',
     blurb: 'The cape at dusk, when the lamp comes round.',
+    blurbZh: '黄昏的岬角，等灯塔的光转过来。',
+    blurbJa: '夕暮れの岬、灯台の光が回ってくるころ。',
     zone: 'lighthouse',
-    durationMin: 10,
+    durationMin: 8,
     capacity: 50,
     checkinEnabled: true,
     formation: 'gather',
+    feature: 'lamp',
   },
   {
     id: 'morning-catch',
-    title: 'Morning Catch',
-    blurb: 'The north boats come back in. Everyone helps.',
+    title: 'Fishing Derby',
+    titleZh: '清晨钓鱼大赛',
+    titleJa: '朝の釣り大会',
+    blurb: 'The north boats come back in. Biggest fish wins.',
+    blurbZh: '北港的船回来了。钓到最大的鱼就赢。',
+    blurbJa: '北の船が戻ってくる。一番大きな魚を釣った人の勝ち。',
     zone: 'north-harbor',
-    durationMin: 25,
+    durationMin: 15,
     capacity: 40,
     checkinEnabled: true,
     formation: 'gather',
+    feature: 'derby',
+  },
+  {
+    id: 'fireworks',
+    title: 'Fireworks',
+    titleZh: '花火大会',
+    titleJa: '花火大会',
+    blurb: 'After dark, over the water. Send one up yourself.',
+    blurbZh: '天黑以后，在海面上空。你也可以放一发。',
+    blurbJa: '日が暮れたら海の上に。自分でも一発あげてみよう。',
+    zone: 'beach',
+    durationMin: 8,
+    capacity: 0,
+    checkinEnabled: false,
+    formation: 'seated',
+    feature: 'fireworks',
   },
 ] as const;
+
+/**
+ * The island's day, in real minutes after island midnight (a day is ninety minutes; dawn is
+ * at 22.5, noon at 45, dusk at 67.5). Laid out so each thing happens at the hour it belongs
+ * to — the catch at first light, the lamp at dusk, fireworks in the dark — and so no two
+ * things share a venue at once.
+ */
+const PROGRAMME: NonNullable<MapPack['world']['programme']> = [
+  { template: 'morning-catch', at: 22 },
+  { template: 'morning-assembly', at: 28 },
+  { template: 'island-quiz', at: 37 },
+  { template: 'harbor-market', at: 45 },
+  { template: 'island-quiz', at: 56 },
+  { template: 'lamp-lighting', at: 65 },
+  { template: 'lantern-walk', at: 70 },
+  { template: 'beach-concert', at: 75 },
+  { template: 'fireworks', at: 85 },
+];
 
 export const NAGISA_ISLAND: MapPack = {
   id: 'nagisa-island',
@@ -1043,6 +1194,27 @@ export const NAGISA_ISLAND: MapPack = {
      * put somewhere a person looking at it did not want one. The rule stays; these fifteen
      * stations do not. See `MapWorld.lanternVetoes`.
      */
+    // The ○× arena: two level discs across the middle of the plaza, clear of every building
+    // and prompt, with the crowd's natural gathering point between them.
+    quizArena: {
+      zone: 'plaza',
+      o: { x: 59, z: 42, r: 4.5 },
+      x: { x: 69, z: 32, r: 4.5 },
+    },
+
+    // Fireworks go up from the water off the beach and the south bay, and may be sent up by
+    // anyone standing on either shore.
+    fireworks: {
+      zones: ['beach', 'south-harbor'],
+      sites: [
+        [40, 160],
+        [66, 150],
+        [6, 162],
+      ],
+    },
+
+    programme: PROGRAMME,
+
     lanternVetoes: [
       [-18, -68],
       [-5, -68.9],

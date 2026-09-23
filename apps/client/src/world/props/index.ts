@@ -63,12 +63,14 @@ import {
   well,
 } from './structures.js';
 import { bench, bollard, boulderProp, grassTuft, postLantern, stoneLantern } from './furniture.js';
+import { omikujiStand, rodRack, stampStand } from './games.js';
 
 export * from './geometry.js';
 export * from './kit.js';
 export * from './buildings.js';
 export * from './structures.js';
 export * from './furniture.js';
+export * from './games.js';
 
 /**
  * Which prop builder handles each landmark kind.
@@ -116,6 +118,10 @@ const BUILDERS: Record<LandmarkKind, (opts?: Record<string, unknown>) => THREE.G
   steps,
   'summit-marker': summitMarker,
   rock: boulderProp,
+  // Games
+  'stamp-stand': stampStand,
+  'omikuji-stand': omikujiStand,
+  'rod-rack': rodRack,
 };
 
 /** Every landmark kind this library can build. Used by the world smoke test. */

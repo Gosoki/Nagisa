@@ -22,22 +22,29 @@
  */
 
 import * as THREE from 'three';
+import { get } from 'svelte/store';
 import {
   activeMapId,
   AnimState,
   PROTOCOL,
   Role,
+  getBadge,
   packTransform,
   unpackTransforms,
   type ActivityId,
   type AnnouncementView,
   type ClientMessage,
   type Emote,
+  type Hand,
   type PlayerId,
+  type QuizView,
   type ServerDelta,
+  type ServerError,
+  type ServerJanken,
   type ServerMessage,
   type ServerSnapshot,
   type Vec3,
+  type WorldEvent,
 } from '@nagisa/shared';
 import type { RemotePlayers } from '../character/remote-players.js';
 import type { LocalPlayer } from '../character/local-player.js';
@@ -47,19 +54,27 @@ import {
   activities,
   announcements,
   currentToast,
+  fishing,
   followTarget,
+  guestbook,
   isMuted,
+  janken,
   latency,
   notify,
+  omikujiSlip,
   players,
+  profile,
   pushChat,
   pushSystemChat,
+  quiz,
   room,
   rooms,
   self,
+  serverNow,
   zonePopulation,
 } from '../state/stores.js';
 import type { Speech } from '../character/speech.js';
+import { badgeName, fishName, fortuneText, tr } from '../i18n/index.js';
 
 /** Minimum movement before a transform is worth sending, metres. */
 const POSITION_DEADBAND = 0.02;
@@ -116,6 +131,27 @@ export class WorldSync {
   /** Toast dismissal timer. */
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /** Clears the fishing result card after it has been read. */
+  private fishingTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Clears a finished janken from the screen. */
+  private jankenTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Chat lines waiting to go out. The server allows a burst of four and then one a second;
+   * pacing here means a quick second line is delayed by a moment rather than refused while
+   * already showing in your own log as said.
+   */
+  private chatQueue: ClientMessage[] = [];
+  private chatTimer: ReturnType<typeof setTimeout> | null = null;
+  private chatTokens = 4;
+  private chatRefilledAt = performance.now();
+
+  /**
+   * Called for every world event, after the interface has had its say. The app points this
+   * at the effects layer (bells, fireworks, splashes).
+   */
+  onWorldEvent: ((event: WorldEvent) => void) | null = null;
+
   private readonly unsubscribers: Array<() => void> = [];
 
   constructor(
@@ -140,15 +176,19 @@ export class WorldSync {
         // and every position we send is rejected — which presents as constant teleporting,
         // with nothing in either log to connect it to the cause. Say it plainly instead.
         if (msg.mapId && msg.mapId !== activeMapId()) {
-          notify(`This room is on "${msg.mapId}" — reload with ?map=${msg.mapId}`, 'warn', 60_000);
+          notify(tr('net.mapMismatch', { map: msg.mapId }), 'warn', 60_000);
           console.error(`[nagisa] map mismatch: client "${activeMapId()}", server "${msg.mapId}"`);
         }
         self.update((s) => ({ ...s, id: msg.self }));
         room.set(msg.room);
         rooms.set(msg.rooms);
+        profile.set(msg.profile);
+        // Anything that was mid-flight on the old connection is gone with it: the server
+        // reels a line in and cancels a duel when the socket drops.
+        this.resetGames();
         // A resumed session means we were already here; a fresh one means we just
         // arrived. Only the first deserves a greeting.
-        if (msg.resumed) notify('Welcome back', 'good');
+        if (msg.resumed) notify(tr('net.welcomeBack'), 'good');
         break;
 
       case 'snapshot':
@@ -169,31 +209,69 @@ export class WorldSync {
       case 'checkin_ack':
         if (msg.ok) {
           self.update((s) => ({ ...s, checkedIn: true }));
-          notify(msg.ordinal ? `Checked in — #${msg.ordinal}` : 'Checked in', 'good');
+          notify(msg.ordinal ? tr('checkin.ok', { n: msg.ordinal }) : tr('checkin.okPlain'), 'good');
         } else {
-          notify(msg.reason ?? 'Could not check in', 'warn');
+          notify(msg.reason ? tr(`checkin.reason.${msg.reason}`) : tr('checkin.fail'), 'warn');
         }
         break;
 
       case 'role_changed':
         self.update((s) => ({ ...s, role: msg.role }));
-        if (msg.role >= Role.Host) notify('You are hosting', 'good');
+        if (msg.role >= Role.Host) notify(tr(msg.role >= Role.Admin ? 'role.admin' : 'role.hosting'), 'good');
         break;
 
       case 'room_changed':
         room.set(msg.room);
+        rooms.set(msg.rooms);
+        self.update((s) => ({ ...s, role: msg.role, activity: null, mode: null, checkedIn: false, seated: false }));
+        this.connection.adoptResumeToken(msg.resumeToken);
         // The snapshot for the new room follows; clear the old one so there is never a
         // frame showing the previous room's crowd in the new room's geometry.
         this.remote.clear();
         this.roster = [];
         this.lastTick = -1;
+        this.resetGames();
+        followTarget.set(null);
         // A new shard spawns us afresh, so the next snapshot's position is authoritative.
         this.adoptedSpawn = false;
+        notify(tr('island.moved', { name: msg.room.kind === 'private' ? tr('island.private', { code: msg.room.code ?? '' }) : msg.room.name }), 'good');
         break;
 
       case 'error':
-        this.onServerError(msg.code, msg.message, msg.fatal === true);
+        this.onServerError(msg);
         break;
+
+      case 'profile':
+        profile.set(msg.profile);
+        break;
+
+      case 'fish':
+        this.onFish(msg);
+        break;
+
+      case 'omikuji':
+        omikujiSlip.set({ fortune: msg.fortune, item: msg.item, direction: msg.direction, again: msg.again });
+        if (msg.again) notify(tr('omikuji.again'), 'neutral');
+        break;
+
+      case 'janken':
+        this.onJanken(msg);
+        break;
+
+      case 'whisper': {
+        const mine = msg.from === this.selfId();
+        if (!mine && isMuted(msg.from)) break;
+        pushChat({
+          playerId: msg.from,
+          name: msg.fromName,
+          text: msg.text,
+          self: mine,
+          whisper: mine
+            ? { peerId: msg.to, peerName: msg.toName, outgoing: true }
+            : { peerId: msg.from, peerName: msg.fromName, outgoing: false },
+        });
+        break;
+      }
 
       default:
         break;
@@ -216,12 +294,14 @@ export class WorldSync {
     activities.set(snap.activities);
     announcements.set([...snap.announcements].sort((a, b) => b.at - a.at));
     zonePopulation.set(snap.zonePopulation);
+    guestbook.set([...snap.guestbook].sort((a, b) => b.at - a.at));
+    quiz.set(snap.quiz);
 
     // Adopt our own server-side attachment state, which matters after a resume: you
-    // rejoin already attached to the activity you were in.
+    // rejoin already attached to the activity you were in, checked in if you had.
     const me = snap.players.find((p) => p.id === selfId);
     if (me) {
-      self.update((s) => ({ ...s, role: me.role, activity: me.activity, mode: me.mode }));
+      self.update((s) => ({ ...s, role: me.role, activity: me.activity, mode: me.mode, checkedIn: me.checkedIn === true }));
       this.reconcileSelfPosition(me.pos, me.yaw);
     }
   }
@@ -278,7 +358,7 @@ export class WorldSync {
     if (delta.join?.length) {
       for (const view of delta.join) {
         if (view.id === selfId) continue;
-        pushSystemChat(`${view.name} arrived`);
+        pushSystemChat(tr('chat.arrived', { name: view.name }));
         this.remote.add(view);
       }
       players.set(this.remote.views());
@@ -288,7 +368,7 @@ export class WorldSync {
       for (const id of delta.leave) {
         // Read the name before the removal, not after.
         const name = this.remote.views().find((p) => p.id === id)?.name;
-        if (name) pushSystemChat(`${name} left`);
+        if (name) pushSystemChat(tr('chat.left', { name }));
         // Following someone who has gone would walk you to wherever they last stood and
         // leave you standing there, so drop it here rather than letting it time out.
         followTarget.update((f) => (f?.id === id ? null : f));
@@ -315,8 +395,8 @@ export class WorldSync {
             role: patch.role ?? s.role,
             activity: patch.activity !== undefined ? patch.activity : s.activity,
             mode: patch.mode !== undefined ? patch.mode : s.mode,
-            // Detaching from an activity clears the check-in.
-            checkedIn: patch.activity === null ? false : s.checkedIn,
+            // The server owns the check-in; changing activity clears it there too.
+            checkedIn: patch.checkedIn !== undefined ? patch.checkedIn : patch.activity !== undefined ? false : s.checkedIn,
           }));
           continue;
         }
@@ -340,19 +420,21 @@ export class WorldSync {
 
     if (delta.announcements?.length) {
       announcements.update((list) => [...delta.announcements!, ...list].slice(0, 40));
-      // Present the highest-priority new announcement; a burst should not queue six
-      // toasts one after another.
-      const top = [...delta.announcements].sort((a, b) =>
-        a.priority === b.priority ? b.at - a.at : a.priority === 'high' ? -1 : 1,
-      )[0];
-      this.showToast(top);
+      // Present the highest-priority new announcement *addressed to you*; a burst should
+      // not queue six toasts one after another. Everything lands on the notice board
+      // regardless — scope decides who is interrupted, not who may read.
+      const top = delta.announcements
+        .filter((a) => this.addressedToMe(a))
+        .sort((a, b) => (a.priority === b.priority ? b.at - a.at : a.priority === 'high' ? -1 : 1))[0];
+      if (top) this.showToast(top);
     }
 
     if (delta.emotes?.length) {
       for (const e of delta.emotes) {
-        if (e.id === selfId) continue;
-        const anim = EMOTE_ANIMATIONS[e.emote] ?? AnimState.Wave;
-        this.remote.playEmote(e.id, anim);
+        // Our own emote was played the moment it was chosen; the glyph is raised from the
+        // echo so it appears when everyone else's does.
+        if (e.id !== selfId) this.remote.playEmote(e.id, EMOTE_ANIMATIONS[e.emote] ?? AnimState.Wave);
+        this.onEmote?.(e.id, e.emote);
       }
     }
 
@@ -368,13 +450,230 @@ export class WorldSync {
         // hour of backlog appear. They stay visible on the island — mute is a way to stop
         // reading someone, not a way to lose track of where they are. See `stores.mutedIds`.
         if (!mine && isMuted(c.id)) continue;
-        const name = mine ? this.selfName() : (this.remote.views().find((p) => p.id === c.id)?.name ?? 'Someone');
+        const name = mine ? this.selfName() : (this.remote.views().find((p) => p.id === c.id)?.name ?? '…');
         if (!mine) pushChat({ playerId: c.id, name, text: c.text, self: false });
         this.bubbles.say(c.id, c.text);
       }
     }
 
     if (delta.zonePopulation) zonePopulation.set(delta.zonePopulation);
+
+    if (delta.guestbook?.length) {
+      guestbook.update((list) => {
+        const known = new Set(list.map((g) => g.id));
+        const fresh = delta.guestbook!.filter((g) => !known.has(g.id));
+        return [...fresh, ...list].sort((a, b) => b.at - a.at);
+      });
+    }
+    if (delta.guestbookRemoved?.length) {
+      const gone = new Set(delta.guestbookRemoved);
+      guestbook.update((list) => list.filter((g) => !gone.has(g.id)));
+    }
+    if (delta.quiz !== undefined) this.onQuiz(delta.quiz);
+
+    if (delta.events?.length) {
+      for (const event of delta.events) this.onEvent(event);
+    }
+  }
+
+  /** Called for every emote, own included, so the effects layer can float the glyph. */
+  onEmote: ((id: PlayerId, emote: Emote) => void) | null = null;
+
+  /**
+   * Whether an announcement is for you: island-wide ones are for everybody; zone ones for
+   * whoever is standing there; activity ones for its attendees.
+   */
+  private addressedToMe(a: AnnouncementView): boolean {
+    let me = { zone: '' as string, activity: null as string | null };
+    self.subscribe((s) => (me = { zone: s.zone, activity: s.activity }))();
+    switch (a.scope.kind) {
+      case 'island':
+        return true;
+      case 'zone':
+        return a.scope.zone === me.zone;
+      case 'activity':
+        return a.scope.activity === me.activity;
+      default:
+        return false;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Games
+  // -------------------------------------------------------------------------
+
+  /** A name for a player id: yours, someone in the room, or a neutral fallback. */
+  private nameOf(id: PlayerId | null): string {
+    if (!id) return '';
+    if (id === this.selfId()) return this.selfName();
+    return this.remote.views().find((p) => p.id === id)?.name ?? '…';
+  }
+
+  /** Whether a player is close enough to you for their small news to be worth a line. */
+  private isNear(id: PlayerId, metres = 40): boolean {
+    if (id === this.selfId()) return true;
+    const p = this.remote.positionOf(id);
+    if (!p) return false;
+    return Math.hypot(p.x - this.local.position.x, p.z - this.local.position.z) <= metres;
+  }
+
+  private onEvent(event: WorldEvent): void {
+    switch (event.k) {
+      case 'catch': {
+        // A record is news for the whole island; an ordinary catch only for whoever is
+        // standing on the same pier.
+        if (event.record || this.isNear(event.by, 30)) {
+          const params = { name: this.nameOf(event.by), fish: fishName(event.fish), size: event.size };
+          pushSystemChat(tr(event.record ? 'event.catchRecord' : 'event.catch', params));
+        }
+        break;
+      }
+      case 'omikuji':
+        if (this.isNear(event.by, 30)) {
+          const slip = fortuneText(event.fortune, 0, 0);
+          pushSystemChat(tr('event.omikuji', { name: this.nameOf(event.by), fortune: slip.kanji }));
+          this.bubbles.say(event.by, slip.kanji);
+        }
+        break;
+      case 'stamp':
+        if (event.complete) pushSystemChat(tr('event.stampComplete', { name: this.nameOf(event.by) }));
+        break;
+      case 'dice':
+        pushSystemChat(tr('event.dice', { name: this.nameOf(event.by), value: event.value, sides: event.sides }));
+        this.bubbles.say(event.by, `🎲 ${event.value}`);
+        break;
+      case 'janken': {
+        if (event.winner) {
+          const loser = event.winner === event.a ? event.b : event.a;
+          pushSystemChat(tr('event.jankenWin', { winner: this.nameOf(event.winner), loser: this.nameOf(loser) }));
+        } else {
+          pushSystemChat(tr('event.jankenDraw', { a: this.nameOf(event.a), b: this.nameOf(event.b) }));
+        }
+        this.bubbles.say(event.a, HAND_GLYPH[event.ha]);
+        this.bubbles.say(event.b, HAND_GLYPH[event.hb]);
+        break;
+      }
+      case 'badge': {
+        const badge = getBadge(event.badge);
+        if (badge) pushSystemChat(tr('event.badge', { icon: badge.icon, name: this.nameOf(event.by), badge: badgeName(event.badge) }));
+        break;
+      }
+      default:
+        break;
+    }
+    try {
+      this.onWorldEvent?.(event);
+    } catch (err) {
+      console.error('[sync] world event handler threw', err);
+    }
+  }
+
+  private onFish(msg: Extract<ServerMessage, { t: 'fish' }>): void {
+    if (this.fishingTimer !== null) {
+      clearTimeout(this.fishingTimer);
+      this.fishingTimer = null;
+    }
+    fishing.set({
+      phase: msg.phase,
+      spot: msg.phase === 'waiting' || msg.phase === 'bite' ? (msg.spot ?? null) : null,
+      biteAt: msg.phase === 'bite' ? performance.now() : 0,
+      window: msg.window ?? 0,
+      caught:
+        msg.phase === 'caught' && msg.fish
+          ? {
+              fish: msg.fish,
+              size: msg.size ?? 0,
+              newSpecies: msg.newSpecies === true,
+              record: msg.record === true,
+              personalBest: msg.personalBest === true,
+            }
+          : null,
+      reason: msg.reason ?? null,
+    });
+    // The rod goes up while the line is out; it comes down when it is in.
+    this.local.setFishing(msg.phase === 'waiting' || msg.phase === 'bite');
+    if (msg.phase === 'caught') this.local.character.playEmote(AnimState.Cheer, 1.6);
+    if (msg.phase === 'escaped' && msg.reason) notify(tr(`fish.escaped.${msg.reason}`), 'neutral', 2200);
+    // A result stays up long enough to read, then the spot is quiet again.
+    if (msg.phase === 'caught' || msg.phase === 'escaped') {
+      this.fishingTimer = setTimeout(() => {
+        this.fishingTimer = null;
+        fishing.update((f) => (f.phase === msg.phase ? { ...f, phase: 'idle', caught: null, reason: null } : f));
+      }, msg.phase === 'caught' ? 5200 : 1800);
+    }
+  }
+
+  private onJanken(msg: ServerJanken): void {
+    if (this.jankenTimer !== null) {
+      clearTimeout(this.jankenTimer);
+      this.jankenTimer = null;
+    }
+    janken.update((cur) => {
+      const base = cur && cur.duel === msg.duel ? cur : null;
+      const next = {
+        duel: msg.duel,
+        opponent: msg.opponent,
+        opponentName: msg.opponentName,
+        deadline: msg.deadline ?? base?.deadline ?? serverNow(),
+        round: msg.round ?? base?.round ?? 1,
+        mine: base?.mine ?? null,
+        theirs: base?.theirs ?? null,
+        winner: base?.winner ?? null,
+        final: false,
+        reason: null as NonNullable<ServerJanken['reason']> | null,
+      };
+      switch (msg.kind) {
+        case 'invited':
+          return { ...next, phase: 'invited' as const };
+        case 'waiting':
+          return { ...next, phase: 'waiting' as const };
+        case 'start':
+          return { ...next, phase: 'choose' as const, mine: null, theirs: null, winner: null };
+        case 'result':
+          return {
+            ...next,
+            phase: 'result' as const,
+            mine: msg.mine ?? null,
+            theirs: msg.theirs ?? null,
+            winner: msg.winner ?? null,
+            final: msg.final === true,
+          };
+        case 'cancelled':
+          return { ...next, phase: 'cancelled' as const, reason: msg.reason ?? null };
+        default:
+          return cur;
+      }
+    });
+    // A finished duel lingers long enough to see the hands, then clears. A tie that goes to
+    // another round is replaced by the next `start` instead.
+    if ((msg.kind === 'result' && msg.final) || msg.kind === 'cancelled') {
+      this.jankenTimer = setTimeout(() => {
+        this.jankenTimer = null;
+        janken.update((cur) => (cur?.duel === msg.duel ? null : cur));
+      }, msg.kind === 'result' ? 4000 : 2500);
+    }
+  }
+
+  private onQuiz(next: QuizView | null): void {
+    const before = get(quiz);
+    quiz.set(next);
+    const me = this.selfId();
+    if (!next || !me || next.phase === 'lobby') return;
+    // Personal verdicts, said once, when the phase that decides them arrives.
+    if (next.phase === 'reveal' && before?.phase !== 'reveal' && next.fell?.includes(me)) notify(tr('quiz.eliminated'), 'neutral');
+    else if (next.phase === 'reveal' && before?.phase !== 'reveal' && next.alive.includes(me)) notify(tr('quiz.survived'), 'good');
+    if (next.phase === 'finished' && before?.phase !== 'finished' && next.winners?.includes(me)) notify(tr('quiz.won'), 'good', 6000);
+  }
+
+  /** Forget in-flight game state: a new connection or a new room starts clean. */
+  private resetGames(): void {
+    if (this.fishingTimer !== null) clearTimeout(this.fishingTimer);
+    if (this.jankenTimer !== null) clearTimeout(this.jankenTimer);
+    this.fishingTimer = null;
+    this.jankenTimer = null;
+    fishing.set({ phase: 'idle', spot: null, biteAt: 0, window: 0, caught: null, reason: null });
+    janken.set(null);
+    this.local.setFishing(false);
   }
 
   private showToast(announcement: AnnouncementView): void {
@@ -400,10 +699,27 @@ export class WorldSync {
     }, 3000);
   }
 
-  private onServerError(code: string, message: string, fatal: boolean): void {
+  private onServerError(msg: ServerError): void {
     // Rate limiting is our own fault and not worth telling the player about.
-    if (code === 'rate_limited') return;
-    notify(message, fatal ? 'warn' : 'neutral');
+    if (msg.code === 'rate_limited' && !msg.key) return;
+    const fatal = msg.fatal === true;
+    // Say it in the player's language when the server said why; otherwise map the code.
+    const byCode: Record<string, string> = {
+      kicked: 'error.kicked',
+      server_shutdown: 'error.shutdown',
+      version_mismatch: 'error.version',
+      room_full: 'error.full',
+      activity_full: 'error.full',
+      forbidden: 'error.forbidden',
+    };
+    // Sitting is optimistic; a seat that turned out to be taken stands us back up.
+    if (msg.key === 'seat_taken') {
+      this.local.setSeated(false);
+      self.update((s) => ({ ...s, seated: false }));
+    }
+    const key = msg.key ? `error.${msg.key}` : byCode[msg.code];
+    const text = key ? tr(key, msg.params) : msg.message;
+    notify(text === key ? msg.message : text, fatal ? 'warn' : 'neutral');
   }
 
   // -------------------------------------------------------------------------
@@ -477,6 +793,38 @@ export class WorldSync {
     this.connection.send({ t: 'room_switch', room });
   }
 
+  createRoom(): void {
+    this.connection.send({ t: 'room_create' });
+  }
+
+  fish(action: 'hook' | 'stop'): void;
+  fish(action: 'cast', spot: string): void;
+  fish(action: 'cast' | 'hook' | 'stop', spot?: string): void {
+    if (action === 'cast') this.connection.send({ t: 'fish', action, spot: spot ?? '' });
+    else this.connection.send({ t: 'fish', action });
+  }
+
+  jankenChallenge(target: PlayerId): void {
+    this.connection.send({ t: 'janken', action: 'challenge', target });
+  }
+
+  jankenRespond(duel: string, accept: boolean): void {
+    this.connection.send({ t: 'janken', action: 'respond', duel, accept });
+  }
+
+  jankenThrow(duel: string, hand: Hand): void {
+    janken.update((cur) => (cur?.duel === duel && cur.phase === 'choose' ? { ...cur, mine: hand } : cur));
+    this.connection.send({ t: 'janken', action: 'throw', duel, hand });
+  }
+
+  whisper(to: PlayerId, text: string): void {
+    const trimmed = text.trim().slice(0, PROTOCOL.MAX_CHAT_LENGTH);
+    if (!trimmed) return;
+    // Not echoed optimistically: the server's `whisper` reply is the receipt, and carries
+    // the name the other end actually has.
+    this.queueChat({ t: 'chat', text: trimmed, to });
+  }
+
   /** Generic passthrough for host and admin messages. */
   send(msg: ClientMessage): void {
     this.connection.send(msg);
@@ -510,7 +858,36 @@ export class WorldSync {
     const trimmed = text.trim().slice(0, PROTOCOL.MAX_CHAT_LENGTH);
     if (!trimmed) return;
     pushChat({ playerId: this.selfId() ?? '', name: this.selfName(), text: trimmed, self: true });
-    this.connection.send({ t: 'chat', text: trimmed });
+    this.queueChat({ t: 'chat', text: trimmed });
+  }
+
+  /**
+   * Send a chat frame within the server's budget (a burst of four, then one a second). The
+   * mirror of the server's bucket is approximate — the server's refill clock is its own —
+   * so the local one refills slightly slower to stay on the safe side.
+   */
+  private queueChat(msg: ClientMessage): void {
+    this.chatQueue.push(msg);
+    if (this.chatQueue.length > 20) this.chatQueue.shift();
+    this.drainChat();
+  }
+
+  private drainChat(): void {
+    if (this.chatTimer !== null) return;
+    const now = performance.now();
+    this.chatTokens = Math.min(4, this.chatTokens + ((now - this.chatRefilledAt) / 1000) * 0.9);
+    this.chatRefilledAt = now;
+    while (this.chatQueue.length > 0 && this.chatTokens >= 1) {
+      this.chatTokens -= 1;
+      this.connection.send(this.chatQueue.shift()!);
+    }
+    if (this.chatQueue.length > 0) {
+      const wait = ((1 - this.chatTokens) / 0.9) * 1000 + 20;
+      this.chatTimer = setTimeout(() => {
+        this.chatTimer = null;
+        this.drainChat();
+      }, wait);
+    }
   }
 
   /**
@@ -525,5 +902,11 @@ export class WorldSync {
     for (const off of this.unsubscribers) off();
     this.unsubscribers.length = 0;
     if (this.toastTimer !== null) clearTimeout(this.toastTimer);
+    if (this.fishingTimer !== null) clearTimeout(this.fishingTimer);
+    if (this.jankenTimer !== null) clearTimeout(this.jankenTimer);
+    if (this.chatTimer !== null) clearTimeout(this.chatTimer);
   }
 }
+
+/** A hand, as a glyph for the bubble over whoever threw it. */
+const HAND_GLYPH: Record<Hand, string> = { rock: '✊', paper: '✋', scissors: '✌️' };

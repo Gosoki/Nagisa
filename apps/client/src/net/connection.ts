@@ -104,6 +104,8 @@ export class Connection {
   constructor(
     private readonly url: string,
     private readonly buildHello: (resumeToken: string | null) => ClientMessage,
+    /** Admin token to present on the upgrade, if this tab has one. See `net/visitor.ts`. */
+    private readonly admin: string | null = null,
   ) {
     // Reconnect eagerly on the two signals that actually predict success.
     window.addEventListener('online', this.onNetworkHint);
@@ -224,6 +226,15 @@ export class Connection {
     window.removeEventListener('online', this.onNetworkHint);
     document.removeEventListener('visibilitychange', this.onNetworkHint);
     for (const set of Object.values(this.listeners)) set.clear();
+  }
+
+  /**
+   * Replace the stored resume token with one the server issued mid-session — a room switch
+   * rebinds the session to the new room, and resuming into the old one would fail.
+   */
+  adoptResumeToken(token: string): void {
+    if (this.welcomed) this.welcomed = { ...this.welcomed, resumeToken: token };
+    this.writeResumeToken(token);
   }
 
   /** Forget the stored session. Used by "leave the island" and by the name change flow. */
@@ -371,10 +382,17 @@ export class Connection {
 
   /** Resolve a relative endpoint against the page origin, choosing ws/wss correctly. */
   private resolveUrl(): string {
-    if (/^wss?:\/\//.test(this.url)) return this.url;
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const path = this.url.startsWith('/') ? this.url : `/${this.url}`;
-    return `${proto}//${location.host}${path}`;
+    let url: string;
+    if (/^wss?:\/\//.test(this.url)) url = this.url;
+    else {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const path = this.url.startsWith('/') ? this.url : `/${this.url}`;
+      url = `${proto}//${location.host}${path}`;
+    }
+    // The server grants admin from the upgrade URL, never from a message: it is decided
+    // before the first frame, by the only party that knows the token.
+    if (this.admin) url += `${url.includes('?') ? '&' : '?'}admin=${encodeURIComponent(this.admin)}`;
+    return url;
   }
 
   private readResumeToken(): string | null {

@@ -620,19 +620,49 @@ async function main() {
 
   // -- Quiz ---------------------------------------------------------------
   console.log('\nQuiz');
+  // The island's own programme runs quizzes too, on the real clock: if one is on right now,
+  // asking for another is refused (one arena), and that is what is checked instead.
+  const quizOn = () => {
+    const views = new Map();
+    for (const f of jan.frames) {
+      for (const a of f.t === 'snapshot' ? f.activities : f.t === 'delta' ? (f.activities ?? []) : []) views.set(a.id, a);
+    }
+    return [...views.values()].some((a) => a.feature === 'quiz' && a.state === 'live');
+  };
+  const running = quizOn();
+  const adminErrors = adminFrames.length;
   adminSocket.send(JSON.stringify({ t: 'host_schedule', template: 'island-quiz', inMin: 0 }));
-  const lobby = await jan.wait('delta', (f) => f.quiz?.phase === 'lobby', 4000);
-  check('a quiz put on now opens its lobby', !!lobby, lobby?.quiz);
-  check('the lobby counts down on the server clock', !!lobby && lobby.quiz.endsAt > Date.now() - 2000);
+  if (running) {
+    await sleep(800);
+    const refused = adminFrames.slice(adminErrors).find((f) => f.t === 'error');
+    check('a second quiz while one is on is refused as already running', refused?.key === 'already_running', refused);
+  } else {
+    const lobby = await jan.wait('delta', (f) => f.quiz?.phase === 'lobby', 4000);
+    check('a quiz put on now opens its lobby', !!lobby, lobby?.quiz);
+    check('the lobby counts down on the server clock', !!lobby && lobby.quiz.endsAt > Date.now() - 2000);
+  }
 
   // -- Treasure hunt ------------------------------------------------------
   console.log('\nTreasure hunt');
-  jan.send({ t: 'dig' });
-  check('there is nothing to dig for before a hunt', !!(await jan.wait('error', (f) => f.key === 'no_hunt', 3000)));
-  adminSocket.send(JSON.stringify({ t: 'host_schedule', template: 'treasure-hunt', inMin: 0 }));
-  const huntLive = await jan.wait('delta', (f) => f.activities?.some((a) => a.feature === 'treasure' && a.state === 'live'), 4000);
-  const hunt = huntLive?.activities.find((a) => a.feature === 'treasure');
-  check('a hunt put on now goes live with things buried', hunt?.left === shared.TREASURE_COUNT, hunt);
+  // As with the quiz, the programme may already have a hunt on (the small hours of the island
+  // day); then that one is dug in, and asking for another is refused.
+  const liveHunt = () => {
+    const views = new Map();
+    for (const f of jan.frames) {
+      for (const a of f.t === 'snapshot' ? f.activities : f.t === 'delta' ? (f.activities ?? []) : []) views.set(a.id, a);
+    }
+    return [...views.values()].find((a) => a.feature === 'treasure' && a.state === 'live');
+  };
+  if (liveHunt()) {
+    check('a hunt is already on from the programme', true);
+  } else {
+    jan.send({ t: 'dig' });
+    check('there is nothing to dig for before a hunt', !!(await jan.wait('error', (f) => f.key === 'no_hunt', 3000)));
+    adminSocket.send(JSON.stringify({ t: 'host_schedule', template: 'treasure-hunt', inMin: 0 }));
+    const huntLive = await jan.wait('delta', (f) => f.activities?.some((a) => a.feature === 'treasure' && a.state === 'live'), 4000);
+    const hunt = huntLive?.activities.find((a) => a.feature === 'treasure');
+    check('a hunt put on now goes live with things buried', hunt?.left === shared.TREASURE_COUNT, hunt);
+  }
   ken.send({ t: 'dig' });
   const told = await ken.wait('dig', () => true, 3000);
   check('a dig is answered with how close', !!told && ['found', 'hot', 'warm', 'cool', 'cold'].includes(told.result), told);

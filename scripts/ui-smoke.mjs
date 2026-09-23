@@ -190,7 +190,7 @@ check('next-up strip shows the activity', text().includes('Lantern Walk'));
 
 console.log('\\nFirst steps');
 check('a first visit is greeted with how to play', text().includes('Welcome to Nagisa') && text().includes('press E'), text().slice(0, 300));
-byText(/^Go ashore$/)?.click();
+byText(/^Start exploring$/)?.click();
 await sleep(60);
 check('and it goes when dismissed', !text().includes('Welcome to Nagisa'));
 check('remembered, so it is not shown again', dom.window.localStorage.getItem('nagisa.welcomed') === '1');

@@ -13,7 +13,7 @@
    * hands.
    */
   import { onMount } from 'svelte';
-  import { welcomeOpen } from '../state/stores.js';
+  import { connectionState, welcomeOpen } from '../state/stores.js';
   import { t } from '../i18n/index.js';
 
   const SEEN_KEY = 'nagisa.welcomed';
@@ -40,13 +40,14 @@
   }
 
   function onKey(e: KeyboardEvent): void {
-    if ($welcomeOpen && e.key === 'Escape') close();
+    if ($welcomeOpen && $connectionState !== 'closed' && e.key === 'Escape') close();
   }
 </script>
 
 <svelte:window onkeydown={onKey} />
 
-{#if $welcomeOpen}
+<!-- Stood aside while the connection is closed: the card that says so is the one thing to do. -->
+{#if $welcomeOpen && $connectionState !== 'closed'}
   <div class="welcome" role="dialog" aria-modal="false" aria-labelledby="welcome-title">
     <h2 class="title" id="welcome-title">{$t('welcome.title')}</h2>
     <ul class="lines">

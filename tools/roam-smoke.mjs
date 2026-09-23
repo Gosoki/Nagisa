@@ -85,7 +85,11 @@ try {
   // events whose target is a text field — correctly, so typing a name does not walk you
   // into the sea — and Playwright's synthetic events go to whatever holds focus.
   await page.evaluate(() => document.activeElement?.blur?.());
-  await page.locator('canvas[data-engine]').click({ position: { x: 210, y: 200 } });
+  // A first visit is greeted with a card of controls; put it away, as a visitor would.
+  await page.getByRole('button', { name: /Start exploring/ }).click({ timeout: 10_000 }).catch(() => {});
+  // Clicked above the middle: the bottom of a viewport this small is all buttons (on a
+  // firework shore, the firework one sits right in the middle of it).
+  await page.locator('canvas[data-engine]').click({ position: { x: 210, y: 120 } });
   await page.waitForTimeout(500);
 
   // --- Holding the left mouse button runs -------------------------------------------

@@ -560,7 +560,7 @@ export const CORE: Dictionaries = {
     'welcome.people': 'Click someone, or the people list top right: follow, janken, whisper, add a friend',
     'welcome.day': 'An island day is 90 real minutes, and things start on their own — the next one is shown at the top',
     'welcome.today': 'More → Collection has today’s three small tasks, the same for everyone',
-    'welcome.go': 'Go ashore',
+    'welcome.go': 'Start exploring',
     'settings.welcome': 'How to play',
     'weather.clear': 'Clear',
     'weather.cloudy': 'Cloudy',

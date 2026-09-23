@@ -414,6 +414,8 @@
     left: 50%;
     transform: translate(-50%, -50%);
     z-index: var(--z-hud);
+    /* The overlay passes pointers through to the world; this card is meant to be pressed. */
+    pointer-events: auto;
     display: flex;
     flex-direction: column;
     align-items: center;

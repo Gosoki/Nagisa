@@ -405,7 +405,7 @@ only the English fallback.
 
 ### The games' map data
 
-Three more parts of `MapWorld` exist for the games. A map without them simply does not run
+Four more parts of `MapWorld` exist for the games. A map without them simply does not run
 that game.
 
 - **`quizArena`** — `{ zone, o: {x, z, r}, x: {x, z, r} }`: the two circles of the ○× quiz,
@@ -413,6 +413,10 @@ that game.
   of the plaza, clear of every building and prompt. `zone` is where the quiz gathers its
   field — everyone standing in it when the lobby closes, along with anyone who joined the
   quiz as a participant, wherever they stand — so it should be the quiz template's venue. The circles must not overlap (`quizSide` gives ○ a tie).
+- **`darumaCourse`** — `{ zone, start: {x, z}, goal: {x, z}, halfWidth }`: the lane of
+  だるまさんがころんだ on open, level, walkable ground in a venue; both lines run `halfWidth`
+  either side of the lane's middle, and the oni stands 2.5 m beyond the goal. The shipped
+  course is 22 m of beach sand, 9 m wide.
 - **`fireworks`** — `{ zones, sites }`: the shores a player may launch from (the shipped
   island: the beach and the south harbour), and the launch points out on the water as
   `[x, z]`. The server launches from the site nearest the player, jittered by up to 7 m.
@@ -423,7 +427,7 @@ that game.
 Activity templates carry their words the way zones do: `title` and `blurb` in English, with
 `titleZh`, `titleJa`, `blurbZh` and `blurbJa` beside them, each falling back to the English.
 A template's `feature` (`quiz`, `derby`, `fireworks`, `concert`, `lanterns`, `lamp`,
-`treasure`) says
+`treasure`, `daruma`) says
 what the island does while it is live.
 
 ### Adding a game spot
@@ -451,7 +455,7 @@ building, plus a prompt.
      ground level to within 0.45 m, every spawn is walkable.
    - `npm run audit:terrain` — every route walkable end to end, every place reachable.
 
-   None of them looks at `quizArena` or the fireworks sites. Check the circles by standing in
+   None of them looks at `quizArena`, `darumaCourse` or the fireworks sites. Check the circles by standing in
    them in the running client (`npm run dev`); the server's `games.test.ts` stands players at
    their centres and would fail on an arena the quiz cannot judge.
 

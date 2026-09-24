@@ -201,7 +201,7 @@ There are no `debug`-level events at present, so `LOG_LEVEL=debug` logs the same
 | Section | Holds | Cap |
 |---|---|---|
 | `rooms` | Per room: activities with their check-in records and programme slot keys, announcements still within their TTL, the guestbook. Awake rooms are saved fresh; sleeping rooms as they were when they fell asleep. | Guestbook: 60 lines per room. Sleeping rooms: the 500 most recently saved. Awake rooms: always kept. |
-| `islands` | The private-island registry: code, the keeper's visitor-key hash and name, created and last-active times. | 2 000, most recently active first. |
+| `islands` | The private-island registry: code, the keeper's visitor-key hash and name, the island's name, current kick bans (hash and until when), created and last-active times. | 2 000, most recently active first. |
 | `profiles` | Visitor progress, keyed by the SHA-256 of the visitor key: stamps, fish book, catches, badges, the badge worn, today's omikuji, janken and quiz wins, treasures dug up, today's tasks (`daily`) with the streak, the last day done and the days in all (`dailyStreak`, `dailyLast`, `dailyDays`), friends (their visitor-key hashes and the names they went by), last seen. | 20 000, least recently seen evicted first. |
 | `audit` | The admin action log. | The newest 2 000. |
 
@@ -274,9 +274,9 @@ Three layers.
 
 **Per message type, per connection** — a token bucket each, refilled at `rate` per second
 and holding `burst`. Exceeding one returns `rate_limited`. Most carry no key and the client
-does not show them; a room switch, an island creation or a chat line over the limit carries
-`too_fast`, which it does — those are things a person does on purpose and would otherwise see
-nothing happen after.
+does not show them; a room switch, an island creation, an island rename or a chat line over
+the limit carries `too_fast`, which it does — those are things a person does on purpose and
+would otherwise see nothing happen after.
 
 | Type | Rate / s | Burst |
 |---|---|---|
@@ -296,8 +296,8 @@ rings of the same bell, whoever rings it; one dig per visitor key per 1.5 s, and
 
 Inbound frames larger than 16 KiB are refused by the socket layer before they are parsed.
 
-Everything a player types that others will see — names, chat, whispers, announcements,
-guestbook lines — is cleaned in `apps/server/src/text.ts` before length is checked: control
+Everything a player types that others will see — names, island names, chat, whispers,
+announcements, guestbook lines — is cleaned in `apps/server/src/text.ts` before length is checked: control
 characters, bidirectional overrides and isolates, zero-width spaces, LRM/RLM, the BOM and
 line separators are removed, and runs of whitespace become one space. The zero-width joiner
 and non-joiner are kept in text (emoji and several scripts need them) and removed from
@@ -442,9 +442,10 @@ engines. Every function in those files must be pure and integer-hashed.
 
 **"Someone is misbehaving."**
 Connect with the admin token (or, on a private island, as its keeper), tap their name,
-and kick or mute. The action is written to the audit log with your stated reason. A kick
-is not a ban: they can return as a new visitor, and on a private island anyone with the
-link can. Mute lasts for the rest of their session: a token admin's follows them to every
+and kick or mute. The action is written to the audit log with your stated reason. On a
+public shard a kick is not a ban: they can return as a new visitor. On a private island a
+kicked visitor with a key is kept off it for 30 minutes (their other tabs there go too); one
+without a key can come straight back. Mute lasts for the rest of their session: a token admin's follows them to every
 island, a keeper's holds on the keeper's island only (lifted elsewhere, back when they
 return).
 

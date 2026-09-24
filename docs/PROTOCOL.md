@@ -28,6 +28,8 @@ how those things travel.
 | `MAX_CHAT_LENGTH` | `140` | Island chat and whispers alike. |
 | `MAX_ANNOUNCEMENT_LENGTH` | `240` | |
 | `MAX_GUESTBOOK_LENGTH` | `80` | A signature, not a letter. |
+| `MAX_ISLAND_TITLE_LENGTH` | `24` | A private island's name, after cleaning. |
+| `ISLAND_BAN_MIN` | `30` | How long a kick keeps a keyed visitor off a private island, minutes. |
 | `VISITOR_KEY_MIN` / `_MAX` | `16` / `64` | `VISITOR_KEY_PATTERN` is `[A-Za-z0-9_-]{16,64}`. |
 | `RATE_LIMIT` | per type, below | A token bucket per message type per connection. |
 
@@ -82,7 +84,7 @@ client                                server
   │                 profile}            │
   │◀────── snapshot {…}                 │
   │                                     │
-  ├─ ping {t0} ───────────────────────▶│  every 5 s
+  ├─ ping {t0, rtt?} ─────────────────▶│  every 5 s
   │◀────── pong {t0, serverTime}        │
   │                                     │
   ├─ move {pos, yaw, anim, seq} ──────▶│  10 Hz, dead-banded
@@ -130,7 +132,9 @@ v2 and would silently miss half the island.
 
 ## 3. Heartbeat and the clock
 
-`ping` carries the client's local `t0`; `pong` echoes it with the server's time.
+`ping` carries the client's local `t0` and, once it has one, `rtt` (the round trip it last
+measured, ms; a game may allow for it — the daruma's grace — and the server caps what it
+allows); `pong` echoes `t0` with the server's time.
 
 Round-trip time is `now - t0`. The clock offset is estimated NTP-style —
 `serverTime + rtt/2 - now` — but **only from the lowest-RTT sample seen so far**, because
@@ -306,7 +310,7 @@ not cheating, and a warning would make an invisible problem visible.
 
 A room is either a **public shard** (`RoomView.kind: 'public'`, id `shore-N`) — what
 matchmaking fills — or a **private island** (`kind: 'private'`, id `isle-CODE`, carrying
-`code` and `ownerName`), reached only by its code. Same geography, same programme,
+`code`, `ownerName` and, once named, `title`), reached only by its code. Same geography, same programme,
 different people. See [GAMES.md §2](GAMES.md#2-rooms-public-shards-and-private-islands).
 
 ```
@@ -344,7 +348,8 @@ A keeper — or an admin — can name the private island they are on with
 `room_title { title }` (cleaned like a player name, at most 24 characters; empty takes the
 name away). Everyone on it is sent `room_info { room }` with `RoomView.title` set, friends'
 lists show it in place of the code, and it is kept in the island registry across sleep and
-restarts. Anyone else, or anywhere public, gets `error { key: "forbidden" }`.
+restarts. Anyone else, or anywhere public, gets `error { key: "forbidden" }`; a muted keeper
+gets `muted`, and a rename over its rate limit gets `too_fast`.
 
 Matchmaking (`rooms.ts`) deliberately **fills the fullest public shard that still has
 comfortable headroom** rather than balancing evenly, and never places anyone on a private
@@ -395,14 +400,19 @@ and returns a 1-based `ordinal` in arrival order. `checkin_ack.reason` on failur
 
 The register itself — who checked in, in what order, when — is asked for with
 `checkin_list { activity }` and answered with `checkin_list { activity, list: [{ ordinal,
-name, at }] }`. Only the activity's host or an admin may ask (anyone else gets
-`error { key: "forbidden" }`); the name is the one the player had when they checked in, so
+name, at }] }`. Only the activity's host or an admin may ask (an unknown activity gets
+`not_found`; anyone else gets `error { key: "forbidden" }`); the name is the one the player had when they checked in, so
 the register still reads right after they leave or rename. Records saved before names were
 kept show `…`.
 
 ---
 
 ## 8. Announcements
+
+A host or admin sends `host_announce { text, scope, priority?, ttlMs? }`. Moderation —
+`admin_action { action, target, activity?, reason? }` — and the
+`role_changed { role, activity? }` a player is sent when their role changes are in
+[ACTIVITIES.md](ACTIVITIES.md) §9.
 
 ```jsonc
 {
@@ -577,8 +587,8 @@ lets you attempt — carry no key.
 
 `too_far` · `cooldown {seconds}` · `seat_taken` · `muted` · `not_here` · `full` ·
 `not_found` · `forbidden` · `busy` (a janken opponent mid-duel) · `islands_busy` · `schedule_full` · `already_running` · `no_hunt` · `already_stamped` · `not_open` · `room_not_found` ·
-`invalid` · `too_long {max}` · `empty` · `too_fast` (a room switch, island or chat line over
-its rate limit) · `friend_needs_key` · `friend_unavailable {name}` · `already_friends {name}` ·
+`island_banned` · `kicked_banned {n}` · `invalid` · `too_long {max}` · `empty` · `too_fast`
+(a room switch, island creation, island name or chat line over its rate limit) · `friend_needs_key` · `friend_unavailable {name}` · `already_friends {name}` ·
 `friends_full {max}`
 
 ### Rate limits

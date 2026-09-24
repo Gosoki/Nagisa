@@ -50,8 +50,9 @@ receives is the public shards plus the room it is in).
   keeper is never kept off their own island, nor the server's admins off any. A visitor
   without a key cannot be told apart from a newcomer, so for them it is only a kick.
 - **Name**: the keeper (or an admin) can give the island a name from the island panel —
-  `room_title`, at most 24 characters, empty to take it away. It shows above the code, in
-  the "moved to" notice, on photos and in friends' lists, and is kept in the registry.
+  `room_title`, at most 24 characters, empty to take it away. A muted keeper is refused
+  (`muted`); renaming is rate-limited to a burst of 3, then one per 5 s. It shows above the
+  code, in the "moved to" notice, on photos and in friends' lists, and is kept in the registry.
 - **Join**: `hello.room` or `room_switch.room` may be a room id *or* a code. A registered code
   the server is not currently holding **re-opens** the island, with its keeper: an invite link
   keeps working after everyone has left and — with `PERSIST_PATH` set — after a restart. A code
@@ -99,7 +100,8 @@ are capped (least recently seen evicted first) so the store cannot grow without 
 **Badges** (`games/badges.ts`): *walker* (every stamp), *angler* (10 catches),
 *master-angler* (every species but the boot), *quiz-champ* (win a quiz), *derby-champ* (win
 the derby), *lucky* (draw 大吉), *janken* (10 wins), *treasure* (3 finds, over every hunt),
-*regular* (today's tasks done on 7 days), *daruma* (first home in a race of two or more).
+*regular* (today's tasks done on 7 days), *daruma* (first home while another racer is still in
+the race).
 Earning one broadcasts a `badge` event.
 `set_title` wears one you have (or `null`); it appears as `PlayerView.title`.
 
@@ -160,8 +162,8 @@ The course (`MapWorld.darumaCourse`) is a straight lane across the level sand of
 so both sides agree on it. When the activity goes live the server runs a `DarumaRunner`,
 published as `DarumaView` in `snapshot.daruma` / `delta.daruma` (three-valued, like the quiz):
 
-1. **lobby** (30 s) — whoever has joined the activity **as a participant** when it closes
-   races; nobody else — the beach is also where people fish and watch the sunset. Each racer
+1. **lobby** (30 s) — whoever has joined the activity **as a participant**, and is connected,
+   when it closes races; nobody else — the beach is also where people fish and watch the sunset. Each racer
    is moved to a start place of their own just behind the start line (`darumaStartSpot`:
    the middle first, then out to either side, three rows deep), by a `teleport` correction.
    If nobody has joined, the lobby opens again, for as long as a whole race still fits
@@ -172,16 +174,21 @@ published as `DarumaView` in `snapshot.daruma` / `delta.daruma` (three-valued, l
    clock, so everyone's screen turns at the same moment whatever their connection.
 3. **look** (2–3 s) — it has turned round. Its `startedAt` is the chant's scheduled end, not
    the tick that noticed it, so the grace is the same for everybody: after
-   `LOOK_GRACE_MS` (400 ms) the server takes each racer's **last validated position**, and
-   anyone who then strays more than `STILL_TOLERANCE_M` (0.6 m) from it is **caught** — sent
-   back to their start place, where they carry on (`caught` lists them for that phase). Only
+   `LOOK_GRACE_MS` (400 ms), lengthened for a slow line by half the round trip the client
+   last reported (`ping.rtt`, up to `LOOK_LATENCY_MAX_MS` = 300 ms), the server takes each
+   racer's **last validated position**, and anyone who then strays more than
+   `STILL_TOLERANCE_M` (0.6 m) from it is **caught** — sent back to their start place, where
+   they carry on (`caught` lists them for that phase). Only
    *where* someone stands counts: turning on the spot, dancing or hopping in place is not
    moving, and a keep-alive that repeats a position changes nothing.
 4. Walk and look alternate until three are home (`DARUMA_PLACES`), nobody is left racing, or
    the race's time is up (`raceEndsAt`: 3 min, and never so late that the finished card would
-   be cut off by the activity's end). Crossing the goal line within the lane's width is a
-   place: `places` in the view (with the names they crossed under), and on the activity's
-   `board` with the seconds each took. The first home in a race of two or more gets *daruma*.
+   be cut off by the activity's end). Crossing the goal line within the lane's width (plus
+   1 m) is a place: `places` in the view (with the names they crossed under), and on the
+   activity's `board` with the seconds each took; when more cross in one tick than places are
+   left, the furthest over is placed first and the rest are still racing. The first home gets
+   *daruma* if someone else is still racing when they cross — a rival who has dropped out does
+   not count.
 5. **finished** (8 s) names the places, the beach hears the podium, then the view is cleared
    and the activity ends.
 
@@ -198,14 +205,17 @@ correction reaches it, and one of those stale reports could pass the speed check
 move. So `Player.relocate` fences the spot: every report more than a metre from it is answered
 with the correction again, until one comes from there. Any other teleport (a room switch)
 takes the fence down. The client treats a `teleport` as the island moving it — a walk under
-way, a follow and a seat all end — and faces the way it was put facing.
+way, a follow and a seat all end — and faces the way it was put facing, and the camera turns
+to look the same way, level rather than down (`WorldSync.onPlaced`).
 
 **Who is judged, and who drops out.** Only racers. The audience, passers-by and anyone who
 joined after the lobby closed can walk all over the lane. A racer drops out — no longer judged,
 no longer held to the step — by leaving the room (for good, or for another island), by
 leaving the activity or switching to watching, or by wandering well off the lane (3 m past its
 side, or 6 m behind the start). A racer whose connection drops is simply still: they cannot be
-seen moving while away, and carry on when they resume; if their grace runs out they have left.
+seen moving while away, and carry on when they resume from where the server held them — their
+client is put back there with a `teleport` correction, so steps it took while cut off count
+for nothing; if their grace runs out they have left.
 Nobody left racing ends the race. A racer sitting or fishing when the lobby closes is stood up
 and reeled in by the move to the start line, as walking away would; dancing is only a pose, and
 dancing in place through a look is not moving.
@@ -381,9 +391,10 @@ language (`i18n/core.ts`, `error.<key>`):
 `too_far` · `cooldown {seconds}` · `seat_taken` · `muted` · `not_here` · `full` · `not_found` ·
 `forbidden` · `busy` · `already_stamped` · `not_open` · `room_not_found` · `invalid` ·
 `too_long {max}` · `empty` · `no_hunt` · `islands_busy` (too many islands awake to make or
-wake another) · `schedule_full` (too many extra activities on the board) · `already_running`
-(a quiz, hunt or race is already live) · `too_fast` (a room switch, island or chat line over the rate
-limit) · `friend_needs_key` · `friend_unavailable {name}` · `already_friends {name}` ·
+wake another) · `island_banned` · `kicked_banned {n}` · `schedule_full` (too many extra
+activities on the board) · `already_running` (a quiz, hunt or race is already live) ·
+`too_fast` (a room switch, island creation, island name or chat line over the rate limit) ·
+`friend_needs_key` · `friend_unavailable {name}` · `already_friends {name}` ·
 `friends_full {max}` — `busy` is kept for a janken opponent who is in another duel
 
 ---

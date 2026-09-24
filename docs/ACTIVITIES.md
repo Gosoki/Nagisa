@@ -253,8 +253,9 @@ Attendance recording, for activities that want it.
 - Records are persisted with the activity, so a restart does not lose them. Each keeps the
   name the player checked in under, so the register reads right after they have gone.
 - **The register**: the host console lists, for each activity that takes check-ins and that
-  this player may read (their own; for an admin, any that has taken check-ins), the count and
-  a *View* button. Opened, it shows who checked in, in order, with the time, refetches itself
+  this player may read (their own; for an admin, any that is live, has ended, or has taken
+  check-ins), the count and a *View* button. Opened, it shows who checked in, in order, with
+  the time, refetches itself
   once new check-ins stop arriving, and saves as a CSV (UTF-8 with a BOM, formula-like names
   defused) for whoever keeps the attendance sheet — the morning assembly's roll call, a club
   night's sign-in.
@@ -323,8 +324,8 @@ with `roleAtLeast`, never with `===`.
 |---|---|---|
 | `Guest` | 0 | Move, emote, chat, watch, join activities, use interactables, play every game. |
 | `Participant` | 1 | In the enum and in the permission checks, but never assigned today: attending is carried by `PlayerView.mode`, and grants nothing a guest lacks. |
-| `Host` | 2 | For **one specific activity**: drive its lifecycle, announce to it or its zone. |
-| `Admin` | 3 | Everything, in the room where they hold it: any activity, island-wide announcements, `host_schedule`, kick, mute, grant/revoke host, take down any guestbook line. |
+| `Host` | 2 | For **one specific activity**: drive its lifecycle, announce to it or its zone, read its check-in register. |
+| `Admin` | 3 | Everything, in the room where they hold it: any activity, island-wide announcements, `host_schedule`, kick, mute, grant/revoke host, take down any guestbook line, read any check-in register, name a private island. |
 
 ### Where a role comes from
 
@@ -355,8 +356,11 @@ something guessable. Keepers are unaffected.
   is an admin can be acted on only by a token admin, and only when the target is not a token
   admin too. So a keeper cannot touch the server's admins, and a token admin can still act on
   a keeper visiting — or on their own island.
-- **Kick** sends a fatal `kicked` error and removes the player. It is not a ban: they can
-  come back as a new visitor (the client discards its resume token).
+- **Kick** sends a fatal `kicked` error and removes the player (the client discards its
+  resume token). On a public shard it is not a ban. On a private island a visitor with a key
+  is kept off it for `PROTOCOL.ISLAND_BAN_MIN` (30) minutes and their other tabs there go too
+  (`kicked_banned`); the keeper and the server's admins are never kept off, and a visitor
+  without a key can come straight back.
 - **Mute** silently drops the player's island chat, emotes and dice, and refuses their
   whispers, fireworks, guestbook lines and friend requests with `muted` — a whisper has no
   optimistic echo, so a silent drop would read as a lost message. Mute lives on the player
@@ -374,7 +378,8 @@ it is testable without a socket and impossible to bypass by taking a different c
 
 ### Audit
 
-Every admin action — kick, mute, unmute, grant host, revoke host, and `host_schedule` — is
+Every admin action — kick, mute, unmute, grant host, revoke host, `host_schedule` and
+`room_title` — is
 appended to the audit log with who, what, whom, which room, when and the stated reason. It
 is written to the structured log at once (`audit_action`) and persisted with the rest of the
 state (the most recent 2000 entries).

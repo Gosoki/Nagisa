@@ -225,10 +225,10 @@ Each awake `Room` runs a fixed 10 Hz tick:
 
 1. **Advance** everything that moves by itself: once a second, put the programme's next
    slots on the board (`schedule.ts`); sweep every activity's lifecycle; tick the games —
-   bites, duels, the quiz's phases, the fireworks show; expire announcements.
+   bites, duels, the quiz's and the race's phases, the fireworks show; expire announcements.
 2. **Gather** whatever changed into one `ServerDelta`: joins and leaves, player field
    changes, activities, announcements, emotes, chat, world events, guestbook lines, the
-   quiz view, zone populations, and the packed transforms of whoever moved.
+   quiz and race views, zone populations, and the packed transforms of whoever moved.
 3. **Record** it in a ring buffer for replay-on-reconnect.
 4. **Broadcast** it — encoded to JSON **once**, and the same string handed to every
    session. At 10 Hz, stringifying the same object for each of a hundred sessions was most
@@ -296,13 +296,14 @@ to buffer without bound.
 
 ### 3.6 The games layer
 
-The games live in `apps/server/src/games/` — `quiz.ts`, `fishing.ts` (with the derby),
-`janken.ts`, `fireworks.ts`, `treasure.ts` (the treasure hunt), `interactions.ts` (bells,
-omikuji, stamps, dice), `guestbook.ts`, `profiles.ts` and `daily.ts` (today's tasks). Each is written against **`GameRoom`**
-(`games/context.ts`), not against `Room`: a dozen methods — find a player, send one of them
-a message, refuse in their language, emit a world event, patch a player's view, push or
-celebrate a profile, set the quiz view, announce as the island, ask for a save, and an
-injectable `random()`.
+The games live in `apps/server/src/games/` — `quiz.ts`, `daruma.ts` (だるまさんがころんだ),
+`fishing.ts` (with the derby), `janken.ts`, `fireworks.ts`, `treasure.ts` (the treasure
+hunt), `interactions.ts` (bells, omikuji, stamps, dice), `guestbook.ts`, `profiles.ts` and
+`daily.ts` (today's tasks). Each is written against **`GameRoom`** (`games/context.ts`), not
+against `Room`: a dozen methods — find a player, send one of them a message, refuse in their
+language, emit a world event, patch a player's view, push or celebrate a profile, set the
+quiz or race view, move a player by the game's decision (`relocate`), announce as the
+island, ask for a save, and an injectable `random()`.
 
 That narrow interface is the point. It keeps each game testable on its own
 (`games.test.ts` drives every one through a room with a pinned random source), keeps the
@@ -326,8 +327,9 @@ contestant stood in; which slip the shrine gave; both janken hands, held until b
   shard is near full. Matchmaking fills them.
 - **Private islands** (`isle-<CODE>`), created by `room_create`. The code is five
   characters from the system CSPRNG; the island's keeper is recorded by the hash of their
-  visitor key. A **registry** (code → keeper hash, keeper name, created, last active) is
-  persisted, so a code keeps meaning that island for as long as the registry remembers it.
+  visitor key. A **registry** (code → keeper hash, keeper name, island name, kick bans,
+  created, last active) is persisted, so a code keeps meaning that island for as long as the
+  registry remembers it.
 
 A room nobody has been in for ten minutes is **put to sleep**: its tick stops, its state
 (schedule, announcements, guestbook) moves into a dormant set that is persisted with

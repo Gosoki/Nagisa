@@ -328,8 +328,8 @@ the clock is cut into 15-minute spells and each spell's weather is a hash of its
 clear about 60 % of the time, cloudy 25 %, rain 15 % — eased into over 90 s. Nothing about
 it is sent. The client greys and dims the sky and closes the cloud deck as it clouds over,
 draws rain around the camera and plays it under the zone's ambience, gathers a band of mist
-round the mountain's shoulders (thin when it is grey, thick in the rain, drifting slowly about
-the summit in the air's own colour), puts an umbrella in
+round the mountain's shoulders (thin when it is grey, thick in the rain, drifting to and fro on the
+slopes in the air's own colour), puts an umbrella in
 everyone's hand once it rains properly (a lantern in the lantern walk comes first), keeps the
 shrine's fireflies in the grass, shows the weather beside the place name (a moon on a clear
 night), and says so when rain starts. The server's one use of it: in the

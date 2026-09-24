@@ -485,6 +485,11 @@ export interface ClientHello {
 export interface ClientPing {
   t: 'ping';
   t0: number;
+  /**
+   * The round trip the client last measured, ms. Lets a game allow for a slow line (the
+   * daruma's grace); the server caps what it will allow, so claiming more buys little.
+   */
+  rtt?: number;
 }
 
 /** Self transform report. Sent at {@link PROTOCOL.MOVE_SEND_HZ}, coalesced if late. */

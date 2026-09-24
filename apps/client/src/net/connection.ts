@@ -343,7 +343,7 @@ export class Connection {
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
-    const beat = (): void => this.send({ t: 'ping', t0: Date.now() });
+    const beat = (): void => this.send({ t: 'ping', t0: Date.now(), ...(this.lastRtt > 0 ? { rtt: this.lastRtt } : {}) });
     beat(); // Measure immediately so the first latency reading is not 5 s late.
     this.pingTimer = setInterval(beat, PROTOCOL.PING_INTERVAL_MS);
   }

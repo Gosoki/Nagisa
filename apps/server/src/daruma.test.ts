@@ -553,3 +553,98 @@ test('daruma: an admin can put a race on, but not a second while one is running'
   assert.equal(of(socket, 'error').pop()?.key, 'already_running');
   conn.room.stop();
 });
+
+/** The phase, read afresh (a helper, so the compiler does not narrow it across ticks). */
+const phaseOf = (race: Race): DarumaView['phase'] => race.view.phase;
+
+test('daruma: a crowd over the line together gets three places, furthest first, and no more', () => {
+  const room = makeRoom();
+  const { race, activity } = startRace(room);
+  const racers = ['Ichi', 'Ni', 'San', 'Shi', 'Go'].map((n) => join(room, n));
+  for (const r of racers) attend(room, r.player, activity, 'participant');
+  race.until('walk');
+
+  // Shoulder to shoulder all the way, and over the line in the same tick — the last to have
+  // joined a little the furthest over it.
+  const length = darumaCourseLength();
+  for (let chants = 0; race.view.phase === 'walk' && chants < 20; chants++) {
+    race.nearTurn();
+    const walked = (race.t - race.view.startedAt) / 1000;
+    racers.forEach((r, i) => {
+      const at = whereOn(r.player);
+      step(r.player, Math.min(length + 0.1 + i * 0.05, at.along + DARUMA_STEP_SPEED * walked), at.across);
+    });
+    for (let i = 0; i < 100 && phaseOf(race) === 'walk'; i++) race.tick();
+    for (let i = 0; i < 100 && phaseOf(race) === 'look'; i++) race.tick();
+  }
+
+  assert.equal(race.view.phase, 'finished');
+  assert.deepEqual(race.view.places.map((p) => p.name), ['Go', 'Shi', 'San'], 'three places, by how far over');
+  assert.deepEqual(activity.board?.map((b) => b.name), ['Go', 'Shi', 'San']);
+  room.forceTick();
+  const podium = of(racers[0].socket, 'delta').flatMap((d) => d.announcements ?? []).find((a) => a.text.startsWith('🏁'));
+  assert.ok(podium && !podium.text.includes('undefined'), podium?.text);
+});
+
+test('daruma: the champion needs a rival still racing; a racer back from a dropped line is put back, not sent back', () => {
+  const room = makeRoom();
+  const { race, activity } = startRace(room);
+  const a = join(room, 'Alone');
+  const b = join(room, 'Quitter');
+  for (const r of [a, b]) attend(room, r.player, activity, 'participant');
+  race.until('walk');
+
+  // Alone's line drops mid-chant; the client walks on offline; the server holds them where
+  // they were. Back within the grace, the first thing they hear is where they are.
+  race.tick(500);
+  step(a.player, 0.5);
+  room.disconnect(a.player.id);
+  const held = whereOn(a.player).along;
+  const before = of(a.socket, 'correction').length;
+  a.socket.readyState = 1;
+  room.resume(a.session, a.player);
+  room.resumed(a.player);
+  const put = of(a.socket, 'correction');
+  assert.equal(put.length, before + 1);
+  assert.equal(put.at(-1)?.reason, 'teleport');
+  assert.ok(Math.abs(darumaCourseAt(put.at(-1)!.pos[0], put.at(-1)!.pos[2])!.along - held) < 0.01, 'put back where the server held them');
+  // Reports from further on, sent before the client heard, are answered — not judged.
+  const report = onCourse(held + 3.2);
+  const answer = a.player.applyMove({ pos: report, yaw: 0, anim: AnimState.Walk, seq: a.player.lastMoveSeq + 1 });
+  assert.equal(answer?.reason, 'teleport');
+  race.tick();
+  assert.equal(race.view.caught, undefined, 'not caught for it');
+
+  // Quitter stops taking part; Alone walks home by themselves: first, but nobody to beat.
+  b.player.mode = 'audience';
+  const length = darumaCourseLength();
+  for (let chants = 0; race.view.phase === 'walk' && chants < 20; chants++) {
+    race.nearTurn();
+    const walked = (race.t - race.view.startedAt) / 1000;
+    const at = whereOn(a.player);
+    step(a.player, Math.min(length + 0.5, at.along + DARUMA_STEP_SPEED * walked), at.across);
+    for (let i = 0; i < 100 && phaseOf(race) === 'walk'; i++) race.tick();
+    for (let i = 0; i < 100 && phaseOf(race) === 'look'; i++) race.tick();
+  }
+  assert.deepEqual(race.view.places.map((p) => p.name), ['Alone']);
+  assert.ok(!a.player.profile.badges.includes('daruma'), 'no badge for a race run alone');
+});
+
+test('daruma: the grace allows for a slow line, up to a point', () => {
+  const room = makeRoom();
+  const { race, activity } = startRace(room);
+  const near = join(room, 'Near');
+  const far = join(room, 'Far');
+  for (const r of [near, far]) attend(room, r.player, activity, 'participant');
+  near.player.rttMs = 20;
+  far.player.rttMs = 400;
+  race.until('walk');
+  race.nearTurn();
+  race.until('look');
+
+  // Both stop a little after the grace a near player has: the far one's stop is still on its way.
+  while (race.t < race.view.startedAt + LOOK_GRACE_MS + 60) race.tick(20);
+  for (const r of [near, far]) step(r.player, 1 + STILL_TOLERANCE_M + 0.3);
+  race.tick(20);
+  assert.deepEqual(race.view.caught, [near.player.id], 'the near one was seen moving; the far one not yet judged');
+});

@@ -171,6 +171,9 @@ export class WorldSync {
   /** The island put us somewhere, facing `yaw`. The app turns the camera to look that way too. */
   onPlaced: ((yaw: number) => void) | null = null;
 
+  /** Where the island last put us (x, z), so its repeats — one per report already on its way — are let be. */
+  private placedAt: [number, number] | null = null;
+
   private readonly unsubscribers: Array<() => void> = [];
 
   constructor(
@@ -246,6 +249,11 @@ export class WorldSync {
         // we stood is over: a walk under way, following someone, a seat. We face the way it
         // put us facing.
         if (msg.reason === 'teleport') {
+          // The same spot again, answering a report sent before we got there: we are there.
+          const [px, , pz] = msg.pos;
+          const here = this.local.position;
+          if (this.placedAt && this.placedAt[0] === px && this.placedAt[1] === pz && Math.hypot(here.x - px, here.z - pz) < 1) break;
+          this.placedAt = [px, pz];
           if (get(self).seated) {
             this.local.setSeated(false);
             self.update((s) => ({ ...s, seated: false }));
@@ -853,6 +861,7 @@ export class WorldSync {
     omikujiSlip.set(null);
     lastDig.set(null);
     checkinList.set(null);
+    this.placedAt = null;
     this.local.setFishing(false);
     // The seat goes with the connection too (the server frees it on a drop and on a room
     // switch). Left sitting, every movement key would be swallowed at the new harbour.

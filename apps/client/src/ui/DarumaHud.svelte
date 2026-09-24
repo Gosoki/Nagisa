@@ -138,7 +138,8 @@
           {#if caughtNow}
             <span class="where caught">{$t('daruma.caught')}</span>
           {:else if racing}
-            <span class="where inside">{$t('daruma.toGo', { m: (toGo ?? 0).toFixed(1) })}</span>
+            <!-- Ten times a second while walking: not something to read out each time. -->
+            <span class="where inside" aria-live="off">{$t('daruma.toGo', { m: (toGo ?? 0).toFixed(1) })}</span>
           {:else if place >= 0}
             <span class="where inside">{$t('daruma.placed', { n: place + 1 })}</span>
           {:else}

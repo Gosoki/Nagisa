@@ -3,15 +3,19 @@
  * =====================
  *
  * When the island clouds over, a band of mist gathers round the mountain's shoulders and
- * drifts slowly about it; in the rain it thickens until the summit is an outline above it.
+ * drifts on the slopes; in the rain it thickens until the summit is an outline above it.
  * On a clear day there is none, and the draw is switched off. The weather is the island's
- * own (`weatherLevels` in the shared package), so everyone sees the same mist.
+ * own (`weatherLevels` in the shared package), so everyone has mist at the same time, in
+ * the same places.
  *
  * One instanced draw of soft, wide, upright quads — a mist bank is long and low, and turns
- * to face you about the vertical only, so it keeps lying along the slope. Each puff's orbit,
- * height and size are fixed; drifting and swelling are functions of time in the vertex
- * shader, so a frame is a few uniform writes. Its colour is the island's fog colour, which
- * already follows the time of day and the weather, so the mist is never brighter than the air.
+ * to face you about the vertical only, so it keeps lying along the slope. Each puff's place,
+ * height and size are fixed; it drifts a little to and fro about its place and swells, as
+ * functions of time in the vertex shader, so a frame is a few uniform writes. It does not go
+ * round the mountain: the slope under a puff is only known where it was placed, and a puff
+ * carried round would sink into the hillside or hang in the air. Its colour is the island's
+ * fog colour, which already follows the time of day and the weather, so the mist is never
+ * brighter than the air.
  *
  * Laid `over` the drawing like every mark (`fx/materials.ts`): the contour pass never learns
  * it is there, so no pen line rings a cloud. A puff fades as the camera comes close, or
@@ -34,8 +38,9 @@ const LIFT: readonly [number, number] = [2.5, 5.5];
 const WIDTH: readonly [number, number] = [11, 18];
 const ASPECT = 0.38;
 
-/** Drift round the mountain, radians per second: a lap in a quarter of an hour or so. */
-const DRIFT = 0.007;
+/** How far a puff drifts to either side of its place, radians round the summit, and how slowly. */
+const SWAY = 0.09;
+const SWAY_RATE = 0.012;
 
 const VERTEX = /* glsl */ `
 uniform float uTime;
@@ -46,7 +51,7 @@ out vec2 vUv;
 out float vFade;
 out float vPhase;
 void main() {
-  float angle = aOrbit.x + uTime * ${DRIFT.toFixed(4)} * (0.7 + aShape.z * 0.6);
+  float angle = aOrbit.x + ${SWAY.toFixed(3)} * sin(uTime * ${SWAY_RATE.toFixed(4)} * (0.7 + aShape.z * 0.6) + aShape.z * 6.2831);
   vec3 centre = uCentre + vec3(cos(angle) * aOrbit.y, aOrbit.z + sin(uTime * 0.21 + aShape.z * 6.2831) * 0.5, sin(angle) * aOrbit.y);
   // Face the camera about the vertical only.
   vec3 toCamera = cameraPosition - centre;
@@ -121,7 +126,12 @@ export class Mist {
       // Evenly round the mountain, give or take, so the band has no gap on one side.
       const angle = ((i + next() * 0.8) / count) * Math.PI * 2;
       const radius = RING[0] + next() * (RING[1] - RING[0]);
-      const ground = heightAt(summit.x + Math.cos(angle) * radius, summit.z + Math.sin(angle) * radius);
+      // Floated above the highest ground it drifts over, so it never sinks into the slope.
+      let ground = -Infinity;
+      for (let k = -2; k <= 2; k++) {
+        const a = angle + (k / 2) * SWAY;
+        ground = Math.max(ground, heightAt(summit.x + Math.cos(a) * radius, summit.z + Math.sin(a) * radius));
+      }
       const width = WIDTH[0] + next() * (WIDTH[1] - WIDTH[0]);
       orbit.set([angle, radius, ground + LIFT[0] + next() * (LIFT[1] - LIFT[0])], i * 3);
       shape.set([width, width * ASPECT, next()], i * 3);
@@ -139,8 +149,9 @@ export class Mist {
     this.mesh.name = 'mist';
     // Placed in the shader, so the quad's own bounds say nothing about where it is.
     this.mesh.frustumCulled = false;
-    // Far and wide: drawn before the other marks and lights, which sit in front of it.
-    this.mesh.renderOrder = 1;
+    // Far and wide: drawn before the other marks and lights, which sit in front of it — but
+    // after an away player's depth stand-in (order 1), or it would cut a figure out of the mist.
+    this.mesh.renderOrder = 2.5;
     this.mesh.visible = false;
     group.add(this.mesh);
   }

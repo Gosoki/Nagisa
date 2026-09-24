@@ -76,6 +76,11 @@ export const LOOK_MAX_MS = 3_000;
  * the oni turned — all fit in it; a racer still walking when it runs out does not.
  */
 export const LOOK_GRACE_MS = 400;
+/**
+ * The most the grace is lengthened for a slow line, ms: half the round trip the client last
+ * reported (`Player.rttMs`) — the time its stop takes to reach the server — up to this.
+ */
+export const LOOK_LATENCY_MAX_MS = 300;
 /** How far a racer may shift, metres, once the grace is over, before the oni counts it as moving. */
 export const STILL_TOLERANCE_M = 0.6;
 /** Slack on the careful step, metres: a report's jitter and a step already in the air when the chant began. */
@@ -156,6 +161,15 @@ export class DarumaRunner {
   /** A player left the room: if they were racing, they are out of it. */
   onLeave(id: PlayerId): void {
     if (this.drop(id)) this.publish();
+  }
+
+  /**
+   * A racer came back from a dropped connection. Their client went on walking while it was
+   * cut off, and the server held them where they were: put the client back there (fenced, so
+   * its first reports from further on are answered, not judged).
+   */
+  onResume(p: Player): void {
+    if (this.racing.has(p.id)) this.room.relocate(p, [p.pos[0], p.pos[1], p.pos[2]], p.yaw);
   }
 
   /** Stop without ceremony (the activity was ended or cancelled under us). */
@@ -245,8 +259,10 @@ export class DarumaRunner {
     const course = DARUMA_COURSE;
     if (!course) return;
     const length = darumaCourseLength();
-    const looking = this.phase === 'look' && now >= this.startedAt + LOOK_GRACE_MS && now < this.endsAt;
+    const look = this.phase === 'look' && now < this.endsAt;
     let changed = false;
+    /** Over the line this tick, and how far over: when several are, the furthest is first. */
+    const home: Array<{ p: Player; along: number }> = [];
     for (const id of [...this.racing]) {
       const p = this.room.getPlayer(id);
       // Gone (normally `onLeave` has said so already), gone over to watching, or left the
@@ -270,7 +286,7 @@ export class DarumaRunner {
         changed = true;
         continue;
       }
-      if (looking) {
+      if (look && now >= this.startedAt + LOOK_GRACE_MS + Math.min(LOOK_LATENCY_MAX_MS, p.rttMs / 2)) {
         const base = this.still.get(id);
         if (!base) {
           this.still.set(id, { x, z });
@@ -280,10 +296,14 @@ export class DarumaRunner {
           continue;
         }
       }
-      if (at.along >= length && Math.abs(at.across) <= course.halfWidth + FINISH_SLACK_M) {
-        this.place(p, now);
-        changed = true;
-      }
+      if (at.along >= length && Math.abs(at.across) <= course.halfWidth + FINISH_SLACK_M) home.push({ p, along: at.along });
+    }
+    // Never more places than there are: a crowd over the line together is placed by how far
+    // over each got, and whoever did not make the last place is still racing (and home next tick).
+    home.sort((a, b) => b.along - a.along);
+    for (const { p } of home.slice(0, DARUMA_PLACES - this.places.length)) {
+      this.place(p, now);
+      changed = true;
     }
     if (changed) this.publish();
   }
@@ -305,6 +325,8 @@ export class DarumaRunner {
 
   /** Over the line. */
   private place(p: Player, now: number): void {
+    // Somebody to beat: another racer still in it as the winner gets home, not just at the start.
+    const rivalled = this.racing.size >= MIN_FIELD_FOR_BADGE;
     this.drop(p.id);
     this.places.push({ id: p.id, name: p.name, ms: now - this.raceStartedAt });
     const activity = this.room.activities.get(this.activity);
@@ -313,7 +335,7 @@ export class DarumaRunner {
       activity.board = this.places.map((s) => ({ id: s.id, name: s.name, score: Math.round(s.ms / 100) / 10 }));
       this.room.activities.notifyChanged(activity);
     }
-    if (this.places.length === 1 && this.field.length >= MIN_FIELD_FOR_BADGE && awardBadge(p.profile, 'daruma')) {
+    if (this.places.length === 1 && rivalled && awardBadge(p.profile, 'daruma')) {
       this.room.celebrate(p, ['daruma']);
       this.room.persist();
     }

@@ -611,6 +611,15 @@ export class Room implements GameRoom {
     this.pendingDaruma = { value: view };
   }
 
+  /**
+   * A player came back within their grace, and has been welcomed. The server held them where
+   * they were while they were away; a game that judges where people stand puts their client
+   * back there, rather than taking the steps it went on simulating offline as steps taken.
+   */
+  resumed(player: Player): void {
+    this.daruma?.onResume(player);
+  }
+
   relocate(player: Player, pos: Vec3, yaw: number): void {
     const zone = player.zone;
     this.sendTo(player.id, player.relocate(pos, yaw, Date.now()));

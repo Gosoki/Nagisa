@@ -278,6 +278,7 @@ export function handleHello(
         room.markPlayerChanged(player.id, { role });
       }
       sendWelcome(session, room, player, true, deps);
+      room.resumed(player);
       return new ConnState(session, room, player);
     }
   }
@@ -308,6 +309,7 @@ export function handleHello(
 
 function handlePing(ctx: ConnState, msg: ClientPing): void {
   ctx.session.send({ t: 'pong', t0: typeof msg.t0 === 'number' ? msg.t0 : 0, serverTime: Date.now() });
+  if (typeof msg.rtt === 'number' && Number.isFinite(msg.rtt)) ctx.player.rttMs = clamp(msg.rtt, 0, 5000);
 }
 
 // ---------------------------------------------------------------------------------

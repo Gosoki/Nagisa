@@ -169,6 +169,9 @@ export class Player {
   /** True while the session is disconnected but still inside its grace window. */
   away = false;
 
+  /** The round trip this player's client last reported, ms (0 until it has). See `ClientPing.rtt`. */
+  rttMs = 0;
+
   /** Monotonic per-connection sequence number of the last accepted `move`, for out-of-order rejection. */
   lastMoveSeq = -1;
 

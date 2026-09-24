@@ -198,12 +198,26 @@ try {
     return me && them ? Math.hypot(me.x - them.x, me.z - them.z) : null;
   }, aliceId);
 
-  // Alice runs away for a few seconds.
+  // Alice runs away — until she is well away, not for a fixed time: on a slow SwiftShader
+  // batch four seconds could be four metres, and then Bob is "near her" after half a step,
+  // which proves nothing about following.
+  const alicePos = () =>
+    alice.page.evaluate(() => {
+      const p = window.nagisa?.local?.position;
+      return p ? { x: p.x, z: p.z } : null;
+    });
+  const aliceStart = await alicePos();
   await alice.page.keyboard.down('ShiftLeft');
   await alice.page.keyboard.down('KeyW');
-  await alice.page.waitForTimeout(4000);
+  let aliceRan = 0;
+  for (const until = Date.now() + 15_000; Date.now() < until && aliceRan < 8; ) {
+    await alice.page.waitForTimeout(250);
+    const now = await alicePos();
+    if (aliceStart && now) aliceRan = Math.hypot(now.x - aliceStart.x, now.z - aliceStart.z);
+  }
   await alice.page.keyboard.up('KeyW');
   await alice.page.keyboard.up('ShiftLeft');
+  check('Alice got well away first', aliceRan >= 8, { metres: aliceRan.toFixed(1) });
 
   /**
    * Bob walks; wait until he has arrived, or until we give up.

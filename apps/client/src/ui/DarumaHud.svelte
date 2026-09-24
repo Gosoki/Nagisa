@@ -22,7 +22,7 @@
    * tap from the beach underneath.
    */
   import { DARUMA_COURSE, darumaCourseAt, darumaCourseLength } from '@nagisa/shared';
-  import { activities, daruma, quiz, self, selfPose, serverNow } from '../state/stores.js';
+  import { activities, daruma, quizCardShown, self, selfPose, serverNow } from '../state/stores.js';
   import { lang, t, zoneName } from '../i18n/index.js';
 
   /** How often the chant, the clocks and your distance are re-read, ms. */
@@ -104,7 +104,7 @@
   <!-- A quiz on at the same time (an admin can put both on) has the slot; this goes under it. -->
   <section
     class="daruma"
-    class:below={$quiz !== null}
+    class:below={$quizCardShown}
     role="status"
     aria-live="polite"
     aria-atomic="false"
@@ -136,16 +136,17 @@
         {/if}
         <div class="foot">
           {#if caughtNow}
-            <span class="where caught">{$t('daruma.caught')}</span>
+            <!-- Said once already, as a notice. -->
+            <span class="where caught" aria-hidden="true">{$t('daruma.caught')}</span>
           {:else if racing}
             <!-- Ten times a second while walking: not something to read out each time. -->
             <span class="where inside" aria-live="off">{$t('daruma.toGo', { m: (toGo ?? 0).toFixed(1) })}</span>
           {:else if place >= 0}
-            <span class="where inside">{$t('daruma.placed', { n: place + 1 })}</span>
+            <span class="where inside" aria-hidden="true">{$t('daruma.placed', { n: place + 1 })}</span>
           {:else}
             <span class="where">{wasRacer ? $t('daruma.out') : $t('daruma.watching')}</span>
           {/if}
-          <span class="count">
+          <span class="count" aria-live="off">
             {v.phase === 'look' && (v.caught?.length ?? 0) > 0 ? $t('daruma.sentBack', { n: v.caught?.length ?? 0 }) : $t('daruma.racing', { n: v.racing.length })}
           </span>
         </div>
@@ -287,7 +288,7 @@
   }
 
   .count {
-    color: var(--ui-ink-faint);
+    color: var(--ui-ink-muted);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }

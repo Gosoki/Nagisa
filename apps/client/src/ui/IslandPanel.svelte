@@ -41,9 +41,13 @@
   const publicRooms = $derived($rooms.filter((r) => r.kind === 'public'));
 
   let titleInput = $state('');
-  // The field shows the island's name as it stands, and again whenever it is changed.
+  const currentTitle = $derived(here?.title ?? '');
+  const currentId = $derived(here?.id);
+  // The field shows the island's name as it stands, and again whenever it — or the island —
+  // changes; not whenever the room is sent again (a reconnect), which would wipe what is typed.
   $effect(() => {
-    titleInput = here?.title ?? '';
+    void currentId;
+    titleInput = currentTitle;
   });
 
   function rename(): void {

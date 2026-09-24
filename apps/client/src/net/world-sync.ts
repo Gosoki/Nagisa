@@ -101,6 +101,9 @@ const ANNOUNCEMENT_PRUNE_MS = 5000;
 /** How long a toast stays up if the announcement did not specify. */
 const DEFAULT_TOAST_MS = 6000;
 
+/** How long after being put somewhere the same spot again is a repeat, not a new move, ms. */
+const PLACED_REPEAT_MS = 1000;
+
 /** Map an emote name onto the animation that expresses it. */
 const EMOTE_ANIMATIONS: Record<string, AnimState> = {
   wave: AnimState.Wave,
@@ -168,11 +171,17 @@ export class WorldSync {
   /** Something arrived that is for you alone — a whisper, a friend coming on. The app chimes. */
   onForYou: (() => void) | null = null;
 
-  /** The island put us somewhere, facing `yaw`. The app turns the camera to look that way too. */
-  onPlaced: ((yaw: number) => void) | null = null;
+  /**
+   * The island put us somewhere, facing `yaw` — `fresh` when it is somewhere new, not the same
+   * start place again. The app turns the camera to look that way too.
+   */
+  onPlaced: ((yaw: number, fresh: boolean) => void) | null = null;
 
-  /** Where the island last put us (x, z), so its repeats — one per report already on its way — are let be. */
-  private placedAt: [number, number] | null = null;
+  /**
+   * Where the island last put us (x, z) and when (`performance.now()`), so its repeats — one
+   * per report already on its way — are let be.
+   */
+  private placedAt: [number, number, number] | null = null;
 
   private readonly unsubscribers: Array<() => void> = [];
 
@@ -249,18 +258,22 @@ export class WorldSync {
         // we stood is over: a walk under way, following someone, a seat. We face the way it
         // put us facing.
         if (msg.reason === 'teleport') {
-          // The same spot again, answering a report sent before we got there: we are there.
+          // The same spot again, just now — answering a report sent before we got there: we are
+          // there. Only just now: the same spot a while later is the game putting us back again.
           const [px, , pz] = msg.pos;
           const here = this.local.position;
-          if (this.placedAt && this.placedAt[0] === px && this.placedAt[1] === pz && Math.hypot(here.x - px, here.z - pz) < 1) break;
-          this.placedAt = [px, pz];
+          const last = this.placedAt;
+          const now = performance.now();
+          if (last && last[0] === px && last[1] === pz && now - last[2] < PLACED_REPEAT_MS && Math.hypot(here.x - px, here.z - pz) < 1) break;
+          const fresh = !last || last[0] !== px || last[1] !== pz;
+          this.placedAt = [px, pz, now];
           if (get(self).seated) {
             this.local.setSeated(false);
             self.update((s) => ({ ...s, seated: false }));
           }
           followTarget.set(null);
           this.local.teleport(msg.pos[0], msg.pos[1], msg.pos[2], msg.yaw);
-          this.onPlaced?.(msg.yaw);
+          this.onPlaced?.(msg.yaw, fresh);
           break;
         }
         // The server disagreed about where we are. Snap, and say nothing — corrections
@@ -835,6 +848,8 @@ export class WorldSync {
   private onDaruma(next: DarumaView | null): void {
     const before = get(daruma);
     daruma.set(next);
+    // Between races: the next start line is a new place, even if it is the same spot.
+    if (!next || next.phase === 'lobby' || next.phase === 'finished') this.placedAt = null;
     const me = this.selfId();
     if (!next || !me) return;
     const same = before?.activity === next.activity;

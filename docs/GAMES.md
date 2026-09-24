@@ -206,7 +206,9 @@ move. So `Player.relocate` fences the spot: every report more than a metre from 
 with the correction again, until one comes from there. Any other teleport (a room switch)
 takes the fence down. The client treats a `teleport` as the island moving it — a walk under
 way, a follow and a seat all end — and faces the way it was put facing, and the camera turns
-to look the same way, level rather than down (`WorldSync.onPlaced`).
+to look the same way — and, put somewhere new, level rather than down; sent back to the same
+spot, the view the player chose is kept (`WorldSync.onPlaced`). A repeat of the same move
+within a second, answering reports already on their way, is let be.
 
 **Who is judged, and who drops out.** Only racers. The audience, passers-by and anyone who
 joined after the lobby closed can walk all over the lane. A racer drops out — no longer judged,

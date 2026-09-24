@@ -92,7 +92,9 @@ const MAX_DT_S = 2;
  * reports from on the spot, give or take the step it has taken since — well under a metre —
  * and one that has not is reporting from wherever it was before. Kept inside a race's step
  * slack (`STEP_SLACK_M` in `games/daruma.ts`), so a stale report that happens to fall inside
- * it can never read as a racer having rushed.
+ * it can never read as a racer having rushed. It is wider than the race's stillness tolerance
+ * (`STILL_TOLERANCE_M`): a client must take a move back to the same spot even from within a
+ * metre of it, or be caught again — which the client does (see `placedAt` in world-sync).
  */
 const RELOCATE_FENCE_M = 1;
 

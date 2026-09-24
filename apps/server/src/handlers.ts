@@ -457,7 +457,7 @@ function checkIn(ctx: ConnState, activityId: string, deps: HandlerDeps): void {
     ctx.session.send({ t: 'checkin_ack', activity: activityId, ok: false, reason: 'not_found' });
     return;
   }
-  const result = activity.checkin(ctx.player.id, Date.now(), ctx.player.name);
+  const result = activity.checkin(ctx.player.id, Date.now(), ctx.player.name, ctx.player.visitorHash ?? undefined);
   ctx.session.send(
     result.ok
       ? { t: 'checkin_ack', activity: activity.id, ok: true, ordinal: result.ordinal }

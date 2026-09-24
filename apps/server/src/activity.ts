@@ -50,6 +50,11 @@ export interface CheckinRecord {
    * take their player (and its name) with them. Absent in files from before it was kept.
    */
   readonly name?: string;
+  /**
+   * The visitor-key hash they checked in with, if they had a key: one person is one line on
+   * the register, however many tabs they have or player ids they come back as.
+   */
+  readonly visitor?: string;
 }
 
 /** Outcome of a join attempt. */
@@ -204,13 +209,13 @@ export class Activity {
    * they are a historical record ("you were the 12th person here"), not a live seat
    * count.
    */
-  checkin(playerId: PlayerId, nowMs: number, name?: string): CheckinResult {
+  checkin(playerId: PlayerId, nowMs: number, name?: string, visitor?: string): CheckinResult {
     if (this.state !== ActivityState.Live) return { ok: false, reason: 'not_live' };
     if (!this.checkinEnabled) return { ok: false, reason: 'not_live' };
     if (!this.isAttending(playerId)) return { ok: false, reason: 'not_attending' };
-    const existing = this.checkins.get(playerId);
+    const existing = this.checkins.get(playerId) ?? (visitor ? [...this.checkins.values()].find((r) => r.visitor === visitor) : undefined);
     if (existing) return { ok: false, reason: 'already' };
-    const record: CheckinRecord = { playerId, ordinal: this.nextOrdinal++, at: nowMs, ...(name ? { name } : {}) };
+    const record: CheckinRecord = { playerId, ordinal: this.nextOrdinal++, at: nowMs, ...(name ? { name } : {}), ...(visitor ? { visitor } : {}) };
     this.checkins.set(playerId, record);
     return { ok: true, ordinal: record.ordinal };
   }
@@ -224,7 +229,13 @@ export class Activity {
   restoreCheckins(records: readonly CheckinRecord[]): void {
     for (const r of records) {
       if (!r || typeof r.playerId !== 'string' || !Number.isFinite(r.ordinal) || !Number.isFinite(r.at)) continue;
-      this.checkins.set(r.playerId, { playerId: r.playerId, ordinal: r.ordinal, at: r.at, ...(typeof r.name === 'string' ? { name: r.name } : {}) });
+      this.checkins.set(r.playerId, {
+        playerId: r.playerId,
+        ordinal: r.ordinal,
+        at: r.at,
+        ...(typeof r.name === 'string' ? { name: r.name } : {}),
+        ...(typeof r.visitor === 'string' ? { visitor: r.visitor } : {}),
+      });
       this.nextOrdinal = Math.max(this.nextOrdinal, r.ordinal + 1);
     }
   }

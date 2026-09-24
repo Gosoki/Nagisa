@@ -540,3 +540,32 @@ test('a ban takes every tab of the visitor, keeps a banned key from being taken 
   assert.equal(deps.rooms.banFromIsland(island, hashVisitorKey(keeperKey)), false);
   assert.equal(deps.rooms.isBanned(island, hashVisitorKey(keeperKey)), false);
 });
+
+test('one visitor is one line on the register, whatever tab or player id they check in from', () => {
+  const deps = makeDeps();
+  const key = 'registerkeyregisterkeyregister';
+  const { conn: first, socket: firstSocket } = connect(deps, { visitor: key });
+  const { conn: second, socket: secondSocket } = connect(deps, { visitor: key, room: first.room.id });
+  const { conn: admin, socket: adminSocket } = connect(deps, { room: first.room.id }, true);
+  const activity = first.room.activities.createFromTemplate('morning-assembly', Date.now() - 1000);
+  first.room.activities.sweep(Date.now());
+  for (const c of [first, second]) send(c, { t: 'activity_join', activity: activity.id, mode: 'participant' }, deps);
+
+  send(first, { t: 'checkin', activity: activity.id }, deps);
+  assert.equal(lastOf(firstSocket, 'checkin_ack')?.ok, true);
+  send(second, { t: 'checkin', activity: activity.id }, deps);
+  const again = lastOf(secondSocket, 'checkin_ack');
+  assert.equal(again?.ok, false);
+  assert.equal(again?.reason, 'already', 'the same visitor, in another tab');
+  assert.equal(second.player.checkedIn, true, 'and marked as checked in there too');
+
+  send(admin, { t: 'checkin_list', activity: activity.id }, deps);
+  assert.equal(lastOf(adminSocket, 'checkin_list')?.list.length, 1, 'one line on the register');
+  assert.equal(activity.toView().checkinCount, 1);
+
+  // The key is kept with the record, so a restart does not forget who it was.
+  const after = bareRoom();
+  after.restoreState(first.room.exportState());
+  assert.equal(after.activities.get(activity.id)?.checkinRecords()[0]?.visitor, hashVisitorKey(key));
+  after.stop();
+});

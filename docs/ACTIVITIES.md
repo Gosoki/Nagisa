@@ -251,7 +251,9 @@ Attendance recording, for activities that want it.
   that player's attachment changes — joining something else, leaving, the activity being
   cleared off the board, or moving to another island.
 - Records are persisted with the activity, so a restart does not lose them. Each keeps the
-  name the player checked in under, so the register reads right after they have gone.
+  name the player checked in under, so the register reads right after they have gone, and
+  the visitor-key hash: one visitor is one line, so a second tab, or the same key back under
+  a new player id after the grace ran out, is answered `already`.
 - **The register**: the host console lists, for each activity that takes check-ins and that
   this player may read (their own; for an admin, any that is live, has ended, or has taken
   check-ins), the count and a *View* button. Opened, it shows who checked in, in order, with

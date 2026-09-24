@@ -279,9 +279,15 @@
       <span class="label">{$t('host.register')}</span>
       {#each registers as a (a.id)}
         <div class="register-row">
-          <span class="register-title">{activityTitle(a, $lang)}</span>
+          <span class="register-title" title={activityTitle(a, $lang)}>{activityTitle(a, $lang)}</span>
           <span class="register-count">{$t('host.registerCount', { n: a.checkinCount })}</span>
-          <button type="button" class="action register-toggle" aria-expanded={registerOf === a.id} onclick={() => toggleRegister(a.id)}>
+          <button
+            type="button"
+            class="action register-toggle"
+            aria-expanded={registerOf === a.id}
+            aria-label={`${activityTitle(a, $lang)} · ${registerOf === a.id ? $t('host.registerHide') : $t('host.registerView')}`}
+            onclick={() => toggleRegister(a.id)}
+          >
             {registerOf === a.id ? $t('host.registerHide') : $t('host.registerView')}
           </button>
         </div>
@@ -315,7 +321,7 @@
   .empty {
     margin: 0;
     font-size: var(--fs-xs);
-    color: var(--ui-ink-faint);
+    color: var(--ui-ink-muted);
   }
 
   .slip {
@@ -508,7 +514,7 @@
 
   .ordinal,
   .at {
-    color: var(--ui-ink-faint);
+    color: var(--ui-ink-muted);
     font-variant-numeric: tabular-nums;
   }
 

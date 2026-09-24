@@ -446,9 +446,10 @@ export class App {
     // camera's forward — would walk a racer along the line instead of down the course. And
     // look along it rather than down at your feet: what you were put there to watch is at the
     // far end, and looking down would put it under the cards at the top of the screen.
-    this.sync.onPlaced = (yaw) => {
+    this.sync.onPlaced = (yaw, fresh) => {
       this.camera.yaw = yaw + Math.PI;
-      this.camera.pitch = Math.min(this.camera.pitch, PLACED_PITCH);
+      // Levelled once, on the way to a new place; put back on the same one, the view you chose stays.
+      if (fresh) this.camera.pitch = Math.min(this.camera.pitch, PLACED_PITCH);
     };
     // Keep the hint and the address bar on whatever island we are actually on.
     room.subscribe((view) => this.adoptRoom(view));

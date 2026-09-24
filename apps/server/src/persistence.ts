@@ -59,7 +59,7 @@ export interface PersistedActivity {
   checkinEnabled: boolean;
   participants: PlayerId[];
   audience: PlayerId[];
-  checkins: Array<{ playerId: PlayerId; ordinal: number; at: number; name?: string }>;
+  checkins: Array<{ playerId: PlayerId; ordinal: number; at: number; name?: string; visitor?: string }>;
   /**
    * Which programme slot this activity was materialised for (`template@startsAt`), or an
    * `adhoc:` id for one an admin put on. Persisted so a restart does not schedule the same

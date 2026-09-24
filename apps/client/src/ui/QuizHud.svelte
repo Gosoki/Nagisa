@@ -29,7 +29,7 @@
    * tap from the plaza underneath.
    */
   import { QUIZ_ARENA, quizSide } from '@nagisa/shared';
-  import { activities, players, quiz, self, selfPose, serverNow } from '../state/stores.js';
+  import { activities, players, quiz, quizCardShown, self, selfPose, serverNow } from '../state/stores.js';
   import { lang, quizText, t, zoneName } from '../i18n/index.js';
 
   /** How often the countdown and your circle are re-read while a question is open. */
@@ -68,6 +68,11 @@
   );
 
   const counting = $derived(visible && (q?.phase === 'lobby' || q?.phase === 'question'));
+
+  $effect(() => {
+    quizCardShown.set(visible);
+    return () => quizCardShown.set(false);
+  });
 
   $effect(() => {
     if (!counting) return;

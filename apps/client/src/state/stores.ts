@@ -528,6 +528,9 @@ export const profile: Writable<ProfileView | null> = writable(null);
 /** The ○× quiz in progress in this room, if any. */
 export const quiz: Writable<QuizView | null> = writable(null);
 
+/** Whether the quiz card is on screen (QuizHud says), so another card can make room under it. */
+export const quizCardShown: Writable<boolean> = writable(false);
+
 /** だるまさんがころんだ in progress in this room, if any. */
 export const daruma: Writable<DarumaView | null> = writable(null);
 
